@@ -1,0 +1,65 @@
+////////////// PART ONE //////////////
+
+fn main() -> int {
+    let mut answer: int = 42; // int (i64)
+    let pi: float = 3.14159265358979323846264338327950; // float (f64)
+    let is_good: bool = false; // bool
+
+    // Re-assignments
+    answer += 3;
+    answer -= 3;
+    answer *= 3;
+    answer /= 3;
+    // not for floats:
+    answer %= 3;
+    answer **= 3;
+    answer |= 3;
+    answer &= 3;
+    answer ^= 3;
+    answer >>= 3;
+    answer <<= 3;
+
+    let answer: float = 4_2f; // float literal, underscores are ignored, f forces float type
+    // integer = DIGIT , { DIGIT | '_' } ;
+    // [0-9][0-9_]*
+    // float = DIGIT , { DIGIT | '_' } , ( '.' , DIGIT , { DIGIT | '_' } | 'f' ) ;
+    // [0-9][0-9_]*(\.[0-9][0-9_]*|f)
+    answer as int; // cast between primitive types
+
+    println((1 + 2) * 3 / 4 % 5 ** 6 - 7); // arithmetic operators
+    println(1 >> 2 << 3 | 4 & 5 ^ 6); // bitwise operators
+    println(true || false && true); // logical operators
+    println(1 < 2 <= 3 > 0 >= -1, 1 == 1, 1 != 2); // relational operators
+
+    let unit/* : () */ = if answer > pi || is_good {
+        println(answer);
+    } else if pi > answer {
+        println(pi);
+    } else {
+        println(is_good);
+    };
+
+    exit(1); // -> !
+}
+
+fn add(left: int, right: int) -> int {
+    left + right
+}
+
+////////////// PART TWO //////////////
+
+fn main() -> int {
+    let name = "rush";
+    let char = 'a';
+    let array: [int; 3] = [1, 2, 3];
+
+    loop { break; }
+    while true { break; }
+
+    // TODO: maybe?
+    // for i = 0; i < len(name); i += 1 {
+    //     let char = name[i];
+    //     if char == 'u' { continue; }
+    //     print(char);
+    // }
+}

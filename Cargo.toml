@@ -1,0 +1,6 @@
+[workspace]
+members = []
+package.authors = ["RubixDev", "MikMuellerDev"]
+package.edition = "2021"
+package.license = "GPL-3.0-only"
+package.repository = "https://github.com/rush-rs/rush.git"
