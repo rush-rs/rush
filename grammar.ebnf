@@ -9,7 +9,7 @@ Parameter          = ident , ':' , type ;
 Block = '{' , { Statement } , '}' ;
 
 Statement  = LetStmt | ReturnStmt | ExprStmt ;
-LetStmt    = 'let' , ident , '=' , Expression , ';' ;
+LetStmt    = 'let' , [ 'mut' ] , ident , '=' , Expression , ';' ;
 ReturnStmt = 'return' , [ Expression ] , ';' ;
 ExprStmt   = ExprWithoutBlock , ';'
            | ExprWithBlock , [ ';' ] ;
