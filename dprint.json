@@ -21,7 +21,7 @@
   },
 
   "ebnf": {
-    "lineWidth": 100,
+    "lineWidth": 60,
     "indentWidth": 2
   },
 
