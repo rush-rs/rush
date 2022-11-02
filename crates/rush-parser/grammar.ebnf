@@ -31,7 +31,8 @@ CallExpr         = Expression , '(' , [ ArgumentList ] , ')' ;
 ArgumentList     = Expression , { ',' , Expression } , [ ',' ] ;
 
 ident = LETTER , { LETTER | DIGIT } ;
-int   = DIGIT , { DIGIT | '_' } ;
+int   = DIGIT , { DIGIT | '_' }
+      | '0x' , HEX , { HEX | '_' } ;
 float = DIGIT , { DIGIT | '_' } , ( '.' , DIGIT , { DIGIT | '_' }
                                   | 'f' ) ;
 char  = "'" , ( ASCII_CHAR - '\'
