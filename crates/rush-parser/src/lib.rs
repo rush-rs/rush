@@ -1,12 +1,12 @@
+pub mod ast;
 mod error;
+mod lexer;
+mod parser;
 mod span;
 mod token;
-mod lexer;
-pub mod ast;
-mod parser;
 
 pub use error::*;
-pub use span::*;
-pub use token::*;
 pub use lexer::*;
 pub use parser::*;
+pub use span::*;
+pub use token::*;
