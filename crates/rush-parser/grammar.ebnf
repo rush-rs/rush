@@ -16,6 +16,8 @@ ExprStmt   = ExprWithoutBlock , ';'
 
 Expression       = ExprWithoutBlock | ExprWithBlock ;
 ExprWithBlock    = Block | IfExpr ;
+IfExpr           = 'if' , Expression , Block , [ 'else' , ( IfExpr
+                                                          | Block ) ] ;
 ExprWithoutBlock = int
                  | float
                  | bool
@@ -37,7 +39,7 @@ char  = "'" , ( ASCII_CHAR - '\'
               | '\' , ( ESCAPE_CHAR
                       | "'"
                       | 'x' , 2 * HEX ) ) , "'" ;
-type  = 'float' | 'int' | 'bool' | '()' ;
+type  = ident | '()' ;
 bool  = 'true' | 'false' ;
 
 comment = '//' , { CHAR } , ? LF ?
