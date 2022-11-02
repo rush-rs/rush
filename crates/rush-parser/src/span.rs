@@ -4,6 +4,11 @@ pub struct Span {
     pub end: Location,
 }
 
+impl Span {
+    pub fn new(start: Location, end: Location) -> Self {
+        Self { start, end }
+    }
+}
 
 #[derive(Default, Debug, Clone, Copy)]
 pub struct Location {
