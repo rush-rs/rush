@@ -10,12 +10,23 @@ impl Span {
     }
 }
 
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Location {
     pub line: usize,
     pub column: usize,
     pub char_idx: usize,
     pub byte_idx: usize,
+}
+
+impl Default for Location {
+    fn default() -> Self {
+        Self {
+            line: 1,
+            column: 1,
+            char_idx: 0,
+            byte_idx: 0,
+        }
+    }
 }
 
 impl Location {
