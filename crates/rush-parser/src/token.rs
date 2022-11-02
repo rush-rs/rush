@@ -1,10 +1,18 @@
 use crate::Span;
 
+#[derive(Debug, Clone, Copy)]
 pub struct Token<'src> {
     pub kind: TokenKind<'src>,
     pub span: Span,
 }
 
+impl<'src> Token<'src> {
+    pub fn new(kind: TokenKind<'src>, span: Span) -> Self {
+        Self { kind, span }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub enum TokenKind<'src> {
     Eof,
 
@@ -65,4 +73,10 @@ pub enum TokenKind<'src> {
     BitOrAssign,
     BitAndAssign,
     BitXorAssign,
+}
+
+impl<'src> TokenKind<'src> {
+    pub fn spanned(self, span: Span) -> Token<'src> {
+        Token { kind: self, span }
+    }
 }
