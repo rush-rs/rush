@@ -33,21 +33,29 @@ ident = LETTER , { LETTER | DIGIT } ;
 int   = DIGIT , { DIGIT | '_' } ;
 float = DIGIT , { DIGIT | '_' } , ( '.' , DIGIT , { DIGIT | '_' }
                                   | 'f' ) ;
+char  = "'" , ( ASCII_CHAR - '\'
+              | '\' , ( ESCAPE_CHAR
+                      | "'"
+                      | 'x' , 2 * HEX ) ) , "'" ;
 type  = 'float' | 'int' | 'bool' | '()' ;
 bool  = 'true' | 'false' ;
 
 comment = '//' , { CHAR } , ? LF ?
         | '/*' , { CHAR } , '*/' ;
 
-LETTER = 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'H' | 'I'
-       | 'J' | 'K' | 'L' | 'M' | 'N' | 'O' | 'P' | 'Q' | 'R'
-       | 'S' | 'T' | 'U' | 'V' | 'W' | 'X' | 'Y' | 'Z' | 'a'
-       | 'b' | 'c' | 'd' | 'e' | 'f' | 'g' | 'h' | 'i' | 'j'
-       | 'k' | 'l' | 'm' | 'n' | 'o' | 'p' | 'q' | 'r' | 's'
-       | 't' | 'u' | 'v' | 'w' | 'x' | 'y' | 'z' | '_' ;
-DIGIT  = '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8'
-       | '9' ;
-CHAR   = ? any UTF-8 character ? ;
+LETTER      = 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'H' | 'I'
+            | 'J' | 'K' | 'L' | 'M' | 'N' | 'O' | 'P' | 'Q' | 'R'
+            | 'S' | 'T' | 'U' | 'V' | 'W' | 'X' | 'Y' | 'Z' | 'a'
+            | 'b' | 'c' | 'd' | 'e' | 'f' | 'g' | 'h' | 'i' | 'j'
+            | 'k' | 'l' | 'm' | 'n' | 'o' | 'p' | 'q' | 'r' | 's'
+            | 't' | 'u' | 'v' | 'w' | 'x' | 'y' | 'z' | '_' ;
+DIGIT       = '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8'
+            | '9' ;
+HEX         = DIGIT | 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'a'
+            | 'b' | 'c' | 'd' | 'e' | 'f' ;
+CHAR        = ? any UTF-8 character ? ;
+ASCII_CHAR  = ? any ASCII character ? ;
+ESCAPE_CHAR = '\' | 'b' | 'n' | 'r' | 't' ;
 
 PREFIX_OPERATOR     = '!' | '-' ;
 INFIX_OPERATOR      = ARITHMETIC_OPERATOR | RELATIONAL_OPERATOR
