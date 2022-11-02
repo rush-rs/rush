@@ -1,6 +1,8 @@
+use std::fmt::Debug;
+
 use crate::Span;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 pub struct Token<'src> {
     pub kind: TokenKind<'src>,
     pub span: Span,
@@ -9,6 +11,20 @@ pub struct Token<'src> {
 impl<'src> Token<'src> {
     pub fn new(kind: TokenKind<'src>, span: Span) -> Self {
         Self { kind, span }
+    }
+}
+
+impl<'src> Debug for Token<'src> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{:>20} (l:{}:{} -- l:{}:{})",
+            format!("{:?}", self.kind),
+            self.span.start.line,
+            self.span.start.column,
+            self.span.end.line,
+            self.span.end.column
+        )
     }
 }
 
@@ -74,6 +90,8 @@ pub enum TokenKind<'src> {
     BitAndAssign,
     BitXorAssign,
 }
+
+// TODO: implement Display trait on token kind
 
 impl<'src> TokenKind<'src> {
     pub fn spanned(self, span: Span) -> Token<'src> {
