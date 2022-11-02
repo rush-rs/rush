@@ -6,6 +6,8 @@ pub struct Token<'src> {
 }
 
 pub enum TokenKind<'src> {
+    Eof,
+
     Ident(&'src str),
     Int(i64),
     Float(f64),
