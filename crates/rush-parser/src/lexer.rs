@@ -41,13 +41,15 @@ impl<'src> Lexer<'src> {
     }
 
     fn next(&mut self) {
+        if let Some(current_char) = self.curr_char {
+            self.location.advance(
+                current_char == '\n',
+                // Byte offset is specified because advance does not know about the current char
+                current_char.len_utf8(),
+            );
+        }
         // Swap the current and next char so that the old next is the new current
         mem::swap(&mut self.curr_char, &mut self.next_char);
-        self.location.advance(
-            self.curr_char == Some('\n'),
-            // Byte offset is specified because advance does not know about the current char
-            self.curr_char.unwrap_or_default().len_utf8(),
-        );
         self.next_char = self.reader.next()
     }
 
@@ -57,7 +59,7 @@ impl<'src> Lexer<'src> {
             self.next();
         }
         let start_loc = self.location;
-        let token = match self.curr_char {
+        let kind = match self.curr_char {
             None => TokenKind::Eof,
             Some('\'') => return self.make_char(),
             Some('/') => {
@@ -108,7 +110,7 @@ impl<'src> Lexer<'src> {
                 ));
             }
         };
-        todo!()
+        Ok(Token::new(kind, Span::new(start_loc, self.location)))
     }
 
     fn make_char_construct(
@@ -168,7 +170,7 @@ impl<'src> Lexer<'src> {
                 self.next();
                 return Err(Error::new(
                     ErrorKind::Syntax,
-                    format!("expected ASCII character, found EOF"),
+                    "expected ASCII character, found EOF".to_string(),
                     Span::new(start_loc, self.location),
                 ));
             }
@@ -207,7 +209,7 @@ impl<'src> Lexer<'src> {
                     self.next();
                     return Err(Error::new(
                         ErrorKind::Syntax,
-                        format!("expected escape character, found EOF"),
+                        "expected escape character, found EOF".to_string(),
                         Span::new(start_loc, self.location),
                     ));
                 }
@@ -258,14 +260,14 @@ impl<'src> Lexer<'src> {
 
                 if self
                     .curr_char
-                    .map_or(false, |current| current.is_ascii_digit())
+                    .map_or(false, |current| !current.is_ascii_digit())
                 {
                     let err_start = self.location;
                     self.next();
                     return Err(Error::new(
                         ErrorKind::Syntax,
                         format!(
-                            "expected digit, found {}",
+                            "expected digit, found '{}'",
                             self.curr_char.map_or("EOF".to_string(), |c| c.to_string())
                         ),
                         Span::new(err_start, self.location),
@@ -283,7 +285,6 @@ impl<'src> Lexer<'src> {
                     .replace('_', "")
                     .parse::<f64>()
                     .expect("The grammar guarantees correctly formed float literals");
-                self.next();
                 return Ok(Token::new(
                     TokenKind::Float(*float),
                     Span::new(start_loc, self.location),
@@ -294,7 +295,6 @@ impl<'src> Lexer<'src> {
                     .replace('_', "")
                     .parse::<f64>()
                     .expect("The grammar guarantees correctly formed float literals");
-                self.next();
                 return Ok(Token::new(
                     TokenKind::Float(*float),
                     Span::new(start_loc, self.location),
@@ -314,7 +314,6 @@ impl<'src> Lexer<'src> {
                         ))
                     }
                 };
-                self.next();
                 return Ok(Token::new(
                     TokenKind::Int(int),
                     Span::new(start_loc, self.location),
@@ -333,7 +332,7 @@ mod tests {
 
     #[test]
     fn test_numbers() {
-        let code = "1";
+        let code = "11.11  ";
         let mut lexer = Lexer::new(code);
 
         println!();
