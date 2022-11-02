@@ -1,6 +1,6 @@
 use crate::Span;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Token<'src> {
     pub kind: TokenKind<'src>,
     pub span: Span,
@@ -12,7 +12,7 @@ impl<'src> Token<'src> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TokenKind<'src> {
     Eof,
 

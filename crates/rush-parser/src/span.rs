@@ -1,4 +1,4 @@
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Span {
     pub start: Location,
     pub end: Location,
@@ -10,7 +10,7 @@ impl Span {
     }
 }
 
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Location {
     pub line: usize,
     pub column: usize,
