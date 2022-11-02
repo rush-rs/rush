@@ -29,4 +29,8 @@ impl Location {
             self.column += 1;
         }
     }
+
+    pub fn until(self, end: Location) -> Span {
+        Span { start: self, end }
+    }
 }
