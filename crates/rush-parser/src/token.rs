@@ -18,7 +18,7 @@ impl<'src> Debug for Token<'src> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{:>20} (l:{}:{} -- l:{}:{})",
+            "{:<15} (l:{}:{} -- l:{}:{})",
             format!("{:?}", self.kind),
             self.span.start.line,
             self.span.start.column,
