@@ -1,6 +1,6 @@
 use std::{mem, str::Chars};
 
-use crate::{Error, ErrorKind, Location, Result, Token, TokenKind};
+use crate::{Error, Location, Result, Token, TokenKind};
 
 pub trait Lex<'src> {
     fn next_token(&mut self) -> Result<Token<'src>>;
@@ -70,7 +70,6 @@ impl<'src> Lex<'src> for Lexer<'src> {
             Some(char) => {
                 self.next();
                 return Err(Error::new(
-                    ErrorKind::Syntax,
                     format!("illegal character `{char}`"),
                     start_loc.until(self.location),
                 ));
@@ -213,7 +212,6 @@ impl<'src> Lexer<'src> {
             None => {
                 self.next();
                 return Err(Error::new(
-                    ErrorKind::Syntax,
                     "unterminated char literal".to_string(),
                     start_loc.until(self.location),
                 ));
@@ -233,7 +231,6 @@ impl<'src> Lexer<'src> {
                         for i in 0..2 {
                             if !self.curr_char.map_or(false, |c| c.is_ascii_hexdigit()) {
                                 return Err(Error::new(
-                                    ErrorKind::Syntax,
                                     format!("expected 2 hexadecimal digits, found {i}"),
                                     start_loc.until(self.location),
                                 ));
@@ -256,7 +253,6 @@ impl<'src> Lexer<'src> {
                             _ => {
                                 self.next();
                                 Err(Error::new(
-                                    ErrorKind::Syntax,
                                     "unterminated char literal".to_string(),
                                     start_loc.until(self.location),
                                 ))
@@ -266,7 +262,6 @@ impl<'src> Lexer<'src> {
                     _ => {
                         self.next();
                         return Err(Error::new(
-                            ErrorKind::Syntax,
                             format!(
                                 "expected escape character, found {}",
                                 self.curr_char.map_or("EOF".to_string(), |c| c.to_string())
@@ -282,7 +277,6 @@ impl<'src> Lexer<'src> {
             Some(char) => {
                 self.next();
                 return Err(Error::new(
-                    ErrorKind::Syntax,
                     format!("character `{char}` is not in ASCII range"),
                     start_loc.until(self.location),
                 ));
@@ -300,7 +294,6 @@ impl<'src> Lexer<'src> {
             _ => {
                 self.next();
                 Err(Error::new(
-                    ErrorKind::Syntax,
                     "unterminated char literal".to_string(),
                     start_loc.until(self.location),
                 ))
@@ -319,7 +312,6 @@ impl<'src> Lexer<'src> {
             if !self.curr_char.map_or(false, |c| c.is_ascii_hexdigit()) {
                 self.next();
                 return Err(Error::new(
-                    ErrorKind::Syntax,
                     "expected at least one hexadecimal digit".to_string(),
                     start_loc.until(self.location),
                 ));
@@ -339,7 +331,6 @@ impl<'src> Lexer<'src> {
                 Ok(num) => num,
                 Err(_) => {
                     return Err(Error::new(
-                        ErrorKind::Syntax,
                         "integer too large for 64 bits".to_string(),
                         start_loc.until(self.location),
                     ))
@@ -364,7 +355,6 @@ impl<'src> Lexer<'src> {
                     let err_start = self.location;
                     self.next();
                     return Err(Error::new(
-                        ErrorKind::Syntax,
                         format!(
                             "expected digit, found `{}`",
                             self.curr_char.map_or("EOF".to_string(), |c| c.to_string())
@@ -408,7 +398,6 @@ impl<'src> Lexer<'src> {
                     Ok(value) => value,
                     Err(_) => {
                         return Err(Error::new(
-                            ErrorKind::Syntax,
                             "integer too large for 64 bits".to_string(),
                             start_loc.until(self.location),
                         ))

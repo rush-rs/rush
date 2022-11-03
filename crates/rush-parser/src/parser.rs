@@ -1,6 +1,6 @@
 use std::{fmt::Debug, mem};
 
-use crate::{ast::*, Error, ErrorKind, Lex, Location, Result, Span, Token, TokenKind};
+use crate::{ast::*, Error, Lex, Location, Result, Span, Token, TokenKind};
 
 pub struct Parser<'src, Lexer: Lex<'src>> {
     lexer: Lexer,
@@ -41,7 +41,6 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
 
         if self.curr_tok.kind != TokenKind::Eof {
             self.errors.push(Error::new(
-                ErrorKind::Syntax,
                 format!("expected EOF, found `{}`", self.curr_tok.kind),
                 self.curr_tok.span,
             ))
@@ -64,7 +63,6 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
     fn expect(&mut self, kind: TokenKind) -> Result<()> {
         if self.curr_tok.kind != kind {
             return Err(Error::new(
-                ErrorKind::Syntax,
                 format!("expected `{kind}`, found `{}`", self.curr_tok.kind),
                 self.curr_tok.span,
             ));
@@ -81,7 +79,6 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
                 Ok(ident)
             }
             _ => Err(Error::new(
-                ErrorKind::Syntax,
                 format!("expected identifier, found `{}`", self.curr_tok.kind),
                 self.curr_tok.span,
             )),
@@ -91,11 +88,8 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
     // expects curr_tok to be the specified token kind and adds a soft error otherwise
     fn expect_recoverable(&mut self, kind: TokenKind, message: impl Into<String>) -> Result<()> {
         if self.curr_tok.kind != kind {
-            self.errors.push(Error::new(
-                ErrorKind::Syntax,
-                message.into(),
-                self.curr_tok.span,
-            ));
+            self.errors
+                .push(Error::new(message.into(), self.curr_tok.span));
         } else {
             self.next()?;
         }
@@ -126,7 +120,6 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             TokenKind::Ident("char") => Type::Char,
             TokenKind::Ident(ident) => {
                 self.errors.push(Error::new(
-                    ErrorKind::Syntax,
                     format!("unknown type `{ident}`"),
                     self.curr_tok.span,
                 ));
@@ -139,7 +132,6 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             }
             invalid => {
                 return Err(Error::new(
-                    ErrorKind::Syntax,
                     format!("expected a type, found `{invalid}`"),
                     self.curr_tok.span,
                 ));
@@ -289,7 +281,6 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             (TokenKind::Semicolon, false) => self.next()?,
             (_, true) => {}
             (_, false) => self.errors.push(Error::new(
-                ErrorKind::Syntax,
                 "missing semicolon after statement".to_string(),
                 self.curr_tok.span,
             )),
@@ -317,7 +308,6 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             TokenKind::LParen => Expression::Grouped(self.grouped_expr()?.into()),
             invalid => {
                 return Err(Error::new(
-                    ErrorKind::Syntax,
                     format!("expected an expression, found `{invalid}`"),
                     self.curr_tok.span,
                 ));
@@ -453,7 +443,6 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
                     TokenKind::LBrace => self.block()?,
                     invalid => {
                         return Err(Error::new(
-                            ErrorKind::Syntax,
                             format!(
                                 "expected either `if` or block after `else`, found `{invalid}`"
                             ),
@@ -533,7 +522,6 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             Expression::Ident(item) => item,
             _ => {
                 self.errors.push(Error::new(
-                    ErrorKind::Syntax,
                     "left hand side of assignment must be an identifier".to_string(),
                     self.curr_tok.span,
                 ));
