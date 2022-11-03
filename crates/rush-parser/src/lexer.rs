@@ -54,14 +54,15 @@ impl<'src> Lexer<'src> {
     }
 
     pub fn next_token(&mut self) -> Result<Token<'src>> {
-        while let Some(current) = self.curr_char {
-            match current {
-                ' ' | '\t' | '\n' | '\r' => self.next(),
-                '/' => self.skip_comment(),
+        loop {
+            match self.curr_char {
+                Some(' ' | '\t' | '\n' | '\r') => self.next(),
+                Some('/') if self.next_char == Some('/') || self.next_char == Some('*') => {
+                    self.skip_comment()
+                }
                 _ => break,
             }
         }
-
         let start_loc = self.location;
         let kind = match self.curr_char {
             None => TokenKind::Eof,
@@ -78,7 +79,7 @@ impl<'src> Lexer<'src> {
             Some('-') if self.next_char == Some('>') => {
                 self.next();
                 self.next();
-                return Ok(TokenKind::Arrow.spanned(Span::new(start_loc, self.location)));
+                TokenKind::Arrow
             }
             Some('-') => char_construct!(self, Minus, MulAssign, _, _),
             Some('+') => char_construct!(self, Plus, PlusAssign, _, _),
@@ -109,9 +110,8 @@ impl<'src> Lexer<'src> {
     }
 
     fn skip_comment(&mut self) {
-        match self.next_char {
+        match self.curr_char {
             Some('/') => {
-                self.next();
                 self.next();
                 while self.curr_char != None && self.curr_char != Some('\n') {
                     self.next()
@@ -119,7 +119,6 @@ impl<'src> Lexer<'src> {
                 self.next();
             }
             Some('*') => {
-                self.next();
                 self.next();
                 while let Some(current) = self.curr_char {
                     match current {
@@ -355,7 +354,7 @@ impl<'src> Lexer<'src> {
     fn make_name(&mut self) -> Token<'src> {
         let start_loc = self.location;
         while self.curr_char.map_or(false, |current| {
-            (current.is_ascii_alphabetic() || current.is_alphabetic() || current == '_')
+            current.is_ascii_alphabetic() || current.is_ascii_digit() || current == '_'
         }) {
             self.next()
         }
