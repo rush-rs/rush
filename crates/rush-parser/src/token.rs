@@ -45,6 +45,7 @@ pub enum TokenKind<'src> {
     Return,
     If,
     Else,
+    As,
 
     LParen,
     RParen,
@@ -150,6 +151,7 @@ impl Display for TokenKind<'_> {
             Self::Return => write!(f, "return"),
             Self::If => write!(f, "if"),
             Self::Else => write!(f, "else"),
+            Self::As => write!(f, "as"),
             Self::LParen => write!(f, "("),
             Self::RParen => write!(f, ")"),
             Self::LBrace => write!(f, "{{"),
