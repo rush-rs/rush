@@ -234,7 +234,7 @@ impl<'src> Parser<'src> {
         };
 
         self.expect(TokenKind::Assign)?;
-        let expr = self.expression()?;
+        let expr = self.expression(0)?;
 
         if self.curr_tok.kind != TokenKind::Semicolon {
             self.errors.push(Error::new(
@@ -263,7 +263,7 @@ impl<'src> Parser<'src> {
 
         let expr = match self.curr_tok.kind {
             TokenKind::Semicolon => None,
-            _ => Some(self.expression()?),
+            _ => Some(self.expression(0)?),
         };
 
         if self.curr_tok.kind != TokenKind::Semicolon {
@@ -286,9 +286,9 @@ impl<'src> Parser<'src> {
         let start_loc = self.curr_tok.span.start;
 
         let (expr, with_block) = match self.curr_tok.kind {
-            TokenKind::If => (Expression::If(Box::new(self.if_expr()?)), true),
-            TokenKind::LBrace => (Expression::Block(Box::new(self.block()?)), true),
-            _ => (self.expression()?, false),
+            TokenKind::If => (Expression::If(self.if_expr()?.into()), true),
+            TokenKind::LBrace => (Expression::Block(self.block()?.into()), true),
+            _ => (self.expression(0)?, false),
         };
 
         match (self.curr_tok.kind, with_block) {
@@ -308,27 +308,92 @@ impl<'src> Parser<'src> {
         })
     }
 
-    fn expression(&mut self) -> Result<Expression<'src>> {
-        todo!()
+    fn expression(&mut self, prec: u8) -> Result<Expression<'src>> {
+        let mut lhs = match self.curr_tok.kind {
+            TokenKind::LBrace => Expression::Block(self.block()?.into()),
+            TokenKind::If => Expression::If(self.if_expr()?.into()),
+            TokenKind::Int(num) => Expression::Int(num),
+            TokenKind::Float(num) => Expression::Float(num),
+            TokenKind::True => Expression::Bool(true),
+            TokenKind::False => Expression::Bool(false),
+            TokenKind::Ident(ident) => Expression::Ident(ident),
+            TokenKind::Not => Expression::Prefix(self.prefix_expr(PrefixOp::Not)?.into()),
+            TokenKind::Minus => Expression::Prefix(self.prefix_expr(PrefixOp::Neg)?.into()),
+            TokenKind::LParen => Expression::Grouped(self.expression(0)?.into()),
+            kind => {
+                return Err(Error::new(
+                    ErrorKind::Syntax,
+                    // TODO: use Display trait
+                    format!("expected an expression, found {kind:?}"),
+                    self.curr_tok.span,
+                ));
+            }
+        };
+
+        // TODO: or >= ?
+        while self.curr_tok.kind.prec().0 > prec {
+            lhs = match self.curr_tok.kind {
+                TokenKind::Plus => Expression::Infix(self.infix_expr(lhs, InfixOp::Plus)?.into()),
+                TokenKind::Minus => Expression::Infix(self.infix_expr(lhs, InfixOp::Minus)?.into()),
+                TokenKind::Star => Expression::Infix(self.infix_expr(lhs, InfixOp::Mul)?.into()),
+                TokenKind::Slash => Expression::Infix(self.infix_expr(lhs, InfixOp::Div)?.into()),
+                TokenKind::Percent => Expression::Infix(self.infix_expr(lhs, InfixOp::Rem)?.into()),
+                TokenKind::Pow => Expression::Infix(self.infix_expr(lhs, InfixOp::Pow)?.into()),
+                TokenKind::Eq => Expression::Infix(self.infix_expr(lhs, InfixOp::Eq)?.into()),
+                TokenKind::Neq => Expression::Infix(self.infix_expr(lhs, InfixOp::Neq)?.into()),
+                TokenKind::Lt => Expression::Infix(self.infix_expr(lhs, InfixOp::Lt)?.into()),
+                TokenKind::Gt => Expression::Infix(self.infix_expr(lhs, InfixOp::Gt)?.into()),
+                TokenKind::Lte => Expression::Infix(self.infix_expr(lhs, InfixOp::Lte)?.into()),
+                TokenKind::Gte => Expression::Infix(self.infix_expr(lhs, InfixOp::Gte)?.into()),
+                TokenKind::Shl => Expression::Infix(self.infix_expr(lhs, InfixOp::Shl)?.into()),
+                TokenKind::Shr => Expression::Infix(self.infix_expr(lhs, InfixOp::Shr)?.into()),
+                TokenKind::BitOr => Expression::Infix(self.infix_expr(lhs, InfixOp::BitOr)?.into()),
+                TokenKind::BitAnd => {
+                    Expression::Infix(self.infix_expr(lhs, InfixOp::BitAnd)?.into())
+                }
+                TokenKind::BitXor => {
+                    Expression::Infix(self.infix_expr(lhs, InfixOp::BitXor)?.into())
+                }
+                TokenKind::And => Expression::Infix(self.infix_expr(lhs, InfixOp::And)?.into()),
+                TokenKind::Or => Expression::Infix(self.infix_expr(lhs, InfixOp::Or)?.into()),
+                // TODO: CastExpr
+                // TokenKind::As => Expression::Cast(self.cast_expr(lhs)?.into()),
+                TokenKind::LParen => Expression::Call(self.call_expr(lhs)?.into()),
+                _ => return Ok(lhs),
+            };
+        }
+
+        Ok(lhs)
     }
 
     fn if_expr(&mut self) -> Result<IfExpr<'src>> {
         todo!()
     }
 
-    fn prefix_expr(&mut self) -> Result<PrefixExpr<'src>> {
+    fn prefix_expr(&mut self, op: PrefixOp) -> Result<PrefixExpr<'src>> {
         todo!()
     }
 
-    fn infix_expr(&mut self) -> Result<InfixExpr<'src>> {
+    fn infix_expr(&mut self, lhs: Expression<'src>, op: InfixOp) -> Result<InfixExpr<'src>> {
+        let start_loc = self.curr_tok.span.start;
+
+        let right_prec = self.curr_tok.kind.prec().1;
+        self.next()?;
+        let rhs = self.expression(right_prec)?;
+
+        Ok(InfixExpr {
+            span: start_loc.until(self.prev_tok.span.end),
+            lhs,
+            op,
+            rhs,
+        })
+    }
+
+    fn cast_expr(&mut self, expr: Expression<'src>) -> Result<CastExpr<'src>> {
         todo!()
     }
 
-    fn cast_expr(&mut self) -> Result<CastExpr<'src>> {
-        todo!()
-    }
-
-    fn call_expr(&mut self) -> Result<CallExpr<'src>> {
+    fn call_expr(&mut self, expr: Expression<'src>) -> Result<CallExpr<'src>> {
         todo!()
     }
 }

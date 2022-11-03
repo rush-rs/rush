@@ -99,9 +99,9 @@ pub enum PrefixOp {
 #[derive(Debug, Clone)]
 pub struct InfixExpr<'src> {
     pub span: Span,
-    pub left: Expression<'src>,
+    pub lhs: Expression<'src>,
     pub op: InfixOp,
-    pub right: Expression<'src>,
+    pub rhs: Expression<'src>,
 }
 
 #[derive(Debug, Clone)]
