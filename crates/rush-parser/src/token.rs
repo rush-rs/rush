@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::fmt::{self, Debug, Display, Formatter};
 
 use crate::Span;
 
@@ -14,8 +14,8 @@ impl<'src> Token<'src> {
     }
 }
 
-impl<'src> Debug for Token<'src> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Debug for Token<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "{:<15} (l:{}:{} -- l:{}:{})",
@@ -91,8 +91,6 @@ pub enum TokenKind<'src> {
     BitXorAssign,
 }
 
-// TODO: implement Display trait on token kind
-
 impl<'src> TokenKind<'src> {
     pub fn spanned(self, span: Span) -> Token<'src> {
         Token { kind: self, span }
@@ -126,5 +124,93 @@ impl<'src> TokenKind<'src> {
             TokenKind::LParen => (25, 26),
             _ => (0, 0),
         }
+    }
+}
+
+impl Display for TokenKind<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Eof => write!(f, "EOF"),
+            Self::Ident(ident) => write!(f, "{ident}"),
+            Self::Int(num) => write!(f, "{num}"),
+            Self::Float(num) => write!(f, "{num}"),
+            Self::Char(b'\\') => write!(f, "'\\\\'"),
+            Self::Char(b'\x08') => write!(f, "'\\b'"),
+            Self::Char(b'\n') => write!(f, "'\\n'"),
+            Self::Char(b'\r') => write!(f, "'\\r'"),
+            Self::Char(b'\t') => write!(f, "'\\t'"),
+            Self::Char(b'\'') => write!(f, "'\\''"),
+            Self::Char(char @ b' '..=b'~') => write!(f, "'{}'", *char as char),
+            Self::Char(char) => write!(f, "'\\x{char:x}'"),
+            Self::True => write!(f, "true"),
+            Self::False => write!(f, "false"),
+            Self::Fn => write!(f, "fn"),
+            Self::Let => write!(f, "let"),
+            Self::Mut => write!(f, "mut"),
+            Self::Return => write!(f, "return"),
+            Self::If => write!(f, "if"),
+            Self::Else => write!(f, "else"),
+            Self::LParen => write!(f, "("),
+            Self::RParen => write!(f, ")"),
+            Self::LBrace => write!(f, "{{"),
+            Self::RBrace => write!(f, "}}"),
+            Self::Arrow => write!(f, "->"),
+            Self::Comma => write!(f, ","),
+            Self::Colon => write!(f, ":"),
+            Self::Semicolon => write!(f, ";"),
+            Self::Not => write!(f, "!"),
+            Self::Minus => write!(f, "-"),
+            Self::Plus => write!(f, "+"),
+            Self::Star => write!(f, "*"),
+            Self::Slash => write!(f, "/"),
+            Self::Percent => write!(f, "%"),
+            Self::Pow => write!(f, "**"),
+            Self::Eq => write!(f, "=="),
+            Self::Neq => write!(f, "!="),
+            Self::Lt => write!(f, "<"),
+            Self::Gt => write!(f, ">"),
+            Self::Lte => write!(f, "<="),
+            Self::Gte => write!(f, ">="),
+            Self::Shl => write!(f, "<<"),
+            Self::Shr => write!(f, ">>"),
+            Self::BitOr => write!(f, "|"),
+            Self::BitAnd => write!(f, "&"),
+            Self::BitXor => write!(f, "^"),
+            Self::And => write!(f, "&&"),
+            Self::Or => write!(f, "||"),
+            Self::Assign => write!(f, "="),
+            Self::PlusAssign => write!(f, "+="),
+            Self::MinusAssign => write!(f, "-="),
+            Self::MulAssign => write!(f, "*="),
+            Self::DivAssign => write!(f, "/="),
+            Self::RemAssign => write!(f, "%="),
+            Self::PowAssign => write!(f, "**="),
+            Self::ShlAssign => write!(f, "<<="),
+            Self::ShrAssign => write!(f, ">>="),
+            Self::BitOrAssign => write!(f, "|="),
+            Self::BitAndAssign => write!(f, "&="),
+            Self::BitXorAssign => write!(f, "^="),
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn char_display() {
+        assert_eq!(TokenKind::Char(b'\\').to_string(), "'\\\\'");
+        assert_eq!(TokenKind::Char(0x08).to_string(), "'\\b'");
+        assert_eq!(TokenKind::Char(b'\n').to_string(), "'\\n'");
+        assert_eq!(TokenKind::Char(b'\r').to_string(), "'\\r'");
+        assert_eq!(TokenKind::Char(b'\t').to_string(), "'\\t'");
+        assert_eq!(TokenKind::Char(b'\'').to_string(), "'\\''");
+        assert_eq!(TokenKind::Char(b'a').to_string(), "'a'");
+        assert_eq!(TokenKind::Char(b'0').to_string(), "'0'");
+        assert_eq!(TokenKind::Char(b' ').to_string(), "' '");
+        assert_eq!(TokenKind::Char(b'~').to_string(), "'~'");
+        assert_eq!(TokenKind::Char(0x7f).to_string(), "'\\x7f'");
+        assert_eq!(TokenKind::Char(0x1b).to_string(), "'\\x1b'");
     }
 }

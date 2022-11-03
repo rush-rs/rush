@@ -31,8 +31,7 @@ impl<'src> Parser<'src> {
         if self.curr_tok.kind != TokenKind::Eof {
             self.errors.push(Error::new(
                 ErrorKind::Syntax,
-                // TODO: use Display trait
-                format!("expected EOF, found {:?}", self.curr_tok.kind),
+                format!("expected EOF, found {}", self.curr_tok.kind),
                 self.curr_tok.span,
             ))
         }
@@ -54,8 +53,7 @@ impl<'src> Parser<'src> {
         if self.curr_tok.kind != kind {
             return Err(Error::new(
                 ErrorKind::Syntax,
-                // TODO: use Display trait
-                format!("expected {kind:?}, found {:?}", self.curr_tok.kind),
+                format!("expected {kind}, found {}", self.curr_tok.kind),
                 self.curr_tok.span,
             ));
         }
@@ -71,7 +69,7 @@ impl<'src> Parser<'src> {
             }
             _ => Err(Error::new(
                 ErrorKind::Syntax,
-                format!("expected identifier, found {:?}", self.curr_tok.kind),
+                format!("expected identifier, found {}", self.curr_tok.kind),
                 self.curr_tok.span,
             )),
         }
@@ -123,8 +121,7 @@ impl<'src> Parser<'src> {
             kind => {
                 return Err(Error::new(
                     ErrorKind::Syntax,
-                    // TODO: use Display trait
-                    format!("expected a type, found {kind:?}"),
+                    format!("expected a type, found {kind}"),
                     self.curr_tok.span,
                 ));
             }
@@ -323,8 +320,7 @@ impl<'src> Parser<'src> {
             kind => {
                 return Err(Error::new(
                     ErrorKind::Syntax,
-                    // TODO: use Display trait
-                    format!("expected an expression, found {kind:?}"),
+                    format!("expected an expression, found {kind}"),
                     self.curr_tok.span,
                 ));
             }
@@ -427,8 +423,7 @@ impl<'src> Parser<'src> {
                     kind => {
                         return Err(Error::new(
                             ErrorKind::Syntax,
-                            // TODO: use Display trait
-                            format!("expected either `if` or block after `else`, found {kind:?}"),
+                            format!("expected either `if` or block after `else`, found {kind}"),
                             self.curr_tok.span,
                         ));
                     }
