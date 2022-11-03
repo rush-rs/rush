@@ -1,5 +1,8 @@
 [workspace]
-members = ["crates/rush-parser"]
+members = [
+    "crates/rush-parser",
+    "crates/rush-analyzer",
+]
 package.authors = ["RubixDev", "MikMuellerDev"]
 package.edition = "2021"
 package.license = "GPL-3.0-only"

@@ -3,5 +3,12 @@
 version = 3
 
 [[package]]
+name = "rush-analyzer"
+version = "0.1.0"
+dependencies = [
+ "rush-parser",
+]
+
+[[package]]
 name = "rush-parser"
 version = "0.1.0"
