@@ -1,8 +1,6 @@
-use std::mem;
-use std::str::Chars;
+use std::{mem, str::Chars};
 
-use crate::error::Result;
-use crate::{Error, ErrorKind, Location, Span, Token, TokenKind};
+use crate::{Error, ErrorKind, Location, Result, Token, TokenKind};
 
 pub trait Lex<'src> {
     fn next_token(&mut self) -> Result<Token<'src>>;
@@ -31,13 +29,12 @@ macro_rules! char_construct {
 
 impl<'src> Lex<'src> for Lexer<'src> {
     fn next_token(&mut self) -> Result<Token<'src>> {
-        // Skip comments, whitespaces and newlines
+        // skip comments, whitespaces and newlines
         loop {
-            match self.curr_char {
-                Some(' ' | '\t' | '\n' | '\r') => self.next(),
-                Some('/') if self.next_char == Some('/') || self.next_char == Some('*') => {
-                    self.skip_comment()
-                }
+            match (self.curr_char, self.next_char) {
+                (Some(' ' | '\t' | '\n' | '\r'), _) => self.next(),
+                (Some('/'), Some('/')) => self.skip_line_comment(),
+                (Some('/'), Some('*')) => self.skip_block_comment(),
                 _ => break,
             }
         }
@@ -52,7 +49,7 @@ impl<'src> Lex<'src> for Lexer<'src> {
             Some(',') => TokenKind::Comma,
             Some(':') => TokenKind::Colon,
             Some(';') => TokenKind::Semicolon,
-            Some('!') => char_construct!(self, Not, Neq, _, _,),
+            Some('!') => char_construct!(self, Not, Neq, _, _),
             Some('-') if self.next_char == Some('>') => {
                 self.next();
                 TokenKind::Arrow
@@ -68,21 +65,19 @@ impl<'src> Lex<'src> for Lexer<'src> {
             Some('|') => char_construct!(self, BitOr, BitOrAssign, Or, _),
             Some('&') => char_construct!(self, BitAnd, BitAndAssign, And, _),
             Some('^') => char_construct!(self, BitXor, BitXorAssign, _, _),
-            Some(other) if other.is_ascii_digit() => return self.make_number(),
-            Some(other) if other.is_ascii_alphabetic() || other == '_' => {
-                return Ok(self.make_name())
-            }
-            Some(other) => {
+            Some(char) if char.is_ascii_digit() => return self.make_number(),
+            Some(char) if char.is_ascii_alphabetic() || char == '_' => return Ok(self.make_name()),
+            Some(char) => {
                 self.next();
                 return Err(Error::new(
                     ErrorKind::Syntax,
-                    format!("illegal character: '{other}'"),
+                    format!("illegal character `{char}`"),
                     start_loc.until(self.location),
                 ));
             }
         };
         self.next();
-        Ok(Token::new(kind, start_loc.until(self.location)))
+        Ok(kind.spanned(start_loc.until(self.location)))
     }
 }
 
@@ -95,7 +90,7 @@ impl<'src> Lexer<'src> {
             curr_char: None,
             next_char: None,
         };
-        // Advance the lexer 2 times so that curr_char and next_char are populated
+        // advance the lexer twice so that curr_char and next_char are populated
         lexer.next();
         lexer.next();
         lexer
@@ -105,16 +100,23 @@ impl<'src> Lexer<'src> {
         if let Some(current_char) = self.curr_char {
             self.location.advance(
                 current_char == '\n',
-                // Byte offset is specified because advance does not know about the current char
+                // byte count is specified because advance does not know about the current char
                 current_char.len_utf8(),
             );
         }
-        // Swap the current and next char so that the old next is the new current
+        // swap the current and next char so that the old next is the new current
         mem::swap(&mut self.curr_char, &mut self.next_char);
         self.next_char = self.reader.next()
     }
 
-    fn skip_comment(&mut self) {
+    fn skip_line_comment(&mut self) {
+        self.next();
+        self.next();
+        while !matches!(self.curr_char, Some('\n') | None) {
+            self.next()
+        }
+        self.next();
+
         match self.curr_char {
             Some('/') => {
                 self.next();
@@ -140,6 +142,25 @@ impl<'src> Lexer<'src> {
         }
     }
 
+    fn skip_block_comment(&mut self) {
+        self.next();
+        self.next();
+        loop {
+            match (self.curr_char, self.next_char) {
+                // end of block comment
+                (Some('*'), Some('/')) => {
+                    self.next();
+                    self.next();
+                    break;
+                }
+                // any char in comment
+                (Some(_), _) => self.next(),
+                // end of file
+                _ => break,
+            }
+        }
+    }
+
     fn make_char_construct(
         &mut self,
         kind_single: TokenKind<'src>,
@@ -147,7 +168,7 @@ impl<'src> Lexer<'src> {
         kind_double: Option<TokenKind<'src>>,
         kind_double_with_eq: Option<TokenKind<'src>>,
     ) -> Token<'src> {
-        let start_location = self.location;
+        let start_loc = self.location;
         let char = self
             .curr_char
             .expect("this should only be called when self.curr_char is Some(_)");
@@ -160,7 +181,7 @@ impl<'src> Lexer<'src> {
         ) {
             (Some(kind), .., Some('=')) => {
                 self.next();
-                Token::new(kind, Span::new(start_location, self.location))
+                kind.spanned(start_loc.until(self.location))
             }
             (_, Some(_), _, Some(current_char)) | (_, _, Some(_), Some(current_char))
                 if current_char == char =>
@@ -169,9 +190,9 @@ impl<'src> Lexer<'src> {
                 match (kind_double, kind_double_with_eq, self.curr_char) {
                     (_, Some(kind), Some('=')) => {
                         self.next();
-                        Token::new(kind, Span::new(start_location, self.location))
+                        kind.spanned(start_loc.until(self.location))
                     }
-                    (Some(kind), ..) => Token::new(kind, Span::new(start_location, self.location)),
+                    (Some(kind), ..) => kind.spanned(start_loc.until(self.location)),
                     // can panic when all this is true:
                     // - `kind_double` is `None`
                     // - `kind_double_with_eq` is `Some(_)`
@@ -180,7 +201,7 @@ impl<'src> Lexer<'src> {
                     _ => unreachable!(),
                 }
             }
-            _ => Token::new(kind_single, Span::new(start_location, self.location)),
+            _ => kind_single.spanned(start_loc.until(self.location)),
         }
     }
 
@@ -193,8 +214,8 @@ impl<'src> Lexer<'src> {
                 self.next();
                 return Err(Error::new(
                     ErrorKind::Syntax,
-                    "expected ASCII character, found EOF".to_string(),
-                    Span::new(start_loc, self.location),
+                    "unterminated char literal".to_string(),
+                    start_loc.until(self.location),
                 ));
             }
             Some('\\') => {
@@ -209,35 +230,37 @@ impl<'src> Lexer<'src> {
                         self.next();
                         self.next();
                         let start_hex = self.location.byte_idx;
-                        let mut hex_digit_count = 0;
-                        while self.curr_char.map_or(false, |c| c.is_ascii_hexdigit()) {
+                        for i in 0..2 {
+                            if !self.curr_char.map_or(false, |c| c.is_ascii_hexdigit()) {
+                                return Err(Error::new(
+                                    ErrorKind::Syntax,
+                                    format!("expected 2 hexadecimal digits, found {i}"),
+                                    start_loc.until(self.location),
+                                ));
+                            }
                             self.next();
-                            hex_digit_count += 1;
                         }
-                        if hex_digit_count != 2 {
-                            return Err(Error::new(
-                                ErrorKind::Syntax,
-                                format!("expected exactly 2 hex digits, found {hex_digit_count}"),
-                                Span::new(start_loc, self.location),
-                            ));
-                        }
-                        return if self.curr_char != Some('\'') {
-                            Err(Error::new(
-                                ErrorKind::Syntax,
-                                "unterminated char literal".to_string(),
-                                Span::new(start_loc, self.location),
-                            ))
-                        } else {
-                            let char = u8::from_str_radix(
-                                &self.input[start_hex..self.location.byte_idx],
-                                16,
-                            )
-                            .expect("This string slice should be valid hexadecimal");
-                            self.next();
-                            Ok(Token::new(
-                                TokenKind::Char(char),
-                                Span::new(start_loc, self.location),
-                            ))
+                        return match self.curr_char {
+                            Some('\'') => {
+                                let char = u8::from_str_radix(
+                                    &self.input[start_hex..self.location.byte_idx],
+                                    16,
+                                )
+                                .expect("This string slice should be valid hexadecimal");
+                                self.next();
+                                Ok(Token::new(
+                                    TokenKind::Char(char),
+                                    start_loc.until(self.location),
+                                ))
+                            }
+                            _ => {
+                                self.next();
+                                Err(Error::new(
+                                    ErrorKind::Syntax,
+                                    "unterminated char literal".to_string(),
+                                    start_loc.until(self.location),
+                                ))
+                            }
                         };
                     }
                     _ => {
@@ -248,15 +271,22 @@ impl<'src> Lexer<'src> {
                                 "expected escape character, found {}",
                                 self.curr_char.map_or("EOF".to_string(), |c| c.to_string())
                             ),
-                            Span::new(start_loc, self.location),
+                            start_loc.until(self.location),
                         ));
                     }
                 };
                 self.next();
                 char
             }
-            Some(other) if other.is_ascii() => other as u8,
-            _ => unreachable!(),
+            Some(char) if char.is_ascii() => char as u8,
+            Some(char) => {
+                self.next();
+                return Err(Error::new(
+                    ErrorKind::Syntax,
+                    format!("character `{char}` is not in ASCII range"),
+                    start_loc.until(self.location),
+                ));
+            }
         };
         self.next();
         match self.curr_char {
@@ -264,7 +294,7 @@ impl<'src> Lexer<'src> {
                 self.next();
                 Ok(Token::new(
                     TokenKind::Char(char),
-                    Span::new(start_loc, self.location),
+                    start_loc.until(self.location),
                 ))
             }
             _ => {
@@ -272,7 +302,7 @@ impl<'src> Lexer<'src> {
                 Err(Error::new(
                     ErrorKind::Syntax,
                     "unterminated char literal".to_string(),
-                    Span::new(start_loc, self.location),
+                    start_loc.until(self.location),
                 ))
             }
         }
@@ -281,9 +311,11 @@ impl<'src> Lexer<'src> {
     fn make_number(&mut self) -> Result<Token<'src>> {
         let start_loc = self.location;
 
+        // TODO: hex integers
+
         while self
             .curr_char
-            .map_or(false, |current| current.is_ascii_digit())
+            .map_or(false, |c| c.is_ascii_digit() || c == '_')
         {
             self.next();
         }
@@ -292,78 +324,75 @@ impl<'src> Lexer<'src> {
             Some('.') => {
                 self.next();
 
-                if self
-                    .curr_char
-                    .map_or(false, |current| !current.is_ascii_digit())
-                {
+                if !self.curr_char.map_or(false, |c| c.is_ascii_digit()) {
                     let err_start = self.location;
                     self.next();
                     return Err(Error::new(
                         ErrorKind::Syntax,
                         format!(
-                            "expected digit, found '{}'",
+                            "expected digit, found `{}`",
                             self.curr_char.map_or("EOF".to_string(), |c| c.to_string())
                         ),
-                        Span::new(err_start, self.location),
+                        err_start.until(self.location),
                     ));
                 }
 
                 while self
                     .curr_char
-                    .map_or(false, |current| current.is_ascii_digit())
+                    .map_or(false, |c| c.is_ascii_digit() || c == '_')
                 {
                     self.next();
                 }
 
-                let float = &self.input[start_loc.byte_idx..self.location.byte_idx]
+                let float = self.input[start_loc.byte_idx..self.location.byte_idx]
                     .replace('_', "")
-                    .parse::<f64>()
+                    .parse()
                     .expect("The grammar guarantees correctly formed float literals");
-                return Ok(Token::new(
-                    TokenKind::Float(*float),
-                    Span::new(start_loc, self.location),
-                ));
+                Ok(Token::new(
+                    TokenKind::Float(float),
+                    start_loc.until(self.location),
+                ))
             }
             Some('f') => {
-                let float = &self.input[start_loc.byte_idx..self.location.byte_idx]
+                let float = self.input[start_loc.byte_idx..self.location.byte_idx]
                     .replace('_', "")
-                    .parse::<f64>()
+                    .parse()
                     .expect("The grammar guarantees correctly formed float literals");
-                return Ok(Token::new(
-                    TokenKind::Float(*float),
-                    Span::new(start_loc, self.location),
-                ));
+                self.next();
+                Ok(Token::new(
+                    TokenKind::Float(float),
+                    start_loc.until(self.location),
+                ))
             }
             _ => {
                 let int = match self.input[start_loc.byte_idx..self.location.byte_idx]
                     .replace('_', "")
-                    .parse::<i64>()
+                    .parse()
                 {
                     Ok(value) => value,
-                    Err(err) => {
+                    Err(_) => {
                         return Err(Error::new(
                             ErrorKind::Syntax,
-                            format!("invalid decimal: {err}"),
-                            Span::new(start_loc, self.location),
+                            "integer too large for 64 bits".to_string(),
+                            start_loc.until(self.location),
                         ))
                     }
                 };
-                return Ok(Token::new(
+                Ok(Token::new(
                     TokenKind::Int(int),
-                    Span::new(start_loc, self.location),
-                ));
+                    start_loc.until(self.location),
+                ))
             }
         }
     }
 
     fn make_name(&mut self) -> Token<'src> {
         let start_loc = self.location;
-        while self.curr_char.map_or(false, |current| {
-            current.is_ascii_alphabetic() || current.is_ascii_digit() || current == '_'
+        while self.curr_char.map_or(false, |c| {
+            c.is_ascii_alphabetic() || c.is_ascii_digit() || c == '_'
         }) {
             self.next()
         }
-        self.next();
         let kind = match &self.input[start_loc.byte_idx..self.location.byte_idx] {
             "true" => TokenKind::True,
             "false" => TokenKind::False,
@@ -376,7 +405,7 @@ impl<'src> Lexer<'src> {
             "as" => TokenKind::As,
             ident => TokenKind::Ident(ident),
         };
-        Token::new(kind, Span::new(start_loc, self.location))
+        kind.spanned(start_loc.until(self.location))
     }
 }
 
@@ -398,7 +427,7 @@ mod tests {
                 r#"'\x1b'"#,
                 Ok(TokenKind::Char(b'\x1b').spanned(span!(0..6))),
             ),
-            (r#"'\x1b1'"#, Err("expected exactly 2 hex digits, found 3")),
+            (r#"'\x1b1'"#, Err("unterminated char literal")),
             // Keyword
             ("true", Ok(TokenKind::True.spanned(span!(0..4)))),
             ("false", Ok(TokenKind::False.spanned(span!(0..5)))),
