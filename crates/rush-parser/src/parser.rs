@@ -1,16 +1,16 @@
-use std::mem;
+use std::{fmt::Debug, mem};
 
-use crate::{ast::*, Error, ErrorKind, Lexer, Result, Span, Token, TokenKind};
+use crate::{ast::*, Error, ErrorKind, Lex, Location, Result, Span, Token, TokenKind};
 
-pub struct Parser<'src> {
-    lexer: Lexer<'src>,
+pub struct Parser<'src, Lexer: Lex<'src>> {
+    lexer: Lexer,
     prev_tok: Token<'src>,
     curr_tok: Token<'src>,
     errors: Vec<Error>,
 }
 
-impl<'src> Parser<'src> {
-    pub fn new(lexer: Lexer<'src>) -> Self {
+impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
+    pub fn new(lexer: Lexer) -> Self {
         Self {
             lexer,
             // Initialize with dummy Eof tokens

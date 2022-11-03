@@ -4,6 +4,10 @@ use std::str::Chars;
 use crate::error::Result;
 use crate::{Error, ErrorKind, Location, Span, Token, TokenKind};
 
+pub trait Lex<'src> {
+    fn next_token(&mut self) -> Result<Token<'src>>;
+}
+
 pub struct Lexer<'src> {
     input: &'src str,
     reader: Chars<'src>,
@@ -25,35 +29,8 @@ macro_rules! char_construct {
     (@optional $kind:ident) => { Some(TokenKind::$kind) };
 }
 
-impl<'src> Lexer<'src> {
-    pub fn new(text: &'src str) -> Self {
-        let mut lexer = Self {
-            input: text,
-            reader: text.chars(),
-            location: Location::default(),
-            curr_char: None,
-            next_char: None,
-        };
-        // Advance the lexer 2 times so that curr_char and next_char are populated
-        lexer.next();
-        lexer.next();
-        lexer
-    }
-
-    fn next(&mut self) {
-        if let Some(current_char) = self.curr_char {
-            self.location.advance(
-                current_char == '\n',
-                // Byte offset is specified because advance does not know about the current char
-                current_char.len_utf8(),
-            );
-        }
-        // Swap the current and next char so that the old next is the new current
-        mem::swap(&mut self.curr_char, &mut self.next_char);
-        self.next_char = self.reader.next()
-    }
-
-    pub fn next_token(&mut self) -> Result<Token<'src>> {
+impl<'src> Lex<'src> for Lexer<'src> {
+    fn next_token(&mut self) -> Result<Token<'src>> {
         loop {
             match self.curr_char {
                 Some(' ' | '\t' | '\n' | '\r') => self.next(),
@@ -107,6 +84,35 @@ impl<'src> Lexer<'src> {
             }
         };
         Ok(Token::new(kind, Span::new(start_loc, self.location)))
+    }
+}
+
+impl<'src> Lexer<'src> {
+    pub fn new(text: &'src str) -> Self {
+        let mut lexer = Self {
+            input: text,
+            reader: text.chars(),
+            location: Location::default(),
+            curr_char: None,
+            next_char: None,
+        };
+        // Advance the lexer 2 times so that curr_char and next_char are populated
+        lexer.next();
+        lexer.next();
+        lexer
+    }
+
+    fn next(&mut self) {
+        if let Some(current_char) = self.curr_char {
+            self.location.advance(
+                current_char == '\n',
+                // Byte offset is specified because advance does not know about the current char
+                current_char.len_utf8(),
+            );
+        }
+        // Swap the current and next char so that the old next is the new current
+        mem::swap(&mut self.curr_char, &mut self.next_char);
+        self.next_char = self.reader.next()
     }
 
     fn skip_comment(&mut self) {
