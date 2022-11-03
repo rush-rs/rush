@@ -80,12 +80,20 @@ pub enum Statement<'src, Annotation> {
     Expr(ExprStmt<'src, Annotation>),
 }
 
-impl<Expr> Statement<'_, Expr> {
+impl<Annotation> Statement<'_, Annotation> {
     pub fn span(&self) -> Span {
         match self {
             Self::Let(stmt) => stmt.span,
             Self::Return(stmt) => stmt.span,
             Self::Expr(stmt) => stmt.span,
+        }
+    }
+
+    pub fn annotation(&self) -> &Annotation {
+        match self {
+            Self::Let(stmt) => &stmt.annotation,
+            Self::Return(stmt) => &stmt.annotation,
+            Self::Expr(stmt) => &stmt.annotation,
         }
     }
 }
@@ -145,6 +153,23 @@ impl<Annotation> Expression<'_, Annotation> {
             Self::Call(expr) => expr.span,
             Self::Cast(expr) => expr.span,
             Self::Grouped(expr) => expr.span,
+        }
+    }
+
+    pub fn annotation(&self) -> &Annotation {
+        match self {
+            Self::Block(expr) => &expr.annotation,
+            Self::If(expr) => &expr.annotation,
+            Self::Int(expr) => &expr.annotation,
+            Self::Float(expr) => &expr.annotation,
+            Self::Bool(expr) => &expr.annotation,
+            Self::Ident(expr) => &expr.annotation,
+            Self::Prefix(expr) => &expr.annotation,
+            Self::Infix(expr) => &expr.annotation,
+            Self::Assign(expr) => &expr.annotation,
+            Self::Call(expr) => &expr.annotation,
+            Self::Cast(expr) => &expr.annotation,
+            Self::Grouped(expr) => &expr.annotation,
         }
     }
 }
