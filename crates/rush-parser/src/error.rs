@@ -2,7 +2,7 @@ use crate::Span;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Error {
     pub kind: ErrorKind,
     pub message: String,
@@ -19,7 +19,7 @@ impl Error {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum ErrorKind {
     Syntax,
 }

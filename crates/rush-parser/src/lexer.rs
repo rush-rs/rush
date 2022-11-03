@@ -414,21 +414,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_lexer() {
+    fn single_tokens() {
         let tests = [
-            // Char tests
+            // Chars
             ("'a'", Ok(TokenKind::Char(b'a').spanned(span!(0..3)))),
             ("'*'", Ok(TokenKind::Char(b'*').spanned(span!(0..3)))),
             ("'_'", Ok(TokenKind::Char(b'_').spanned(span!(0..3)))),
-            (r#"'\'"#, Err("unterminated char literal")),
-            (r#"'\\'"#, Ok(TokenKind::Char(b'\\').spanned(span!(0..4)))),
-            (r#"'\a'"#, Err("expected escape character, found a")),
-            (
-                r#"'\x1b'"#,
-                Ok(TokenKind::Char(b'\x1b').spanned(span!(0..6))),
-            ),
-            (r#"'\x1b1'"#, Err("unterminated char literal")),
-            // Keyword
+            (r"'\'", Err("unterminated char literal")),
+            (r"'\\'", Ok(TokenKind::Char(b'\\').spanned(span!(0..4)))),
+            (r"'\a'", Err("expected escape character, found a")),
+            (r"'\x1b'", Ok(TokenKind::Char(b'\x1b').spanned(span!(0..6)))),
+            (r"'\x1b1'", Err("unterminated char literal")),
+            // Keywords
             ("true", Ok(TokenKind::True.spanned(span!(0..4)))),
             ("false", Ok(TokenKind::False.spanned(span!(0..5)))),
             ("fn", Ok(TokenKind::Fn.spanned(span!(0..2)))),
@@ -444,7 +441,9 @@ mod tests {
             ("f_0o", Ok(TokenKind::Ident("f_0o").spanned(span!(0..4)))),
             // Numbers
             ("1", Ok(TokenKind::Int(1).spanned(span!(0..1)))),
+            ("0x1b", Ok(TokenKind::Int(0x1b).spanned(span!(0..4)))),
             ("42", Ok(TokenKind::Int(42).spanned(span!(0..2)))),
+            ("42f", Ok(TokenKind::Float(42.0).spanned(span!(0..3)))),
             ("3.1", Ok(TokenKind::Float(3.1).spanned(span!(0..3)))),
             (
                 "42.12345678",
@@ -497,17 +496,17 @@ mod tests {
             ("^=", Ok(TokenKind::BitXorAssign.spanned(span!(0..2)))),
         ];
         println!();
-        for test in tests {
-            let mut lexer = Lexer::new(test.0);
+        for (input, expected) in tests {
+            let mut lexer = Lexer::new(input);
             let res = lexer.next_token();
-            match (res, test.1) {
+            match (res, expected) {
                 (Ok(_), Err(expected)) => panic!("Expected error: {:?}, got none", expected),
                 (Err(err), Ok(_)) => panic!("Unexpected error: {:?}", err),
                 (Err(got), Err(expected)) => assert_eq!(expected, got.message),
                 (Ok(got), Ok(expected)) => {
                     match got.kind {
                         TokenKind::Char(ch) => {
-                            println!("found char: {} ({ch})", char::from_u32(ch as u32).unwrap())
+                            println!("found char: {} ({ch})", got.kind)
                         }
                         _ => println!("{:?}", got),
                     }
@@ -515,5 +514,36 @@ mod tests {
                 }
             }
         }
+    }
+
+    impl<'src> Iterator for Lexer<'src> {
+        type Item = Result<Token<'src>>;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            match self.next_token() {
+                Ok(Token {
+                    kind: TokenKind::Eof,
+                    span: _,
+                }) => None,
+                item => Some(item),
+            }
+        }
+    }
+
+    #[test]
+    fn call_expr() {
+        let lexer = Lexer::new("exit(1 + 3);");
+        assert_eq!(
+            lexer.collect::<Result<Vec<_>>>(),
+            Ok(vec![
+                TokenKind::Ident("exit").spanned(span!(0..4)),
+                TokenKind::LParen.spanned(span!(4..5)),
+                TokenKind::Int(1).spanned(span!(5..6)),
+                TokenKind::Plus.spanned(span!(7..8)),
+                TokenKind::Int(3).spanned(span!(9..10)),
+                TokenKind::RParen.spanned(span!(10..11)),
+                TokenKind::Semicolon.spanned(span!(11..12)),
+            ])
+        );
     }
 }
