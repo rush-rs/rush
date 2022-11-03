@@ -387,8 +387,7 @@ impl<'src> Parser<'src> {
                 TokenKind::BitXorAssign => {
                     Expression::Assign(self.assign_expr(lhs, AssignOp::BitXor)?.into())
                 }
-                // TODO: CastExpr
-                // TokenKind::As => Expression::Cast(self.cast_expr(lhs)?.into()),
+                TokenKind::As => Expression::Cast(self.cast_expr(lhs)?.into()),
                 TokenKind::LParen => Expression::Call(self.call_expr(lhs)?.into()),
                 _ => return Ok(lhs),
             };
@@ -446,8 +445,8 @@ impl<'src> Parser<'src> {
         // Skip the operator token
         self.next()?;
 
-        // PrefixExpr precedence is 27, higher than all InfixExpr precedences
-        let expr = self.expression(27)?;
+        // PrefixExpr precedence is 29, higher than all InfixExpr precedences
+        let expr = self.expression(29)?;
         Ok(PrefixExpr {
             span: start_loc.until(self.prev_tok.span.end),
             op,
@@ -497,10 +496,6 @@ impl<'src> Parser<'src> {
         })
     }
 
-    fn cast_expr(&mut self, expr: Expression<'src>) -> Result<CastExpr<'src>> {
-        todo!()
-    }
-
     fn call_expr(&mut self, expr: Expression<'src>) -> Result<CallExpr<'src>> {
         let start_loc = self.curr_tok.span.start;
 
@@ -534,6 +529,21 @@ impl<'src> Parser<'src> {
             span: start_loc.until(self.prev_tok.span.end),
             expr,
             args,
+        })
+    }
+
+    fn cast_expr(&mut self, expr: Expression<'src>) -> Result<CastExpr<'src>> {
+        let start_loc = self.curr_tok.span.start;
+
+        // Skip `as` token
+        self.next()?;
+
+        let type_ = self.type_()?;
+
+        Ok(CastExpr {
+            span: start_loc.until(self.prev_tok.span.end),
+            expr,
+            type_,
         })
     }
 }

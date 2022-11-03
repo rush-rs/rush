@@ -121,8 +121,9 @@ impl<'src> TokenKind<'src> {
             TokenKind::Shl | TokenKind::Shr => (17, 18),
             TokenKind::Plus | TokenKind::Minus => (19, 20),
             TokenKind::Star | TokenKind::Slash | TokenKind::Percent => (21, 22),
-            TokenKind::Pow => (24, 23),
-            TokenKind::LParen => (25, 26),
+            TokenKind::As => (23, 24),
+            TokenKind::Pow => (26, 25),
+            TokenKind::LParen => (27, 28),
             _ => (0, 0),
         }
     }
