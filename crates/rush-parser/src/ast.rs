@@ -9,7 +9,7 @@ pub struct Program<'src, Stmt> {
     pub functions: Vec<FunctionDefinition<'src, Stmt>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Type {
     Int,
     Float,
