@@ -100,19 +100,30 @@ impl<'src> TokenKind<'src> {
 
     pub(crate) fn prec(&self) -> (u8, u8) {
         match self {
-            TokenKind::Or => (1, 2),
-            TokenKind::And => (3, 4),
-            TokenKind::BitOr => (5, 6),
-            TokenKind::BitXor => (7, 8),
-            TokenKind::BitAnd => (9, 10),
-            TokenKind::Eq | TokenKind::Neq => (11, 12),
-            TokenKind::Lt | TokenKind::Gt | TokenKind::Lte | TokenKind::Gte => (13, 14),
-            TokenKind::Shl | TokenKind::Shr => (15, 16),
-            TokenKind::Plus | TokenKind::Minus => (17, 18),
-            TokenKind::Star | TokenKind::Slash | TokenKind::Percent => (19, 20),
-            TokenKind::Pow => (22, 21),
-            TokenKind::LParen => (23, 24),
-            // TODO: assign expressions
+            TokenKind::Assign
+            | TokenKind::PlusAssign
+            | TokenKind::MinusAssign
+            | TokenKind::MulAssign
+            | TokenKind::DivAssign
+            | TokenKind::RemAssign
+            | TokenKind::PowAssign
+            | TokenKind::ShlAssign
+            | TokenKind::ShrAssign
+            | TokenKind::BitOrAssign
+            | TokenKind::BitAndAssign
+            | TokenKind::BitXorAssign => (1, 2),
+            TokenKind::Or => (3, 4),
+            TokenKind::And => (5, 6),
+            TokenKind::BitOr => (7, 8),
+            TokenKind::BitXor => (9, 10),
+            TokenKind::BitAnd => (11, 12),
+            TokenKind::Eq | TokenKind::Neq => (13, 14),
+            TokenKind::Lt | TokenKind::Gt | TokenKind::Lte | TokenKind::Gte => (15, 16),
+            TokenKind::Shl | TokenKind::Shr => (17, 18),
+            TokenKind::Plus | TokenKind::Minus => (19, 20),
+            TokenKind::Star | TokenKind::Slash | TokenKind::Percent => (21, 22),
+            TokenKind::Pow => (24, 23),
+            TokenKind::LParen => (25, 26),
             _ => (0, 0),
         }
     }

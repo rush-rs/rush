@@ -355,6 +355,42 @@ impl<'src> Parser<'src> {
                 }
                 TokenKind::And => Expression::Infix(self.infix_expr(lhs, InfixOp::And)?.into()),
                 TokenKind::Or => Expression::Infix(self.infix_expr(lhs, InfixOp::Or)?.into()),
+                TokenKind::Assign => {
+                    Expression::Assign(self.assign_expr(lhs, AssignOp::Basic)?.into())
+                }
+                TokenKind::PlusAssign => {
+                    Expression::Assign(self.assign_expr(lhs, AssignOp::Plus)?.into())
+                }
+                TokenKind::MinusAssign => {
+                    Expression::Assign(self.assign_expr(lhs, AssignOp::Minus)?.into())
+                }
+                TokenKind::MulAssign => {
+                    Expression::Assign(self.assign_expr(lhs, AssignOp::Mul)?.into())
+                }
+                TokenKind::DivAssign => {
+                    Expression::Assign(self.assign_expr(lhs, AssignOp::Div)?.into())
+                }
+                TokenKind::RemAssign => {
+                    Expression::Assign(self.assign_expr(lhs, AssignOp::Rem)?.into())
+                }
+                TokenKind::PowAssign => {
+                    Expression::Assign(self.assign_expr(lhs, AssignOp::Pow)?.into())
+                }
+                TokenKind::ShlAssign => {
+                    Expression::Assign(self.assign_expr(lhs, AssignOp::Shl)?.into())
+                }
+                TokenKind::ShrAssign => {
+                    Expression::Assign(self.assign_expr(lhs, AssignOp::Shr)?.into())
+                }
+                TokenKind::BitOrAssign => {
+                    Expression::Assign(self.assign_expr(lhs, AssignOp::BitOr)?.into())
+                }
+                TokenKind::BitAndAssign => {
+                    Expression::Assign(self.assign_expr(lhs, AssignOp::BitAnd)?.into())
+                }
+                TokenKind::BitXorAssign => {
+                    Expression::Assign(self.assign_expr(lhs, AssignOp::BitXor)?.into())
+                }
                 // TODO: CastExpr
                 // TokenKind::As => Expression::Cast(self.cast_expr(lhs)?.into()),
                 TokenKind::LParen => Expression::Call(self.call_expr(lhs)?.into()),
@@ -415,8 +451,8 @@ impl<'src> Parser<'src> {
         // Skip the operator token
         self.next()?;
 
-        // PrefixExpr precedence is 25, higher than all InfixExpr precedences
-        let expr = self.expression(25)?;
+        // PrefixExpr precedence is 27, higher than all InfixExpr precedences
+        let expr = self.expression(27)?;
         Ok(PrefixExpr {
             span: start_loc.until(self.prev_tok.span.end),
             op,
@@ -436,6 +472,33 @@ impl<'src> Parser<'src> {
             lhs,
             op,
             rhs,
+        })
+    }
+
+    fn assign_expr(&mut self, lhs: Expression<'src>, op: AssignOp) -> Result<AssignExpr<'src>> {
+        let start_loc = self.curr_tok.span.start;
+
+        let assignee = match lhs {
+            Expression::Ident(ident) => ident,
+            _ => {
+                self.errors.push(Error::new(
+                    ErrorKind::Syntax,
+                    "left hand side of assignment must be an identifier".to_string(),
+                    self.curr_tok.span,
+                ));
+                ""
+            }
+        };
+
+        let right_prec = self.curr_tok.kind.prec().1;
+        self.next()?;
+        let expr = self.expression(right_prec)?;
+
+        Ok(AssignExpr {
+            span: start_loc.until(self.prev_tok.span.end),
+            assignee,
+            op,
+            expr,
         })
     }
 

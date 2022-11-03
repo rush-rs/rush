@@ -70,6 +70,7 @@ pub enum Expression<'src> {
     Ident(&'src str),
     Prefix(Box<PrefixExpr<'src>>),
     Infix(Box<InfixExpr<'src>>),
+    Assign(Box<AssignExpr<'src>>),
     Call(Box<CallExpr<'src>>),
     Cast(Box<CastExpr<'src>>),
     Grouped(Box<Expression<'src>>),
@@ -128,19 +129,30 @@ pub enum InfixOp {
 
     And, // &&
     Or,  // ||
+}
 
-    Assign,       // =
-    PlusAssign,   // +=
-    MinusAssign,  // -=
-    MulAssign,    // *=
-    DivAssign,    // /=
-    RemAssign,    // %=
-    PowAssign,    // **=
-    ShlAssign,    // <<=
-    ShrAssign,    // >>=
-    BitOrAssign,  // |=
-    BitAndAssign, // &=
-    BitXorAssign, // ^=
+#[derive(Debug, Clone)]
+pub struct AssignExpr<'src> {
+    pub span: Span,
+    pub assignee: &'src str,
+    pub op: AssignOp,
+    pub expr: Expression<'src>,
+}
+
+#[derive(Debug, Clone)]
+pub enum AssignOp {
+    Basic,  // =
+    Plus,   // +=
+    Minus,  // -=
+    Mul,    // *=
+    Div,    // /=
+    Rem,    // %=
+    Pow,    // **=
+    Shl,    // <<=
+    Shr,    // >>=
+    BitOr,  // |=
+    BitAnd, // &=
+    BitXor, // ^=
 }
 
 #[derive(Debug, Clone)]

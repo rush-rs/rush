@@ -26,11 +26,13 @@ ExprWithoutBlock = int
                  | ident
                  | PrefixExpr
                  | InfixExpr
+                 | AssignExpr
                  | CallExpr
                  | CastExpr
                  | '(' , Expression , ')' ;
 PrefixExpr       = PREFIX_OPERATOR , Expression ;
 InfixExpr        = Expression , INFIX_OPERATOR , Expression ;
+AssignExpr       = Expression , ASSIGN_OPERATOR , Expression ;
 CallExpr         = Expression , '(' , [ ArgumentList ] , ')' ;
 ArgumentList     = Expression , { ',' , Expression } , [ ',' ] ;
 CastExpr         = Expression , 'as' , Type ;
@@ -65,7 +67,7 @@ ESCAPE_CHAR = '\' | 'b' | 'n' | 'r' | 't' ;
 
 PREFIX_OPERATOR     = '!' | '-' ;
 INFIX_OPERATOR      = ARITHMETIC_OPERATOR | RELATIONAL_OPERATOR
-                    | BITWISE_OPERATOR | LOGICAL_OPERATOR | ASSIGN_OPERATOR ;
+                    | BITWISE_OPERATOR | LOGICAL_OPERATOR ;
 ARITHMETIC_OPERATOR = '+' | '-' | '*' | '/' | '%' | '**' ;
 RELATIONAL_OPERATOR = '==' | '!=' | '<' | '>' | '<=' | '>=' ;
 BITWISE_OPERATOR    = '<<' | '>>' | '|' | '&' | '^' ;
