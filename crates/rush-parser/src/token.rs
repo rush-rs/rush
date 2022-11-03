@@ -2,7 +2,7 @@ use std::fmt::{self, Debug, Display, Formatter};
 
 use crate::Span;
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Default)]
 pub struct Token<'src> {
     pub kind: TokenKind<'src>,
     pub span: Span,
@@ -28,9 +28,10 @@ impl Debug for Token<'_> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum TokenKind<'src> {
     /// End of file
+    #[default]
     Eof,
 
     /// An identifier
@@ -257,17 +258,17 @@ mod tests {
 
     #[test]
     fn char_display() {
-        assert_eq!(TokenKind::Char(b'\\').to_string(), "'\\\\'");
-        assert_eq!(TokenKind::Char(0x08).to_string(), "'\\b'");
-        assert_eq!(TokenKind::Char(b'\n').to_string(), "'\\n'");
-        assert_eq!(TokenKind::Char(b'\r').to_string(), "'\\r'");
-        assert_eq!(TokenKind::Char(b'\t').to_string(), "'\\t'");
-        assert_eq!(TokenKind::Char(b'\'').to_string(), "'\\''");
+        assert_eq!(TokenKind::Char(b'\\').to_string(), r"'\\'");
+        assert_eq!(TokenKind::Char(0x08).to_string(), r"'\b'");
+        assert_eq!(TokenKind::Char(b'\n').to_string(), r"'\n'");
+        assert_eq!(TokenKind::Char(b'\r').to_string(), r"'\r'");
+        assert_eq!(TokenKind::Char(b'\t').to_string(), r"'\t'");
+        assert_eq!(TokenKind::Char(b'\'').to_string(), r"'\''");
         assert_eq!(TokenKind::Char(b'a').to_string(), "'a'");
         assert_eq!(TokenKind::Char(b'0').to_string(), "'0'");
         assert_eq!(TokenKind::Char(b' ').to_string(), "' '");
         assert_eq!(TokenKind::Char(b'~').to_string(), "'~'");
-        assert_eq!(TokenKind::Char(0x7f).to_string(), "'\\x7f'");
-        assert_eq!(TokenKind::Char(0x1b).to_string(), "'\\x1b'");
+        assert_eq!(TokenKind::Char(0x7f).to_string(), r"'\x7f'");
+        assert_eq!(TokenKind::Char(0x1b).to_string(), r"'\x1b'");
     }
 }
