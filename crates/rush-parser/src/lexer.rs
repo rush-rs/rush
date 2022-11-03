@@ -44,7 +44,6 @@ impl<'src> Lex<'src> for Lexer<'src> {
         let kind = match self.curr_char {
             None => TokenKind::Eof,
             Some('\'') => return self.make_char(),
-            Some('/') => TokenKind::Slash,
             Some('(') => TokenKind::LParen,
             Some(')') => TokenKind::RParen,
             Some('{') => TokenKind::LBrace,
@@ -58,9 +57,10 @@ impl<'src> Lex<'src> for Lexer<'src> {
                 self.next();
                 TokenKind::Arrow
             }
-            Some('-') => char_construct!(self, Minus, MulAssign, _, _),
+            Some('-') => char_construct!(self, Minus, MinusAssign, _, _),
             Some('+') => char_construct!(self, Plus, PlusAssign, _, _),
             Some('*') => char_construct!(self, Star, MulAssign, Pow, PowAssign),
+            Some('/') => char_construct!(self, Slash, DivAssign, _, _),
             Some('%') => char_construct!(self, Percent, RemAssign, _, _),
             Some('=') => char_construct!(self, Assign, Eq, _, _),
             Some('<') => char_construct!(self, Lt, Lte, Shl, ShlAssign),
