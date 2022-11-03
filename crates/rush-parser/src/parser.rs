@@ -305,7 +305,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             TokenKind::Ident(ident) => Expression::Ident(self.atom(ident)?),
             TokenKind::Not => Expression::Prefix(self.prefix_expr(PrefixOp::Not)?.into()),
             TokenKind::Minus => Expression::Prefix(self.prefix_expr(PrefixOp::Neg)?.into()),
-            TokenKind::LParen => Expression::Grouped(self.grouped_expr()?.into()),
+            TokenKind::LParen => Expression::Grouped(self.grouped_expr()?),
             invalid => {
                 return Err(Error::new(
                     format!("expected an expression, found `{invalid}`"),
@@ -488,12 +488,19 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         })
     }
 
-    fn grouped_expr(&mut self) -> Result<ParsedExpression<'src>> {
+    fn grouped_expr(&mut self) -> Result<Atom<Box<ParsedExpression<'src>>>> {
+        let start_loc = self.curr_tok.span.start;
+
         // skip the opening paranthesis
         self.next()?;
+
         let expr = self.expression(0)?;
         self.expect_recoverable(TokenKind::RParen, "missing closing paranthesis")?;
-        Ok(expr)
+
+        Ok(Atom {
+            span: start_loc.until(self.prev_tok.span.end),
+            value: Box::new(expr),
+        })
     }
 
     fn infix_expr(

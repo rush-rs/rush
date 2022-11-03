@@ -47,6 +47,16 @@ pub enum Statement<'src, Expr> {
     Expr(ExprStmt<Expr>),
 }
 
+impl<Expr> Statement<'_, Expr> {
+    pub fn span(&self) -> Span {
+        match self {
+            Self::Let(stmt) => stmt.span,
+            Self::Return(stmt) => stmt.span,
+            Self::Expr(stmt) => stmt.span,
+        }
+    }
+}
+
 pub type ParsedLetStmt<'src> = LetStmt<'src, ParsedExpression<'src>>;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LetStmt<'src, Expr> {
@@ -97,7 +107,26 @@ pub enum Expression<'src, Stmt, Expr> {
     Assign(Box<AssignExpr<'src, Expr>>),
     Call(Box<CallExpr<Expr>>),
     Cast(Box<CastExpr<Expr>>),
-    Grouped(Box<Expr>),
+    Grouped(Atom<Box<Expr>>),
+}
+
+impl<Stmt, Expr> Expression<'_, Stmt, Expr> {
+    pub fn span(&self) -> Span {
+        match self {
+            Self::Block(expr) => expr.span,
+            Self::If(expr) => expr.span,
+            Self::Int(expr) => expr.span,
+            Self::Float(expr) => expr.span,
+            Self::Bool(expr) => expr.span,
+            Self::Ident(expr) => expr.span,
+            Self::Prefix(expr) => expr.span,
+            Self::Infix(expr) => expr.span,
+            Self::Assign(expr) => expr.span,
+            Self::Call(expr) => expr.span,
+            Self::Cast(expr) => expr.span,
+            Self::Grouped(expr) => expr.span,
+        }
+    }
 }
 
 pub type ParsedIfExpr<'src> = IfExpr<ParsedStatement<'src>, ParsedExpression<'src>>;
