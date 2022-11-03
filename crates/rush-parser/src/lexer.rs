@@ -31,6 +31,7 @@ macro_rules! char_construct {
 
 impl<'src> Lex<'src> for Lexer<'src> {
     fn next_token(&mut self) -> Result<Token<'src>> {
+        // Skip comments, whitespaces and newlines
         loop {
             match self.curr_char {
                 Some(' ' | '\t' | '\n' | '\r') => self.next(),
@@ -67,23 +68,21 @@ impl<'src> Lex<'src> for Lexer<'src> {
             Some('|') => char_construct!(self, BitOr, BitOrAssign, Or, _),
             Some('&') => char_construct!(self, BitAnd, BitAndAssign, And, _),
             Some('^') => char_construct!(self, BitXor, BitXorAssign, _, _),
+            Some(other) if other.is_ascii_digit() => return self.make_number(),
+            Some(other) if other.is_ascii_alphabetic() || other == '_' => {
+                return Ok(self.make_name())
+            }
             Some(other) => {
-                if other.is_ascii_digit() {
-                    return self.make_number();
-                }
-                if other.is_ascii_alphabetic() || other == '_' {
-                    return Ok(self.make_name());
-                }
                 self.next();
                 return Err(Error::new(
                     ErrorKind::Syntax,
-                    format!("illegal character '{other}'"),
-                    Span::new(start_loc, self.location),
+                    format!("illegal character: '{other}'"),
+                    start_loc.until(self.location),
                 ));
             }
         };
         self.next();
-        Ok(Token::new(kind, Span::new(start_loc, self.location)))
+        Ok(Token::new(kind, start_loc.until(self.location)))
     }
 }
 
