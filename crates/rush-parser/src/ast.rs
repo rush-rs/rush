@@ -2,10 +2,11 @@ use std::fmt::Debug;
 
 use crate::Span;
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Program<'src> {
+pub type ParsedProgram<'src> = Program<'src, ParsedStatement<'src>>;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Program<'src, Stmt> {
     pub span: Span,
-    pub functions: Vec<FunctionDefinition<'src>>,
+    pub functions: Vec<FunctionDefinition<'src, Stmt>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,88 +22,105 @@ pub enum Type {
     Unknown,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct FunctionDefinition<'src> {
+pub type ParsedFunctionDefinition<'src> = FunctionDefinition<'src, ParsedStatement<'src>>;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FunctionDefinition<'src, Stmt> {
     pub span: Span,
     pub name: &'src str,
     pub params: Vec<(&'src str, Type)>,
     pub return_type: Type,
-    pub block: Block<'src>,
+    pub block: Block<Stmt>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Block<'src> {
+pub type ParsedBlock<'src> = Block<ParsedStatement<'src>>;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Block<Stmt> {
     pub span: Span,
-    pub stmts: Vec<Statement<'src>>,
+    pub stmts: Vec<Stmt>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum Statement<'src> {
-    Let(LetStmt<'src>),
-    Return(ReturnStmt<'src>),
-    Expr(ExprStmt<'src>),
+pub type ParsedStatement<'src> = Statement<'src, ParsedExpression<'src>>;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Statement<'src, Expr> {
+    Let(LetStmt<'src, Expr>),
+    Return(ReturnStmt<Expr>),
+    Expr(ExprStmt<Expr>),
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct LetStmt<'src> {
+pub type ParsedLetStmt<'src> = LetStmt<'src, ParsedExpression<'src>>;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LetStmt<'src, Expr> {
     pub span: Span,
     pub mutable: bool,
     pub name: &'src str,
     pub type_: Option<Type>,
-    pub expr: Expression<'src>,
+    pub expr: Expr,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct ReturnStmt<'src> {
+pub type ParsedReturnStmt<'src> = ReturnStmt<ParsedExpression<'src>>;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReturnStmt<Expr> {
     pub span: Span,
-    pub expr: Option<Expression<'src>>,
+    pub expr: Option<Expr>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct ExprStmt<'src> {
+pub type ParsedExprStmt<'src> = ExprStmt<ParsedExpression<'src>>;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExprStmt<Expr> {
     pub span: Span,
-    pub expr: Expression<'src>,
+    pub expr: Expr,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Expression<'src> {
-    Block(Box<Block<'src>>),
-    If(Box<IfExpr<'src>>),
+pub struct ParsedExpression<'src>(
+    pub Expression<'src, ParsedStatement<'src>, ParsedExpression<'src>>,
+);
+
+impl<'src> From<Expression<'src, ParsedStatement<'src>, ParsedExpression<'src>>>
+    for ParsedExpression<'src>
+{
+    fn from(expr: Expression<'src, ParsedStatement<'src>, ParsedExpression<'src>>) -> Self {
+        Self(expr)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Expression<'src, Stmt, Expr> {
+    Block(Box<Block<Stmt>>),
+    If(Box<IfExpr<Stmt, Expr>>),
     Int(Atom<i64>),
     Float(Atom<f64>),
     Bool(Atom<bool>),
     Ident(Atom<&'src str>),
-    Prefix(Box<PrefixExpr<'src>>),
-    Infix(Box<InfixExpr<'src>>),
-    Assign(Box<AssignExpr<'src>>),
-    Call(Box<CallExpr<'src>>),
-    Cast(Box<CastExpr<'src>>),
-    Grouped(Box<Expression<'src>>),
+    Prefix(Box<PrefixExpr<Expr>>),
+    Infix(Box<InfixExpr<Expr>>),
+    Assign(Box<AssignExpr<'src, Expr>>),
+    Call(Box<CallExpr<Expr>>),
+    Cast(Box<CastExpr<Expr>>),
+    Grouped(Box<Expr>),
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct IfExpr<'src> {
+pub type ParsedIfExpr<'src> = IfExpr<ParsedStatement<'src>, ParsedExpression<'src>>;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IfExpr<Stmt, Expr> {
     pub span: Span,
-    pub cond: Expression<'src>,
-    pub then_block: Block<'src>,
-    pub else_block: Option<Block<'src>>,
+    pub cond: Expr,
+    pub then_block: Block<Stmt>,
+    pub else_block: Option<Block<Stmt>>,
 }
 
-#[allow(clippy::derive_partial_eq_without_eq)] // the trait bounds of T don't specify Eq
-#[derive(Debug, Clone, PartialEq)]
-pub struct Atom<T>
-where
-    T: Debug + Clone + PartialEq,
-{
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Atom<T> {
     pub span: Span,
     pub value: T,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct PrefixExpr<'src> {
+pub type ParsedPrefixExpr<'src> = PrefixExpr<ParsedExpression<'src>>;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PrefixExpr<Expr> {
     pub span: Span,
     pub op: PrefixOp,
-    pub expr: Expression<'src>,
+    pub expr: Expr,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -113,12 +131,13 @@ pub enum PrefixOp {
     Neg,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct InfixExpr<'src> {
+pub type ParsedInfixExpr<'src> = InfixExpr<ParsedExpression<'src>>;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InfixExpr<Expr> {
     pub span: Span,
-    pub lhs: Expression<'src>,
+    pub lhs: Expr,
     pub op: InfixOp,
-    pub rhs: Expression<'src>,
+    pub rhs: Expr,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -166,12 +185,13 @@ pub enum InfixOp {
     Or,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct AssignExpr<'src> {
+pub type ParsedAssignExpr<'src> = AssignExpr<'src, ParsedExpression<'src>>;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AssignExpr<'src, Expr> {
     pub span: Span,
     pub assignee: Atom<&'src str>,
     pub op: AssignOp,
-    pub expr: Expression<'src>,
+    pub expr: Expr,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -202,16 +222,18 @@ pub enum AssignOp {
     BitXor,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct CallExpr<'src> {
+pub type ParsedCallExpr<'src> = CallExpr<ParsedExpression<'src>>;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CallExpr<Expr> {
     pub span: Span,
-    pub expr: Expression<'src>,
-    pub args: Vec<Expression<'src>>,
+    pub expr: Expr,
+    pub args: Vec<Expr>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct CastExpr<'src> {
+pub type ParsedCastExpr<'src> = CastExpr<ParsedExpression<'src>>;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CastExpr<Expr> {
     pub span: Span,
-    pub expr: Expression<'src>,
+    pub expr: Expr,
     pub type_: Type,
 }
