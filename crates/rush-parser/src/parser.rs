@@ -224,6 +224,15 @@ impl<'src> Parser<'src> {
         }
 
         let name = self.expect_ident()?;
+
+        let type_ = match self.curr_tok.kind {
+            TokenKind::Colon => {
+                self.next()?;
+                Some(self.type_()?)
+            }
+            _ => None,
+        };
+
         self.expect(TokenKind::Assign)?;
         let expr = self.expression()?;
 
@@ -240,6 +249,7 @@ impl<'src> Parser<'src> {
         Ok(LetStmt {
             span: start_loc.until(self.prev_tok.span.end),
             mutable,
+            type_,
             name,
             expr,
         })
@@ -311,6 +321,10 @@ impl<'src> Parser<'src> {
     }
 
     fn infix_expr(&mut self) -> Result<InfixExpr<'src>> {
+        todo!()
+    }
+
+    fn cast_expr(&mut self) -> Result<CastExpr<'src>> {
         todo!()
     }
 

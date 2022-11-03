@@ -13,6 +13,8 @@ pub enum Type {
     Bool,
     Char,
     Unit,
+    Never,
+    Unknown,
 }
 
 #[derive(Debug, Clone)]
@@ -42,6 +44,7 @@ pub struct LetStmt<'src> {
     pub span: Span,
     pub mutable: bool,
     pub name: &'src str,
+    pub type_: Option<Type>,
     pub expr: Expression<'src>,
 }
 
@@ -68,6 +71,7 @@ pub enum Expression<'src> {
     Prefix(Box<PrefixExpr<'src>>),
     Infix(Box<InfixExpr<'src>>),
     Call(Box<CallExpr<'src>>),
+    Cast(Box<CastExpr<'src>>),
     Grouped(Box<Expression<'src>>),
 }
 
@@ -144,4 +148,11 @@ pub struct CallExpr<'src> {
     pub span: Span,
     pub expr: Expression<'src>,
     pub args: Vec<Expression<'src>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CastExpr<'src> {
+    pub span: Span,
+    pub expr: Expression<'src>,
+    pub type_: Type,
 }
