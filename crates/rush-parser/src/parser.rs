@@ -85,6 +85,19 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         }
     }
 
+    fn expect_closing(&mut self, kind: TokenKind, name: &str) -> Result<()> {
+        if self.curr_tok.kind != kind {
+            self.errors.push(Error::new(
+                ErrorKind::Syntax,
+                format!("missing closing {name}"),
+                self.curr_tok.span,
+            ));
+        } else {
+            self.next()?;
+        }
+        Ok(())
+    }
+
     //////////////////////////
 
     fn program(&mut self) -> Result<Program<'src>> {
@@ -117,15 +130,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             }
             TokenKind::LParen => {
                 self.next()?;
-                if self.curr_tok.kind != TokenKind::RParen {
-                    self.errors.push(Error::new(
-                        ErrorKind::Syntax,
-                        "missing closing parenthesis".to_string(),
-                        self.curr_tok.span,
-                    ));
-                } else {
-                    self.next()?;
-                }
+                self.expect_closing(TokenKind::RParen, "parenthesis")?;
                 return Ok(Type::Unit);
             }
             kind => {
@@ -158,6 +163,8 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
                 params.push(self.parameter()?);
             }
         }
+
+        self.expect_closing(TokenKind::RParen, "parenthesis")?;
 
         let return_type = match self.curr_tok.kind {
             TokenKind::Arrow => {
@@ -195,15 +202,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             stmts.push(self.statement()?);
         }
 
-        if self.curr_tok.kind != TokenKind::RBrace {
-            self.errors.push(Error::new(
-                ErrorKind::Syntax,
-                "missing closing brace".to_string(),
-                self.curr_tok.span,
-            ));
-        } else {
-            self.next()?;
-        }
+        self.expect_closing(TokenKind::RBrace, "brace")?;
 
         Ok(Block {
             span: start_loc.until(self.prev_tok.span.end),
@@ -577,15 +576,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             }
         }
 
-        if self.curr_tok.kind != TokenKind::RParen {
-            self.errors.push(Error::new(
-                ErrorKind::Syntax,
-                "missing closing parenthesis".to_string(),
-                self.curr_tok.span,
-            ));
-        } else {
-            self.next()?;
-        }
+        self.expect_closing(TokenKind::RParen, "parenthesis")?;
 
         Ok(CallExpr {
             span: start_loc.until(self.prev_tok.span.end),
