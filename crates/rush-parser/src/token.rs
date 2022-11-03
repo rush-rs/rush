@@ -30,65 +30,119 @@ impl Debug for Token<'_> {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TokenKind<'src> {
+    /// End of file
     Eof,
 
+    /// An identifier
     Ident(&'src str),
+    /// An int literal
     Int(i64),
+    /// A float literal
     Float(f64),
+    /// A char literal
     Char(u8),
 
+    /// `true`
     True,
+    /// `false`
     False,
+    /// `fn`
     Fn,
+    /// `let`
     Let,
+    /// `mut`
     Mut,
+    /// `return`
     Return,
+    /// `if`
     If,
+    /// `else`
     Else,
+    /// `as`
     As,
 
+    /// (
     LParen,
+    /// )
     RParen,
+    /// {
     LBrace,
+    /// }
     RBrace,
 
+    /// ->
     Arrow,
+    /// ,
     Comma,
+    /// :
     Colon,
+    /// ;
     Semicolon,
 
+    /// !
     Not,
+    /// -
     Minus,
+    /// +
     Plus,
+    /// *
     Star,
+    /// /
     Slash,
+    /// %
     Percent,
+    /// **
     Pow,
+    /// ==
     Eq,
+    /// !=
     Neq,
+    /// <
     Lt,
+    /// >
     Gt,
+    /// <=
     Lte,
+    /// >=
     Gte,
+    /// <<
     Shl,
+    /// >>
     Shr,
+    /// |
     BitOr,
+    /// &
     BitAnd,
+    /// ^
     BitXor,
+    /// &&
     And,
+    /// ||
     Or,
 
+    /// =
     Assign,
+    /// +=
     PlusAssign,
+    /// -=
     MinusAssign,
+    /// *=
     MulAssign,
+    /// /=
     DivAssign,
+    /// %=
     RemAssign,
+    /// **=
     PowAssign,
+    /// <<=
     ShlAssign,
+    /// >>=
     ShrAssign,
+    /// |=
     BitOrAssign,
+    /// &=
     BitAndAssign,
+    /// ^=
     BitXorAssign,
 }
 
@@ -122,7 +176,7 @@ impl<'src> TokenKind<'src> {
             TokenKind::Plus | TokenKind::Minus => (19, 20),
             TokenKind::Star | TokenKind::Slash | TokenKind::Percent => (21, 22),
             TokenKind::As => (23, 24),
-            TokenKind::Pow => (26, 25),
+            TokenKind::Pow => (26, 25), // inverse order for right associativity
             TokenKind::LParen => (27, 28),
             _ => (0, 0),
         }
