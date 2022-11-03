@@ -1,12 +1,14 @@
+use std::fmt::Debug;
+
 use crate::Span;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Program<'src> {
     pub span: Span,
     pub functions: Vec<FunctionDefinition<'src>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Int,
     Float,
@@ -17,7 +19,7 @@ pub enum Type {
     Unknown,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FunctionDefinition<'src> {
     pub span: Span,
     pub name: &'src str,
@@ -26,20 +28,20 @@ pub struct FunctionDefinition<'src> {
     pub block: Block<'src>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Block<'src> {
     pub span: Span,
     pub stmts: Vec<Statement<'src>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Statement<'src> {
     Let(LetStmt<'src>),
     Return(ReturnStmt<'src>),
     Expr(ExprStmt<'src>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct LetStmt<'src> {
     pub span: Span,
     pub mutable: bool,
@@ -48,26 +50,26 @@ pub struct LetStmt<'src> {
     pub expr: Expression<'src>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ReturnStmt<'src> {
     pub span: Span,
     pub expr: Option<Expression<'src>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ExprStmt<'src> {
     pub span: Span,
     pub expr: Expression<'src>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expression<'src> {
     Block(Box<Block<'src>>),
     If(Box<IfExpr<'src>>),
-    Int(i64),
-    Float(f64),
-    Bool(bool),
-    Ident(&'src str),
+    Int(AtomExpr<i64>),
+    Float(AtomExpr<f64>),
+    Bool(AtomExpr<bool>),
+    Ident(AtomExpr<&'src str>),
     Prefix(Box<PrefixExpr<'src>>),
     Infix(Box<InfixExpr<'src>>),
     Assign(Box<AssignExpr<'src>>),
@@ -76,7 +78,7 @@ pub enum Expression<'src> {
     Grouped(Box<Expression<'src>>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct IfExpr<'src> {
     pub span: Span,
     pub cond: Expression<'src>,
@@ -84,20 +86,30 @@ pub struct IfExpr<'src> {
     pub else_block: Option<Block<'src>>,
 }
 
-#[derive(Debug, Clone)]
+#[allow(clippy::derive_partial_eq_without_eq)] // The trait bounds of T don't specify Eq
+#[derive(Debug, Clone, PartialEq)]
+pub struct AtomExpr<T>
+where
+    T: Debug + Clone + PartialEq,
+{
+    pub span: Span,
+    pub value: T,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct PrefixExpr<'src> {
     pub span: Span,
     pub op: PrefixOp,
     pub expr: Expression<'src>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PrefixOp {
     Not, // !
     Neg, // -
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct InfixExpr<'src> {
     pub span: Span,
     pub lhs: Expression<'src>,
@@ -105,7 +117,7 @@ pub struct InfixExpr<'src> {
     pub rhs: Expression<'src>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InfixOp {
     Plus,  // +
     Minus, // -
@@ -131,15 +143,15 @@ pub enum InfixOp {
     Or,  // ||
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AssignExpr<'src> {
     pub span: Span,
-    pub assignee: &'src str,
+    pub assignee: AtomExpr<&'src str>,
     pub op: AssignOp,
     pub expr: Expression<'src>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AssignOp {
     Basic,  // =
     Plus,   // +=
@@ -155,14 +167,14 @@ pub enum AssignOp {
     BitXor, // ^=
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CallExpr<'src> {
     pub span: Span,
     pub expr: Expression<'src>,
     pub args: Vec<Expression<'src>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CastExpr<'src> {
     pub span: Span,
     pub expr: Expression<'src>,
