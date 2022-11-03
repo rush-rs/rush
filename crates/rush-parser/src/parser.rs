@@ -317,101 +317,39 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
 
         while self.curr_tok.kind.prec().0 > prec {
             lhs = match self.curr_tok.kind {
-                TokenKind::Plus => {
-                    Expression::Infix(self.infix_expr(start_loc, lhs, InfixOp::Plus)?.into())
-                }
-                TokenKind::Minus => {
-                    Expression::Infix(self.infix_expr(start_loc, lhs, InfixOp::Minus)?.into())
-                }
-                TokenKind::Star => {
-                    Expression::Infix(self.infix_expr(start_loc, lhs, InfixOp::Mul)?.into())
-                }
-                TokenKind::Slash => {
-                    Expression::Infix(self.infix_expr(start_loc, lhs, InfixOp::Div)?.into())
-                }
-                TokenKind::Percent => {
-                    Expression::Infix(self.infix_expr(start_loc, lhs, InfixOp::Rem)?.into())
-                }
-                TokenKind::Pow => {
-                    Expression::Infix(self.infix_expr(start_loc, lhs, InfixOp::Pow)?.into())
-                }
-                TokenKind::Eq => {
-                    Expression::Infix(self.infix_expr(start_loc, lhs, InfixOp::Eq)?.into())
-                }
-                TokenKind::Neq => {
-                    Expression::Infix(self.infix_expr(start_loc, lhs, InfixOp::Neq)?.into())
-                }
-                TokenKind::Lt => {
-                    Expression::Infix(self.infix_expr(start_loc, lhs, InfixOp::Lt)?.into())
-                }
-                TokenKind::Gt => {
-                    Expression::Infix(self.infix_expr(start_loc, lhs, InfixOp::Gt)?.into())
-                }
-                TokenKind::Lte => {
-                    Expression::Infix(self.infix_expr(start_loc, lhs, InfixOp::Lte)?.into())
-                }
-                TokenKind::Gte => {
-                    Expression::Infix(self.infix_expr(start_loc, lhs, InfixOp::Gte)?.into())
-                }
-                TokenKind::Shl => {
-                    Expression::Infix(self.infix_expr(start_loc, lhs, InfixOp::Shl)?.into())
-                }
-                TokenKind::Shr => {
-                    Expression::Infix(self.infix_expr(start_loc, lhs, InfixOp::Shr)?.into())
-                }
-                TokenKind::BitOr => {
-                    Expression::Infix(self.infix_expr(start_loc, lhs, InfixOp::BitOr)?.into())
-                }
-                TokenKind::BitAnd => {
-                    Expression::Infix(self.infix_expr(start_loc, lhs, InfixOp::BitAnd)?.into())
-                }
-                TokenKind::BitXor => {
-                    Expression::Infix(self.infix_expr(start_loc, lhs, InfixOp::BitXor)?.into())
-                }
-                TokenKind::And => {
-                    Expression::Infix(self.infix_expr(start_loc, lhs, InfixOp::And)?.into())
-                }
-                TokenKind::Or => {
-                    Expression::Infix(self.infix_expr(start_loc, lhs, InfixOp::Or)?.into())
-                }
-                TokenKind::Assign => {
-                    Expression::Assign(self.assign_expr(start_loc, lhs, AssignOp::Basic)?.into())
-                }
-                TokenKind::PlusAssign => {
-                    Expression::Assign(self.assign_expr(start_loc, lhs, AssignOp::Plus)?.into())
-                }
-                TokenKind::MinusAssign => {
-                    Expression::Assign(self.assign_expr(start_loc, lhs, AssignOp::Minus)?.into())
-                }
-                TokenKind::MulAssign => {
-                    Expression::Assign(self.assign_expr(start_loc, lhs, AssignOp::Mul)?.into())
-                }
-                TokenKind::DivAssign => {
-                    Expression::Assign(self.assign_expr(start_loc, lhs, AssignOp::Div)?.into())
-                }
-                TokenKind::RemAssign => {
-                    Expression::Assign(self.assign_expr(start_loc, lhs, AssignOp::Rem)?.into())
-                }
-                TokenKind::PowAssign => {
-                    Expression::Assign(self.assign_expr(start_loc, lhs, AssignOp::Pow)?.into())
-                }
-                TokenKind::ShlAssign => {
-                    Expression::Assign(self.assign_expr(start_loc, lhs, AssignOp::Shl)?.into())
-                }
-                TokenKind::ShrAssign => {
-                    Expression::Assign(self.assign_expr(start_loc, lhs, AssignOp::Shr)?.into())
-                }
-                TokenKind::BitOrAssign => {
-                    Expression::Assign(self.assign_expr(start_loc, lhs, AssignOp::BitOr)?.into())
-                }
-                TokenKind::BitAndAssign => {
-                    Expression::Assign(self.assign_expr(start_loc, lhs, AssignOp::BitAnd)?.into())
-                }
-                TokenKind::BitXorAssign => {
-                    Expression::Assign(self.assign_expr(start_loc, lhs, AssignOp::BitXor)?.into())
-                }
-                TokenKind::LParen => Expression::Call(self.call_expr(start_loc, lhs)?.into()),
-                TokenKind::As => Expression::Cast(self.cast_expr(start_loc, lhs)?.into()),
+                TokenKind::Plus => self.infix_expr(start_loc, lhs, InfixOp::Plus)?,
+                TokenKind::Minus => self.infix_expr(start_loc, lhs, InfixOp::Minus)?,
+                TokenKind::Star => self.infix_expr(start_loc, lhs, InfixOp::Mul)?,
+                TokenKind::Slash => self.infix_expr(start_loc, lhs, InfixOp::Div)?,
+                TokenKind::Percent => self.infix_expr(start_loc, lhs, InfixOp::Rem)?,
+                TokenKind::Pow => self.infix_expr(start_loc, lhs, InfixOp::Pow)?,
+                TokenKind::Eq => self.infix_expr(start_loc, lhs, InfixOp::Eq)?,
+                TokenKind::Neq => self.infix_expr(start_loc, lhs, InfixOp::Neq)?,
+                TokenKind::Lt => self.infix_expr(start_loc, lhs, InfixOp::Lt)?,
+                TokenKind::Gt => self.infix_expr(start_loc, lhs, InfixOp::Gt)?,
+                TokenKind::Lte => self.infix_expr(start_loc, lhs, InfixOp::Lte)?,
+                TokenKind::Gte => self.infix_expr(start_loc, lhs, InfixOp::Gte)?,
+                TokenKind::Shl => self.infix_expr(start_loc, lhs, InfixOp::Shl)?,
+                TokenKind::Shr => self.infix_expr(start_loc, lhs, InfixOp::Shr)?,
+                TokenKind::BitOr => self.infix_expr(start_loc, lhs, InfixOp::BitOr)?,
+                TokenKind::BitAnd => self.infix_expr(start_loc, lhs, InfixOp::BitAnd)?,
+                TokenKind::BitXor => self.infix_expr(start_loc, lhs, InfixOp::BitXor)?,
+                TokenKind::And => self.infix_expr(start_loc, lhs, InfixOp::And)?,
+                TokenKind::Or => self.infix_expr(start_loc, lhs, InfixOp::Or)?,
+                TokenKind::Assign => self.assign_expr(start_loc, lhs, AssignOp::Basic)?,
+                TokenKind::PlusAssign => self.assign_expr(start_loc, lhs, AssignOp::Plus)?,
+                TokenKind::MinusAssign => self.assign_expr(start_loc, lhs, AssignOp::Minus)?,
+                TokenKind::MulAssign => self.assign_expr(start_loc, lhs, AssignOp::Mul)?,
+                TokenKind::DivAssign => self.assign_expr(start_loc, lhs, AssignOp::Div)?,
+                TokenKind::RemAssign => self.assign_expr(start_loc, lhs, AssignOp::Rem)?,
+                TokenKind::PowAssign => self.assign_expr(start_loc, lhs, AssignOp::Pow)?,
+                TokenKind::ShlAssign => self.assign_expr(start_loc, lhs, AssignOp::Shl)?,
+                TokenKind::ShrAssign => self.assign_expr(start_loc, lhs, AssignOp::Shr)?,
+                TokenKind::BitOrAssign => self.assign_expr(start_loc, lhs, AssignOp::BitOr)?,
+                TokenKind::BitAndAssign => self.assign_expr(start_loc, lhs, AssignOp::BitAnd)?,
+                TokenKind::BitXorAssign => self.assign_expr(start_loc, lhs, AssignOp::BitXor)?,
+                TokenKind::LParen => self.call_expr(start_loc, lhs)?,
+                TokenKind::As => self.cast_expr(start_loc, lhs)?,
                 _ => return Ok(lhs),
             }
             .into();
@@ -508,17 +446,20 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         start_loc: Location,
         lhs: ParsedExpression<'src>,
         op: InfixOp,
-    ) -> Result<ParsedInfixExpr<'src>> {
+    ) -> Result<BareParsedExpression<'src>> {
         let right_prec = self.curr_tok.kind.prec().1;
         self.next()?;
         let rhs = self.expression(right_prec)?;
 
-        Ok(InfixExpr {
-            span: start_loc.until(self.prev_tok.span.end),
-            lhs,
-            op,
-            rhs,
-        })
+        Ok(Expression::Infix(
+            InfixExpr {
+                span: start_loc.until(self.prev_tok.span.end),
+                lhs,
+                op,
+                rhs,
+            }
+            .into(),
+        ))
     }
 
     fn assign_expr(
@@ -526,7 +467,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         start_loc: Location,
         lhs: ParsedExpression<'src>,
         op: AssignOp,
-    ) -> Result<ParsedAssignExpr<'src>> {
+    ) -> Result<BareParsedExpression<'src>> {
         let assignee = match lhs.0 {
             Expression::Ident(item) => item,
             _ => {
@@ -545,19 +486,22 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         self.next()?;
         let expr = self.expression(right_prec)?;
 
-        Ok(AssignExpr {
-            span: start_loc.until(self.prev_tok.span.end),
-            assignee,
-            op,
-            expr,
-        })
+        Ok(Expression::Assign(
+            AssignExpr {
+                span: start_loc.until(self.prev_tok.span.end),
+                assignee,
+                op,
+                expr,
+            }
+            .into(),
+        ))
     }
 
     fn call_expr(
         &mut self,
         start_loc: Location,
         expr: ParsedExpression<'src>,
-    ) -> Result<ParsedCallExpr<'src>> {
+    ) -> Result<BareParsedExpression<'src>> {
         // skip opening parenthesis
         self.next()?;
 
@@ -576,28 +520,34 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
 
         self.expect_recoverable(TokenKind::RParen, "missing closing parenthesis")?;
 
-        Ok(CallExpr {
-            span: start_loc.until(self.prev_tok.span.end),
-            expr,
-            args,
-        })
+        Ok(Expression::Call(
+            CallExpr {
+                span: start_loc.until(self.prev_tok.span.end),
+                expr,
+                args,
+            }
+            .into(),
+        ))
     }
 
     fn cast_expr(
         &mut self,
         start_loc: Location,
         expr: ParsedExpression<'src>,
-    ) -> Result<ParsedCastExpr<'src>> {
+    ) -> Result<BareParsedExpression<'src>> {
         // skip `as` token
         self.next()?;
 
         let type_ = self.type_()?;
 
-        Ok(CastExpr {
-            span: start_loc.until(self.prev_tok.span.end),
-            expr,
-            type_,
-        })
+        Ok(Expression::Cast(
+            CastExpr {
+                span: start_loc.until(self.prev_tok.span.end),
+                expr,
+                type_,
+            }
+            .into(),
+        ))
     }
 }
 

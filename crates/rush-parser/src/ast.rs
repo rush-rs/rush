@@ -82,18 +82,16 @@ pub struct ExprStmt<Expr> {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct ParsedExpression<'src>(
-    pub Expression<'src, ParsedStatement<'src>, ParsedExpression<'src>>,
-);
+pub struct ParsedExpression<'src>(pub BareParsedExpression<'src>);
 
-impl<'src> From<Expression<'src, ParsedStatement<'src>, ParsedExpression<'src>>>
-    for ParsedExpression<'src>
-{
-    fn from(expr: Expression<'src, ParsedStatement<'src>, ParsedExpression<'src>>) -> Self {
+impl<'src> From<BareParsedExpression<'src>> for ParsedExpression<'src> {
+    fn from(expr: BareParsedExpression<'src>) -> Self {
         Self(expr)
     }
 }
 
+pub type BareParsedExpression<'src> =
+    Expression<'src, ParsedStatement<'src>, ParsedExpression<'src>>;
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expression<'src, Stmt, Expr> {
     Block(Box<Block<Stmt>>),
