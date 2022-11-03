@@ -368,15 +368,34 @@ mod tests {
     #[test]
     fn test_lexer() {
         let code = r#"
-            '\'
+            '\\'    // correctly escaped char literal
+            '\'     // unterminated char literal
+            'a'     // normal ASCII character
+            '*'     // normal ASCII character
+            '\b'    // escape char
+            '\n'    // escape char
+            '\r'    // escape char
+            '\t'    // escape char
+            '\x1b'  // hex escape
+            '\a'    // invalid escape
+            '\x1b1' // invalid hex
         "#;
         let mut lexer = Lexer::new(code);
         let tests = vec![
+            (TokenKind::Char(b'\\'), None),
+            (TokenKind::Char(b'_'), Some("unterminated char literal")),
+            (TokenKind::Char(b'a'), None),
+            (TokenKind::Char(b'*'), None),
+            (TokenKind::Char(b'\x08'), None),
+            (TokenKind::Char(b'\n'), None),
+            (TokenKind::Char(b'\r'), None),
+            (TokenKind::Char(b'\t'), None),
+            (TokenKind::Char(b'\x1b'), None),
             (
                 TokenKind::Char(b'_'),
-                Some("unterminated character literal"),
+                Some("expected escape character, found a"),
             ),
-            // (TokenKind::Char(b'\''), None),
+            (TokenKind::Char(b'_'), None),
         ];
         println!();
         for test in tests {
@@ -388,7 +407,7 @@ mod tests {
                 (Ok(got), _, expected) => {
                     match got.kind {
                         TokenKind::Char(ch) => {
-                            println!("found char: {}", char::from_u32(ch as u32).unwrap())
+                            println!("found char: {} ({ch})", char::from_u32(ch as u32).unwrap())
                         }
                         _ => println!("{:?}", got),
                     }
