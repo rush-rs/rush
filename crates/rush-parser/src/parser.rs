@@ -141,11 +141,11 @@ impl<'src> Parser<'src> {
         self.expect(TokenKind::LParen)?;
 
         let mut params = vec![];
-        if self.curr_tok.kind != TokenKind::RParen {
+        if !matches!(self.curr_tok.kind, TokenKind::RParen | TokenKind::Eof) {
             params.push(self.parameter()?);
             while self.curr_tok.kind == TokenKind::Comma {
                 self.next()?;
-                if self.curr_tok.kind == TokenKind::RParen {
+                if let TokenKind::RParen | TokenKind::Eof = self.curr_tok.kind {
                     break;
                 }
                 params.push(self.parameter()?);
@@ -184,7 +184,7 @@ impl<'src> Parser<'src> {
         self.expect(TokenKind::LBrace)?;
 
         let mut stmts = vec![];
-        while self.curr_tok.kind != TokenKind::RBrace && self.curr_tok.kind != TokenKind::Eof {
+        while !matches!(self.curr_tok.kind, TokenKind::RBrace | TokenKind::Eof) {
             stmts.push(self.statement()?);
         }
 
@@ -330,7 +330,6 @@ impl<'src> Parser<'src> {
             }
         };
 
-        // TODO: or >= ?
         while self.curr_tok.kind.prec().0 > prec {
             lhs = match self.curr_tok.kind {
                 TokenKind::Plus => Expression::Infix(self.infix_expr(lhs, InfixOp::Plus)?.into()),
@@ -367,11 +366,62 @@ impl<'src> Parser<'src> {
     }
 
     fn if_expr(&mut self) -> Result<IfExpr<'src>> {
-        todo!()
+        let start_loc = self.curr_tok.span.start;
+
+        // this function is only called when self.curr_tok.kind == TokenKind::If
+        self.next()?;
+
+        let cond = self.expression(0)?;
+        let then_block = self.block()?;
+        let else_block = match self.curr_tok.kind {
+            TokenKind::Else => {
+                self.next()?;
+                Some(match self.curr_tok.kind {
+                    TokenKind::If => {
+                        let if_expr = self.if_expr()?;
+                        Block {
+                            span: if_expr.span,
+                            stmts: vec![Statement::Expr(ExprStmt {
+                                span: if_expr.span,
+                                expr: Expression::If(Box::new(if_expr)),
+                            })],
+                        }
+                    }
+                    TokenKind::LBrace => self.block()?,
+                    kind => {
+                        return Err(Error::new(
+                            ErrorKind::Syntax,
+                            // TODO: use Display trait
+                            format!("expected either `if` or block after `else`, found {kind:?}"),
+                            self.curr_tok.span,
+                        ));
+                    }
+                })
+            }
+            _ => None,
+        };
+
+        Ok(IfExpr {
+            span: start_loc.until(self.prev_tok.span.end),
+            cond,
+            then_block,
+            else_block,
+        })
     }
 
     fn prefix_expr(&mut self, op: PrefixOp) -> Result<PrefixExpr<'src>> {
-        todo!()
+        let start_loc = self.curr_tok.span.start;
+
+        // Skip the operator token
+        self.next()?;
+
+        // PrefixExpr precedence is 25, higher than all InfixExpr precedences
+        let expr = self.expression(25)?;
+        Ok(PrefixExpr {
+            span: start_loc.until(self.prev_tok.span.end),
+            op,
+            expr,
+        })
     }
 
     fn infix_expr(&mut self, lhs: Expression<'src>, op: InfixOp) -> Result<InfixExpr<'src>> {
@@ -394,6 +444,38 @@ impl<'src> Parser<'src> {
     }
 
     fn call_expr(&mut self, expr: Expression<'src>) -> Result<CallExpr<'src>> {
-        todo!()
+        let start_loc = self.curr_tok.span.start;
+
+        // Skip opening paren
+        self.next()?;
+
+        let mut args = vec![];
+        if !matches!(self.curr_tok.kind, TokenKind::RParen | TokenKind::Eof) {
+            args.push(self.expression(0)?);
+
+            while self.curr_tok.kind == TokenKind::Comma {
+                self.next()?;
+                if let TokenKind::RParen | TokenKind::Eof = self.curr_tok.kind {
+                    break;
+                }
+                args.push(self.expression(0)?);
+            }
+        }
+
+        if self.curr_tok.kind != TokenKind::RParen {
+            self.errors.push(Error::new(
+                ErrorKind::Syntax,
+                "missing closing parenthesis".to_string(),
+                self.curr_tok.span,
+            ));
+        } else {
+            self.next()?;
+        }
+
+        Ok(CallExpr {
+            span: start_loc.until(self.prev_tok.span.end),
+            expr,
+            args,
+        })
     }
 }
