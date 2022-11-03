@@ -198,7 +198,7 @@ impl Display for TokenKind<'_> {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
 
     #[test]
