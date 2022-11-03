@@ -1,14 +1,17 @@
 Program = { FunctionDefinition } ;
 
 FunctionDefinition = 'fn' , ident , '(' , [ ParameterList ] , ')'
-                   , [ '->' , type ] , Block ;
+                   , [ '->' , Type ] , Block ;
 ParameterList      = Parameter , { ',' , Parameter } , [ ',' ] ;
-Parameter          = ident , ':' , type ;
+Parameter          = ident , ':' , Type ;
 
 Block = '{' , { Statement } , '}' ;
+Type  = ident
+      | '(' , ')' ;
 
 Statement  = LetStmt | ReturnStmt | ExprStmt ;
-LetStmt    = 'let' , [ 'mut' ] , ident , '=' , Expression , ';' ;
+LetStmt    = 'let' , [ 'mut' ] , ident , [ ':' , Type ] , '='
+           , Expression , ';' ;
 ReturnStmt = 'return' , [ Expression ] , ';' ;
 ExprStmt   = ExprWithoutBlock , ';'
            | ExprWithBlock , [ ';' ] ;
@@ -39,7 +42,6 @@ char  = "'" , ( ASCII_CHAR - '\'
               | '\' , ( ESCAPE_CHAR
                       | "'"
                       | 'x' , 2 * HEX ) ) , "'" ;
-type  = ident | '()' ;
 bool  = 'true' | 'false' ;
 
 comment = '//' , { CHAR } , ? LF ?
