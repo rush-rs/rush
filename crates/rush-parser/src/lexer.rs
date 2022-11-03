@@ -180,13 +180,9 @@ impl<'src> Lexer<'src> {
         }
     }
 
-    fn make_slash(&mut self) -> Option<Token<'src>> {
-        todo!()
-    }
-
     fn make_char(&mut self) -> Result<Token<'src>> {
-        self.next();
         let start_loc = self.location;
+        self.next();
 
         let char = match self.curr_char {
             None => {
@@ -197,54 +193,85 @@ impl<'src> Lexer<'src> {
                     Span::new(start_loc, self.location),
                 ));
             }
-            Some('\\') => match self.next_char {
-                Some('\\') => '\\' as u8,
-                Some('\'') => '\'' as u8,
-                Some('b') => '\x08' as u8,
-                Some('n') => '\n' as u8,
-                Some('r') => '\r' as u8,
-                Some('t') => '\t' as u8,
-                Some('x') => {
-                    self.next();
-                    let start_hex = self.location.byte_idx;
-                    for _ in 0..2 {
-                        if self.curr_char.is_some()
-                            && self
-                                .curr_char
-                                .expect("This was checked beforehand")
-                                .is_ascii_hexdigit()
-                        {
+            Some('\\') => {
+                let char = match self.next_char {
+                    Some('\\') => b'\\',
+                    Some('\'') => b'\'',
+                    Some('b') => b'\x08',
+                    Some('n') => b'\n',
+                    Some('r') => b'\r',
+                    Some('t') => b'\t',
+                    Some('x') => {
+                        self.next();
+                        self.next();
+                        let start_hex = self.location.byte_idx;
+                        let mut hex_digit_count = 0;
+                        while self.curr_char.map_or(false, |c| c.is_ascii_hexdigit()) {
                             self.next();
+                            hex_digit_count += 1;
+                        }
+                        if hex_digit_count != 2 {
+                            return Err(Error::new(
+                                ErrorKind::Syntax,
+                                format!("expected exactly 2 hex digits, found {hex_digit_count}"),
+                                Span::new(start_loc, self.location),
+                            ));
+                        }
+                        return if self.curr_char != Some('\'') {
+                            Err(Error::new(
+                                ErrorKind::Syntax,
+                                "unterminated char literal".to_string(),
+                                Span::new(start_loc, self.location),
+                            ))
+                        } else {
+                            let char = u8::from_str_radix(
+                                &self.input[start_hex..self.location.byte_idx],
+                                16,
+                            )
+                            .expect("This string slice should be valid hexadecimal");
+                            self.next();
+                            Ok(Token::new(
+                                TokenKind::Char(char),
+                                Span::new(start_loc, self.location),
+                            ))
                         };
                     }
-                    u8::from_str_radix(&self.input[start_hex..self.location.byte_idx], 16)
-                        .expect("This string slice should be valid hexadecimal")
-                }
-                Some(other) => {
-                    self.next();
-                    return Err(Error::new(
-                        ErrorKind::Syntax,
-                        format!("expected excape character, found {other}"),
-                        Span::new(start_loc, self.location),
-                    ));
-                }
-                None => {
-                    self.next();
-                    return Err(Error::new(
-                        ErrorKind::Syntax,
-                        "expected escape character, found EOF".to_string(),
-                        Span::new(start_loc, self.location),
-                    ));
-                }
-            },
+                    _ => {
+                        self.next();
+                        return Err(Error::new(
+                            ErrorKind::Syntax,
+                            format!(
+                                "expected escape character, found {}",
+                                self.curr_char.map_or("EOF".to_string(), |c| c.to_string())
+                            ),
+                            Span::new(start_loc, self.location),
+                        ));
+                    }
+                };
+                self.next();
+                char
+            }
             Some(other) if other.is_ascii() => other as u8,
             _ => unreachable!(),
         };
         self.next();
-        Ok(Token::new(
-            TokenKind::Char(char),
-            Span::new(start_loc, self.location),
-        ))
+        match self.curr_char {
+            Some('\'') => {
+                self.next();
+                Ok(Token::new(
+                    TokenKind::Char(char),
+                    Span::new(start_loc, self.location),
+                ))
+            }
+            _ => {
+                self.next();
+                Err(Error::new(
+                    ErrorKind::Syntax,
+                    "unterminated char literal".to_string(),
+                    Span::new(start_loc, self.location),
+                ))
+            }
+        }
     }
 
     fn make_number(&mut self) -> Result<Token<'src>> {
@@ -324,6 +351,7 @@ impl<'src> Lexer<'src> {
             }
         }
     }
+
     fn make_name(&mut self) -> Token<'src> {
         todo!()
     }
@@ -367,38 +395,18 @@ mod tests {
 
     #[test]
     fn test_lexer() {
-        let code = r#"
-            '\\'    // correctly escaped char literal
-            '\'     // unterminated char literal
-            'a'     // normal ASCII character
-            '*'     // normal ASCII character
-            '\b'    // escape char
-            '\n'    // escape char
-            '\r'    // escape char
-            '\t'    // escape char
-            '\x1b'  // hex escape
-            '\a'    // invalid escape
-            '\x1b1' // invalid hex
-        "#;
-        let mut lexer = Lexer::new(code);
         let tests = vec![
-            (TokenKind::Char(b'\\'), None),
-            (TokenKind::Char(b'_'), Some("unterminated char literal")),
-            (TokenKind::Char(b'a'), None),
-            (TokenKind::Char(b'*'), None),
-            (TokenKind::Char(b'\x08'), None),
-            (TokenKind::Char(b'\n'), None),
-            (TokenKind::Char(b'\r'), None),
-            (TokenKind::Char(b'\t'), None),
-            (TokenKind::Char(b'\x1b'), None),
+            (TokenKind::Char(b'\x1b'), None, "'\x1b'"),
             (
                 TokenKind::Char(b'_'),
                 Some("expected escape character, found a"),
+                r#"'\a'"#,
             ),
-            (TokenKind::Char(b'_'), None),
+            (TokenKind::Char(b'_'), Some("a"), r#"'\x1b1'"#),
         ];
         println!();
         for test in tests {
+            let mut lexer = Lexer::new(test.2);
             let res = lexer.next_token();
             match (res, test.1, test.0) {
                 (Ok(_), Some(expected), _) => panic!("Expected error: {:?}, got none", expected),
@@ -416,15 +424,4 @@ mod tests {
             }
         }
     }
-
-    /*
-    println!(
-        "\n{}",
-        tokens
-            .iter()
-            .map(|token| format!("{:?}", token))
-            .collect::<Vec<String>>()
-            .join("\n")
-    );
-    */
 }
