@@ -311,7 +311,43 @@ impl<'src> Lexer<'src> {
     fn make_number(&mut self) -> Result<Token<'src>> {
         let start_loc = self.location;
 
-        // TODO: hex integers
+        if self.curr_char == Some('0') && self.next_char == Some('x') {
+            self.next();
+            self.next();
+            let start_hex = self.location.byte_idx;
+
+            if !self.curr_char.map_or(false, |c| c.is_ascii_hexdigit()) {
+                self.next();
+                return Err(Error::new(
+                    ErrorKind::Syntax,
+                    "expected at least one hexadecimal digit".to_string(),
+                    start_loc.until(self.location),
+                ));
+            }
+
+            while self
+                .curr_char
+                .map_or(false, |c| c.is_ascii_hexdigit() || c == '_')
+            {
+                self.next();
+            }
+
+            let num = match i64::from_str_radix(
+                &self.input[start_hex..self.location.byte_idx].replace('_', ""),
+                16,
+            ) {
+                Ok(num) => num,
+                Err(_) => {
+                    return Err(Error::new(
+                        ErrorKind::Syntax,
+                        "integer too large for 64 bits".to_string(),
+                        start_loc.until(self.location),
+                    ))
+                }
+            };
+
+            return Ok(TokenKind::Int(num).spanned(start_loc.until(self.location)));
+        }
 
         while self
             .curr_char
