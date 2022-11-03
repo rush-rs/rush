@@ -94,7 +94,7 @@ impl<'src> Lexer<'src> {
                 if other.is_ascii_digit() {
                     return self.make_number();
                 }
-                if other.is_ascii_alphabetic() {
+                if other.is_ascii_alphabetic() || other == '_' {
                     return Ok(self.make_name());
                 }
                 self.next();
@@ -353,7 +353,26 @@ impl<'src> Lexer<'src> {
     }
 
     fn make_name(&mut self) -> Token<'src> {
-        todo!()
+        let start_loc = self.location;
+        while self.curr_char.map_or(false, |current| {
+            (current.is_ascii_alphabetic() || current.is_alphabetic() || current == '_')
+        }) {
+            self.next()
+        }
+        self.next();
+        let kind = match &self.input[start_loc.byte_idx..self.location.byte_idx] {
+            "true" => TokenKind::True,
+            "false" => TokenKind::False,
+            "fn" => TokenKind::Fn,
+            "let" => TokenKind::Let,
+            "mut" => TokenKind::Mut,
+            "return" => TokenKind::Return,
+            "if" => TokenKind::If,
+            "else" => TokenKind::Else,
+            "as" => TokenKind::As,
+            ident => TokenKind::Ident(ident),
+        };
+        Token::new(kind, Span::new(start_loc, self.location))
     }
 }
 
@@ -396,23 +415,39 @@ mod tests {
     #[test]
     fn test_lexer() {
         let tests = vec![
-            (TokenKind::Char(b'\x1b'), None, "'\x1b'"),
-            (
-                TokenKind::Char(b'_'),
-                Some("expected escape character, found a"),
-                r#"'\a'"#,
-            ),
-            (TokenKind::Char(b'_'), Some("a"), r#"'\x1b1'"#),
+            // Char tests
+            ("'a'", Ok(TokenKind::Char(b'a'))),
+            ("'*'", Ok(TokenKind::Char(b'a'))),
+            ("'_'", Ok(TokenKind::Char(b'_'))),
+            (r#"'\'"#, Ok(TokenKind::Char(b'\''))),
+            (r#"'\\'"#, Ok(TokenKind::Char(b'\\'))),
+            (r#"'\a'"#, Err("expected escape character, found a")),
+            (r#"'\x1b'"#, Ok(TokenKind::Char(b'\x1b'))),
+            (r#"'\x1b1'"#, Err("expected exactly 2 hex digits, found 3")),
+            // Keyword
+            ("true", Ok(TokenKind::True)),
+            ("false", Ok(TokenKind::False)),
+            ("fn", Ok(TokenKind::Fn)),
+            ("let", Ok(TokenKind::Let)),
+            ("mut", Ok(TokenKind::Mut)),
+            ("return", Ok(TokenKind::Return)),
+            ("if", Ok(TokenKind::If)),
+            ("else", Ok(TokenKind::Else)),
+            ("as", Ok(TokenKind::As)),
+            // Identifiers
+            ("foo", Ok(TokenKind::Ident("foo"))),
+            ("_foo", Ok(TokenKind::Ident("_foo"))),
+            ("f_o2o", Ok(TokenKind::Ident("f_o2o"))),
         ];
         println!();
         for test in tests {
-            let mut lexer = Lexer::new(test.2);
+            let mut lexer = Lexer::new(test.0);
             let res = lexer.next_token();
-            match (res, test.1, test.0) {
-                (Ok(_), Some(expected), _) => panic!("Expected error: {:?}, got none", expected),
-                (Err(err), None, _) => panic!("Unexpected error: {:?}", err),
-                (Err(got), Some(expected), _) => assert_eq!(expected, got.message),
-                (Ok(got), _, expected) => {
+            match (res, test.1) {
+                (Ok(_), Err(expected)) => panic!("Expected error: {:?}, got none", expected),
+                (Err(err), Ok(_)) => panic!("Unexpected error: {:?}", err),
+                (Err(got), Err(expected)) => assert_eq!(expected, got.message),
+                (Ok(got), Ok(expected)) => {
                     match got.kind {
                         TokenKind::Char(ch) => {
                             println!("found char: {} ({ch})", char::from_u32(ch as u32).unwrap())
