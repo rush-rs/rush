@@ -1,21 +1,30 @@
 use std::collections::HashMap;
 
 use rush_parser::{
-    ast::{FunctionDefinition, Program, Type},
+    ast::{ParsedBlock, ParsedFunctionDefinition, ParsedProgram, ParsedStatement, Program, Type},
     Span,
 };
 
-use crate::Diagnostic;
+use crate::{
+    ast::{AnnotatedBlock, AnnotatedFunctionDefinition, AnnotatedProgram, AnnotatedStatement},
+    Diagnostic, DiagnosticLevel, ErrorKind,
+};
 
 pub struct Analyzer<'src> {
-    program: Program<'src>,
-    pub functions: Vec<FunctionDefinition<'src>>,
-    scopes: Vec<Scope<'src>>,
-    diagnostics: Vec<Diagnostic>,
+    pub functions: HashMap<&'src str, Function<'src>>,
+    scope: Option<Scope<'src>>,
+    pub diagnostics: Vec<Diagnostic>,
 }
 
-#[derive(Debug, Default)]
+pub struct Function<'src> {
+    pub span: Span,
+    pub params: Vec<(&'src str, Type)>,
+    pub return_type: Type,
+}
+
+#[derive(Debug)]
 pub struct Scope<'src> {
+    pub fn_name: &'src str,
     pub vars: HashMap<&'src str, Variable>,
 }
 
@@ -25,13 +34,30 @@ pub struct Variable {
     pub span: Span,
 }
 
+impl<'src> Default for Analyzer<'src> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'src> Analyzer<'src> {
-    pub fn new(program: Program<'src>) -> Self {
+    /// Creates a new [`Analyzer`].
+    pub fn new() -> Self {
         Self {
-            program,
-            functions: vec![],
-            scopes: vec![Scope::default()],
+            functions: HashMap::new(),
+            scope: None,
             diagnostics: vec![],
         }
+    }
+
+    /// Adds a new diagnostic with the warning level
+    fn warn(&mut self, message: String, span: Span) {
+        self.diagnostics
+            .push(Diagnostic::new(DiagnosticLevel::Warning, message, span))
+    }
+    /// Adds a new diagnostic with the error level using the specified error kind
+    fn error(&mut self, kind: ErrorKind, message: String, span: Span) {
+        self.diagnostics
+            .push(Diagnostic::new(DiagnosticLevel::Error(kind), message, span))
     }
 }
