@@ -22,6 +22,24 @@ pub enum Type {
     Unknown,
 }
 
+impl Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Int => "int",
+                Self::Float => "float",
+                Self::Bool => "bool",
+                Self::Char => "char",
+                Self::Unit => "()",
+                Self::Never => "!",
+                Self::Unknown => "{unknown}",
+            }
+        )
+    }
+}
+
 pub type ParsedFunctionDefinition<'src> = FunctionDefinition<'src, ParsedStatement<'src>>;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FunctionDefinition<'src, Stmt> {
