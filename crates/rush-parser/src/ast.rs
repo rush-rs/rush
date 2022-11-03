@@ -2,12 +2,21 @@ use std::fmt::{Debug, Display};
 
 use crate::Span;
 
-pub type ParsedProgram<'src> = Program<'src, ParsedStatement<'src>>;
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Program<'src, Stmt> {
-    pub span: Span,
-    pub functions: Vec<FunctionDefinition<'src, Stmt>>,
-}
+pub type ParsedProgram<'src> = Program<'src, ()>;
+pub type ParsedFunctionDefinition<'src> = FunctionDefinition<'src, ()>;
+pub type ParsedBlock<'src> = Block<'src, ()>;
+pub type ParsedStatement<'src> = Statement<'src, ()>;
+pub type ParsedLetStmt<'src> = LetStmt<'src, ()>;
+pub type ParsedReturnStmt<'src> = ReturnStmt<'src, ()>;
+pub type ParsedExprStmt<'src> = ExprStmt<'src, ()>;
+pub type ParsedExpression<'src> = Expression<'src, ()>;
+pub type ParsedIfExpr<'src> = IfExpr<'src, ()>;
+pub type ParsedAtom<T> = Atom<T, ()>;
+pub type ParsedPrefixExpr<'src> = PrefixExpr<'src, ()>;
+pub type ParsedInfixExpr<'src> = InfixExpr<'src, ()>;
+pub type ParsedAssignExpr<'src> = AssignExpr<'src, ()>;
+pub type ParsedCallExpr<'src> = CallExpr<'src, ()>;
+pub type ParsedCastExpr<'src> = CastExpr<'src, ()>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Type {
@@ -40,29 +49,35 @@ impl Display for Type {
     }
 }
 
-pub type ParsedFunctionDefinition<'src> = FunctionDefinition<'src, ParsedStatement<'src>>;
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FunctionDefinition<'src, Stmt> {
+#[derive(Debug, Clone, PartialEq)]
+pub struct Program<'src, Annotation> {
     pub span: Span,
+    pub annotation: Annotation,
+    pub functions: Vec<FunctionDefinition<'src, Annotation>>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FunctionDefinition<'src, Annotation> {
+    pub span: Span,
+    pub annotation: Annotation,
     pub name: &'src str,
     pub params: Vec<(&'src str, Type)>,
     pub return_type: Type,
-    pub block: Block<Stmt>,
+    pub block: Block<'src, Annotation>,
 }
 
-pub type ParsedBlock<'src> = Block<ParsedStatement<'src>>;
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Block<Stmt> {
+#[derive(Debug, Clone, PartialEq)]
+pub struct Block<'src, Annotation> {
     pub span: Span,
-    pub stmts: Vec<Stmt>,
+    pub annotation: Annotation,
+    pub stmts: Vec<Statement<'src, Annotation>>,
 }
 
-pub type ParsedStatement<'src> = Statement<'src, ParsedExpression<'src>>;
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Statement<'src, Expr> {
-    Let(LetStmt<'src, Expr>),
-    Return(ReturnStmt<Expr>),
-    Expr(ExprStmt<Expr>),
+#[derive(Debug, Clone, PartialEq)]
+pub enum Statement<'src, Annotation> {
+    Let(LetStmt<'src, Annotation>),
+    Return(ReturnStmt<'src, Annotation>),
+    Expr(ExprStmt<'src, Annotation>),
 }
 
 impl<Expr> Statement<'_, Expr> {
@@ -75,58 +90,47 @@ impl<Expr> Statement<'_, Expr> {
     }
 }
 
-pub type ParsedLetStmt<'src> = LetStmt<'src, ParsedExpression<'src>>;
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LetStmt<'src, Expr> {
+#[derive(Debug, Clone, PartialEq)]
+pub struct LetStmt<'src, Annotation> {
     pub span: Span,
+    pub annotation: Annotation,
     pub mutable: bool,
     pub name: &'src str,
     pub type_: Option<Type>,
-    pub expr: Expr,
-}
-
-pub type ParsedReturnStmt<'src> = ReturnStmt<ParsedExpression<'src>>;
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ReturnStmt<Expr> {
-    pub span: Span,
-    pub expr: Option<Expr>,
-}
-
-pub type ParsedExprStmt<'src> = ExprStmt<ParsedExpression<'src>>;
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExprStmt<Expr> {
-    pub span: Span,
-    pub expr: Expr,
+    pub expr: Expression<'src, Annotation>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct ParsedExpression<'src>(pub BareParsedExpression<'src>);
-
-impl<'src> From<BareParsedExpression<'src>> for ParsedExpression<'src> {
-    fn from(expr: BareParsedExpression<'src>) -> Self {
-        Self(expr)
-    }
+pub struct ReturnStmt<'src, Annotation> {
+    pub span: Span,
+    pub annotation: Annotation,
+    pub expr: Option<Expression<'src, Annotation>>,
 }
 
-pub type BareParsedExpression<'src> =
-    Expression<'src, ParsedStatement<'src>, ParsedExpression<'src>>;
 #[derive(Debug, Clone, PartialEq)]
-pub enum Expression<'src, Stmt, Expr> {
-    Block(Box<Block<Stmt>>),
-    If(Box<IfExpr<Stmt, Expr>>),
-    Int(Atom<i64>),
-    Float(Atom<f64>),
-    Bool(Atom<bool>),
-    Ident(Atom<&'src str>),
-    Prefix(Box<PrefixExpr<Expr>>),
-    Infix(Box<InfixExpr<Expr>>),
-    Assign(Box<AssignExpr<'src, Expr>>),
-    Call(Box<CallExpr<Expr>>),
-    Cast(Box<CastExpr<Expr>>),
-    Grouped(Atom<Box<Expr>>),
+pub struct ExprStmt<'src, Annotation> {
+    pub span: Span,
+    pub annotation: Annotation,
+    pub expr: Expression<'src, Annotation>,
 }
 
-impl<Stmt, Expr> Expression<'_, Stmt, Expr> {
+#[derive(Debug, Clone, PartialEq)]
+pub enum Expression<'src, Annotation> {
+    Block(Box<Block<'src, Annotation>>),
+    If(Box<IfExpr<'src, Annotation>>),
+    Int(Atom<i64, Annotation>),
+    Float(Atom<f64, Annotation>),
+    Bool(Atom<bool, Annotation>),
+    Ident(Atom<&'src str, Annotation>),
+    Prefix(Box<PrefixExpr<'src, Annotation>>),
+    Infix(Box<InfixExpr<'src, Annotation>>),
+    Assign(Box<AssignExpr<'src, Annotation>>),
+    Call(Box<CallExpr<'src, Annotation>>),
+    Cast(Box<CastExpr<'src, Annotation>>),
+    Grouped(Atom<Box<Expression<'src, Annotation>>, Annotation>),
+}
+
+impl<Annotation> Expression<'_, Annotation> {
     pub fn span(&self) -> Span {
         match self {
             Self::Block(expr) => expr.span,
@@ -145,27 +149,28 @@ impl<Stmt, Expr> Expression<'_, Stmt, Expr> {
     }
 }
 
-pub type ParsedIfExpr<'src> = IfExpr<ParsedStatement<'src>, ParsedExpression<'src>>;
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IfExpr<Stmt, Expr> {
+#[derive(Debug, Clone, PartialEq)]
+pub struct IfExpr<'src, Annotation> {
     pub span: Span,
-    pub cond: Expr,
-    pub then_block: Block<Stmt>,
-    pub else_block: Option<Block<Stmt>>,
+    pub annotation: Annotation,
+    pub cond: Expression<'src, Annotation>,
+    pub then_block: Block<'src, Annotation>,
+    pub else_block: Option<Block<'src, Annotation>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Atom<T> {
+pub struct Atom<T, Annotation> {
     pub span: Span,
+    pub annotation: Annotation,
     pub value: T,
 }
 
-pub type ParsedPrefixExpr<'src> = PrefixExpr<ParsedExpression<'src>>;
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PrefixExpr<Expr> {
+#[derive(Debug, Clone, PartialEq)]
+pub struct PrefixExpr<'src, Annotation> {
     pub span: Span,
+    pub annotation: Annotation,
     pub op: PrefixOp,
-    pub expr: Expr,
+    pub expr: Expression<'src, Annotation>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -176,13 +181,13 @@ pub enum PrefixOp {
     Neg,
 }
 
-pub type ParsedInfixExpr<'src> = InfixExpr<ParsedExpression<'src>>;
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct InfixExpr<Expr> {
+#[derive(Debug, Clone, PartialEq)]
+pub struct InfixExpr<'src, Annotation> {
     pub span: Span,
-    pub lhs: Expr,
+    pub annotation: Annotation,
+    pub lhs: Expression<'src, Annotation>,
     pub op: InfixOp,
-    pub rhs: Expr,
+    pub rhs: Expression<'src, Annotation>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -230,13 +235,13 @@ pub enum InfixOp {
     Or,
 }
 
-pub type ParsedAssignExpr<'src> = AssignExpr<'src, ParsedExpression<'src>>;
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AssignExpr<'src, Expr> {
+#[derive(Debug, Clone, PartialEq)]
+pub struct AssignExpr<'src, Annotation> {
     pub span: Span,
-    pub assignee: Atom<&'src str>,
+    pub annotation: Annotation,
+    pub assignee: Atom<&'src str, Annotation>,
     pub op: AssignOp,
-    pub expr: Expr,
+    pub expr: Expression<'src, Annotation>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -267,18 +272,18 @@ pub enum AssignOp {
     BitXor,
 }
 
-pub type ParsedCallExpr<'src> = CallExpr<ParsedExpression<'src>>;
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CallExpr<Expr> {
+#[derive(Debug, Clone, PartialEq)]
+pub struct CallExpr<'src, Annotation> {
     pub span: Span,
-    pub expr: Expr,
-    pub args: Vec<Expr>,
+    pub annotation: Annotation,
+    pub expr: Expression<'src, Annotation>,
+    pub args: Vec<Expression<'src, Annotation>>,
 }
 
-pub type ParsedCastExpr<'src> = CastExpr<ParsedExpression<'src>>;
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CastExpr<Expr> {
+#[derive(Debug, Clone, PartialEq)]
+pub struct CastExpr<'src, Annotation> {
     pub span: Span,
-    pub expr: Expr,
+    pub annotation: Annotation,
+    pub expr: Expression<'src, Annotation>,
     pub type_: Type,
 }

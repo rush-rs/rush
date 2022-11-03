@@ -108,6 +108,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
 
         Ok(Program {
             span: start_loc.until(self.prev_tok.span.end),
+            annotation: (),
             functions,
         })
     }
@@ -174,6 +175,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
 
         Ok(FunctionDefinition {
             span: start_loc.until(self.prev_tok.span.end),
+            annotation: (),
             name,
             params,
             return_type,
@@ -202,6 +204,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
 
         Ok(Block {
             span: start_loc.until(self.prev_tok.span.end),
+            annotation: (),
             stmts,
         })
     }
@@ -241,6 +244,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
 
         Ok(LetStmt {
             span: start_loc.until(self.prev_tok.span.end),
+            annotation: (),
             mutable,
             type_,
             name,
@@ -263,6 +267,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
 
         Ok(ReturnStmt {
             span: start_loc.until(self.prev_tok.span.end),
+            annotation: (),
             expr,
         })
     }
@@ -271,8 +276,8 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         let start_loc = self.curr_tok.span.start;
 
         let (expr, with_block) = match self.curr_tok.kind {
-            TokenKind::If => (Expression::If(self.if_expr()?.into()).into(), true),
-            TokenKind::LBrace => (Expression::Block(self.block()?.into()).into(), true),
+            TokenKind::If => (Expression::If(self.if_expr()?.into()), true),
+            TokenKind::LBrace => (Expression::Block(self.block()?.into()), true),
             _ => (self.expression(0)?, false),
         };
 
@@ -288,6 +293,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
 
         Ok(ExprStmt {
             span: start_loc.until(self.prev_tok.span.end),
+            annotation: (),
             expr,
         })
     }
@@ -312,8 +318,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
                     self.curr_tok.span,
                 ));
             }
-        }
-        .into();
+        };
 
         while self.curr_tok.kind.prec().0 > prec {
             lhs = match self.curr_tok.kind {
@@ -351,8 +356,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
                 TokenKind::LParen => self.call_expr(start_loc, lhs)?,
                 TokenKind::As => self.cast_expr(start_loc, lhs)?,
                 _ => return Ok(lhs),
-            }
-            .into();
+            };
         }
 
         Ok(lhs)
@@ -374,9 +378,11 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
                         let if_expr = self.if_expr()?;
                         Block {
                             span: if_expr.span,
+                            annotation: (),
                             stmts: vec![Statement::Expr(ExprStmt {
                                 span: if_expr.span,
-                                expr: Expression::If(if_expr.into()).into(),
+                                annotation: (),
+                                expr: Expression::If(if_expr.into()),
                             })],
                         }
                     }
@@ -396,17 +402,19 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
 
         Ok(IfExpr {
             span: start_loc.until(self.prev_tok.span.end),
+            annotation: (),
             cond,
             then_block,
             else_block,
         })
     }
 
-    fn atom<T>(&mut self, value: T) -> Result<Atom<T>> {
+    fn atom<T>(&mut self, value: T) -> Result<ParsedAtom<T>> {
         let start_loc = self.curr_tok.span.start;
         self.next()?;
         Ok(Atom {
             span: start_loc.until(self.prev_tok.span.end),
+            annotation: (),
             value,
         })
     }
@@ -421,12 +429,13 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         let expr = self.expression(29)?;
         Ok(PrefixExpr {
             span: start_loc.until(self.prev_tok.span.end),
+            annotation: (),
             op,
             expr,
         })
     }
 
-    fn grouped_expr(&mut self) -> Result<Atom<Box<ParsedExpression<'src>>>> {
+    fn grouped_expr(&mut self) -> Result<ParsedAtom<Box<ParsedExpression<'src>>>> {
         let start_loc = self.curr_tok.span.start;
         // skip the opening parenthesis
         self.next()?;
@@ -436,6 +445,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
 
         Ok(Atom {
             span: start_loc.until(self.prev_tok.span.end),
+            annotation: (),
             value: expr.into(),
         })
     }
@@ -445,7 +455,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         start_loc: Location,
         lhs: ParsedExpression<'src>,
         op: InfixOp,
-    ) -> Result<BareParsedExpression<'src>> {
+    ) -> Result<ParsedExpression<'src>> {
         let right_prec = self.curr_tok.kind.prec().1;
         self.next()?;
         let rhs = self.expression(right_prec)?;
@@ -453,6 +463,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         Ok(Expression::Infix(
             InfixExpr {
                 span: start_loc.until(self.prev_tok.span.end),
+                annotation: (),
                 lhs,
                 op,
                 rhs,
@@ -466,8 +477,8 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         start_loc: Location,
         lhs: ParsedExpression<'src>,
         op: AssignOp,
-    ) -> Result<BareParsedExpression<'src>> {
-        let assignee = match lhs.0 {
+    ) -> Result<ParsedExpression<'src>> {
+        let assignee = match lhs {
             Expression::Ident(item) => item,
             _ => {
                 self.errors.push(Error::new(
@@ -476,6 +487,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
                 ));
                 Atom {
                     span: Span::default(),
+                    annotation: (),
                     value: "",
                 }
             }
@@ -488,6 +500,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         Ok(Expression::Assign(
             AssignExpr {
                 span: start_loc.until(self.prev_tok.span.end),
+                annotation: (),
                 assignee,
                 op,
                 expr,
@@ -500,7 +513,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         &mut self,
         start_loc: Location,
         expr: ParsedExpression<'src>,
-    ) -> Result<BareParsedExpression<'src>> {
+    ) -> Result<ParsedExpression<'src>> {
         // skip opening parenthesis
         self.next()?;
 
@@ -522,6 +535,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         Ok(Expression::Call(
             CallExpr {
                 span: start_loc.until(self.prev_tok.span.end),
+                annotation: (),
                 expr,
                 args,
             }
@@ -533,7 +547,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         &mut self,
         start_loc: Location,
         expr: ParsedExpression<'src>,
-    ) -> Result<BareParsedExpression<'src>> {
+    ) -> Result<ParsedExpression<'src>> {
         // skip `as` token
         self.next()?;
 
@@ -542,6 +556,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         Ok(Expression::Cast(
             CastExpr {
                 span: start_loc.until(self.prev_tok.span.end),
+                annotation: (),
                 expr,
                 type_,
             }
@@ -587,34 +602,34 @@ mod tests {
             Expression::Infix(
                 InfixExpr {
                     span: span!(0..5),
+                    annotation: (),
                     lhs: Expression::Infix(
                         InfixExpr {
                             span: span!(0..3),
+                            annotation: (),
                             lhs: Expression::Int(Atom {
                                 span: span!(0..1),
+                                annotation: (),
                                 value: 3,
-                            })
-                            .into(),
+                            }),
                             op: InfixOp::Minus,
                             rhs: Expression::Int(Atom {
                                 span: span!(2..3),
+                                annotation: (),
                                 value: 2,
-                            })
-                            .into(),
+                            }),
                         }
                         .into(),
-                    )
-                    .into(),
+                    ),
                     op: InfixOp::Minus,
                     rhs: Expression::Int(Atom {
                         span: span!(4..5),
+                        annotation: (),
                         value: 1,
-                    })
-                    .into(),
+                    }),
                 }
                 .into(),
-            )
-            .into(),
+            ),
         )?;
 
         // 1+2*3
@@ -629,34 +644,34 @@ mod tests {
             Expression::Infix(
                 InfixExpr {
                     span: span!(0..5),
+                    annotation: (),
                     lhs: Expression::Int(Atom {
                         span: span!(0..1),
+                        annotation: (),
                         value: 1,
-                    })
-                    .into(),
+                    }),
                     op: InfixOp::Plus,
                     rhs: Expression::Infix(
                         InfixExpr {
                             span: span!(2..5),
+                            annotation: (),
                             lhs: Expression::Int(Atom {
                                 span: span!(2..3),
+                                annotation: (),
                                 value: 2,
-                            })
-                            .into(),
+                            }),
                             op: InfixOp::Mul,
                             rhs: Expression::Int(Atom {
                                 span: span!(4..5),
+                                annotation: (),
                                 value: 3,
-                            })
-                            .into(),
+                            }),
                         }
                         .into(),
-                    )
-                    .into(),
+                    ),
                 }
                 .into(),
-            )
-            .into(),
+            ),
         )?;
 
         // 2**3**4
@@ -671,34 +686,34 @@ mod tests {
             Expression::Infix(
                 InfixExpr {
                     span: span!(0..7),
+                    annotation: (),
                     lhs: Expression::Int(Atom {
                         span: span!(0..1),
+                        annotation: (),
                         value: 2,
-                    })
-                    .into(),
+                    }),
                     op: InfixOp::Pow,
                     rhs: Expression::Infix(
                         InfixExpr {
                             span: span!(3..7),
+                            annotation: (),
                             lhs: Expression::Int(Atom {
                                 span: span!(3..4),
+                                annotation: (),
                                 value: 3,
-                            })
-                            .into(),
+                            }),
                             op: InfixOp::Pow,
                             rhs: Expression::Int(Atom {
                                 span: span!(6..7),
+                                annotation: (),
                                 value: 4,
-                            })
-                            .into(),
+                            }),
                         }
                         .into(),
-                    )
-                    .into(),
+                    ),
                 }
                 .into(),
-            )
-            .into(),
+            ),
         )?;
 
         Ok(())
@@ -716,20 +731,21 @@ mod tests {
             Expression::Assign(
                 AssignExpr {
                     span: span!(0..3),
+                    annotation: (),
                     assignee: Atom {
                         span: span!(0..1),
+                        annotation: (),
                         value: "a",
                     },
                     op: AssignOp::Basic,
                     expr: Expression::Int(Atom {
                         span: span!(2..3),
+                        annotation: (),
                         value: 1,
-                    })
-                    .into(),
+                    }),
                 }
                 .into(),
-            )
-            .into(),
+            ),
         )?;
 
         // answer += 42.0
@@ -742,20 +758,21 @@ mod tests {
             Expression::Assign(
                 AssignExpr {
                     span: span!(0..14),
+                    annotation: (),
                     assignee: Atom {
                         span: span!(0..6),
+                        annotation: (),
                         value: "answer",
                     },
                     op: AssignOp::Plus,
                     expr: Expression::Float(Atom {
                         span: span!(10..14),
+                        annotation: (),
                         value: 42.0,
-                    })
-                    .into(),
+                    }),
                 }
                 .into(),
-            )
-            .into(),
+            ),
         )?;
 
         Ok(())
