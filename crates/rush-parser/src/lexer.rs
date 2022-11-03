@@ -383,48 +383,16 @@ impl<'src> Lexer<'src> {
 
 #[cfg(test)]
 mod tests {
-    use std::vec;
-
     use super::*;
 
     #[test]
-    fn test_numbers_with_comments() {
-        let code = "
-            // skipped number: 42
-
-            /* inline comment */ 1.123
-            12 /* inline comment */
-            13.1 // line comment
-            /* prefix */ 14.12 /* suffix */
-        ";
-        let mut lexer = Lexer::new(code);
-        let mut tokens = vec![];
-        loop {
-            let current = lexer.next_token().unwrap();
-            if current.kind == TokenKind::Eof {
-                break;
-            }
-            tokens.push(current);
-        }
-        let expected_kinds = vec![
-            TokenKind::Float(1.123),
-            TokenKind::Int(12),
-            TokenKind::Float(13.1),
-            TokenKind::Float(14.12),
-        ];
-        for (expected, actual) in expected_kinds.iter().zip(&tokens) {
-            assert_eq!(*expected, actual.kind);
-        }
-    }
-
-    #[test]
     fn test_lexer() {
-        let tests = vec![
+        let tests = [
             // Char tests
             ("'a'", Ok(TokenKind::Char(b'a'))),
-            ("'*'", Ok(TokenKind::Char(b'a'))),
+            ("'*'", Ok(TokenKind::Char(b'*'))),
             ("'_'", Ok(TokenKind::Char(b'_'))),
-            (r#"'\'"#, Ok(TokenKind::Char(b'\''))),
+            (r#"'\'"#, Err("unterminated char literal")),
             (r#"'\\'"#, Ok(TokenKind::Char(b'\\'))),
             (r#"'\a'"#, Err("expected escape character, found a")),
             (r#"'\x1b'"#, Ok(TokenKind::Char(b'\x1b'))),
@@ -442,7 +410,57 @@ mod tests {
             // Identifiers
             ("foo", Ok(TokenKind::Ident("foo"))),
             ("_foo", Ok(TokenKind::Ident("_foo"))),
-            ("f_o2o", Ok(TokenKind::Ident("f_o2o"))),
+            ("f_0o", Ok(TokenKind::Ident("f_0o"))),
+            // Numbers
+            ("1", Ok(TokenKind::Int(1))),
+            ("42", Ok(TokenKind::Int(42))),
+            ("3.1", Ok(TokenKind::Float(3.1))),
+            ("42.12345678", Ok(TokenKind::Float(42.12345678))),
+            ("42.69", Ok(TokenKind::Float(42.69))),
+            // Paranthesis
+            ("(", Ok(TokenKind::LParen)),
+            (")", Ok(TokenKind::RParen)),
+            ("{", Ok(TokenKind::LBrace)),
+            ("}", Ok(TokenKind::RBrace)),
+            // Punctuation and delimiters
+            ("->", Ok(TokenKind::Arrow)),
+            (",", Ok(TokenKind::Comma)),
+            (":", Ok(TokenKind::Colon)),
+            (";", Ok(TokenKind::Semicolon)),
+            // Operators
+            ("!", Ok(TokenKind::Not)),
+            ("-", Ok(TokenKind::Minus)),
+            ("+", Ok(TokenKind::Plus)),
+            ("*", Ok(TokenKind::Star)),
+            ("/", Ok(TokenKind::Slash)),
+            ("%", Ok(TokenKind::Percent)),
+            ("**", Ok(TokenKind::Pow)),
+            ("==", Ok(TokenKind::Eq)),
+            ("!=", Ok(TokenKind::Neq)),
+            ("<", Ok(TokenKind::Lt)),
+            (">", Ok(TokenKind::Gt)),
+            ("<=", Ok(TokenKind::Lte)),
+            (">=", Ok(TokenKind::Gte)),
+            ("<<", Ok(TokenKind::Shl)),
+            (">>", Ok(TokenKind::Shr)),
+            ("|", Ok(TokenKind::BitOr)),
+            ("&", Ok(TokenKind::BitAnd)),
+            ("^", Ok(TokenKind::BitXor)),
+            ("&&", Ok(TokenKind::And)),
+            ("||", Ok(TokenKind::Or)),
+            // Assignments
+            ("=", Ok(TokenKind::Assign)),
+            ("+=", Ok(TokenKind::PlusAssign)),
+            ("-=", Ok(TokenKind::MinusAssign)),
+            ("*=", Ok(TokenKind::MulAssign)),
+            ("/=", Ok(TokenKind::DivAssign)),
+            ("%=", Ok(TokenKind::RemAssign)),
+            ("**=", Ok(TokenKind::PowAssign)),
+            ("<<=", Ok(TokenKind::ShlAssign)),
+            (">>=", Ok(TokenKind::ShrAssign)),
+            ("|=", Ok(TokenKind::BitOrAssign)),
+            ("&=", Ok(TokenKind::BitAndAssign)),
+            ("^=", Ok(TokenKind::BitXorAssign)),
         ];
         println!();
         for test in tests {
