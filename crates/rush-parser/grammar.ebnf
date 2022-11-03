@@ -27,11 +27,13 @@ ExprWithoutBlock = int
                  | PrefixExpr
                  | InfixExpr
                  | CallExpr
+                 | CastExpr
                  | '(' , Expression , ')' ;
 PrefixExpr       = PREFIX_OPERATOR , Expression ;
 InfixExpr        = Expression , INFIX_OPERATOR , Expression ;
 CallExpr         = Expression , '(' , [ ArgumentList ] , ')' ;
 ArgumentList     = Expression , { ',' , Expression } , [ ',' ] ;
+CastExpr         = Expression , 'as' , Type ;
 
 ident = LETTER , { LETTER | DIGIT } ;
 int   = DIGIT , { DIGIT | '_' }
