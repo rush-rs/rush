@@ -15,7 +15,9 @@ pub enum Type {
     Bool,
     Char,
     Unit,
+    /// Internal use only, used for diverging expressions
     Never,
+    /// Internal use only, used if typecheck could not determine a type
     Unknown,
 }
 
@@ -66,10 +68,10 @@ pub struct ExprStmt<'src> {
 pub enum Expression<'src> {
     Block(Box<Block<'src>>),
     If(Box<IfExpr<'src>>),
-    Int(AtomExpr<i64>),
-    Float(AtomExpr<f64>),
-    Bool(AtomExpr<bool>),
-    Ident(AtomExpr<&'src str>),
+    Int(Atom<i64>),
+    Float(Atom<f64>),
+    Bool(Atom<bool>),
+    Ident(Atom<&'src str>),
     Prefix(Box<PrefixExpr<'src>>),
     Infix(Box<InfixExpr<'src>>),
     Assign(Box<AssignExpr<'src>>),
@@ -86,9 +88,9 @@ pub struct IfExpr<'src> {
     pub else_block: Option<Block<'src>>,
 }
 
-#[allow(clippy::derive_partial_eq_without_eq)] // The trait bounds of T don't specify Eq
+#[allow(clippy::derive_partial_eq_without_eq)] // the trait bounds of T don't specify Eq
 #[derive(Debug, Clone, PartialEq)]
-pub struct AtomExpr<T>
+pub struct Atom<T>
 where
     T: Debug + Clone + PartialEq,
 {
@@ -105,8 +107,10 @@ pub struct PrefixExpr<'src> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PrefixOp {
-    Not, // !
-    Neg, // -
+    /// !
+    Not,
+    /// -
+    Neg,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -119,52 +123,83 @@ pub struct InfixExpr<'src> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InfixOp {
-    Plus,  // +
-    Minus, // -
-    Mul,   // *
-    Div,   // /
-    Rem,   // %
-    Pow,   // *
+    /// +
+    Plus,
+    /// -
+    Minus,
+    /// *
+    Mul,
+    /// /
+    Div,
+    /// %
+    Rem,
+    /// *
+    Pow,
 
-    Eq,  // ==
-    Neq, // !=
-    Lt,  // <
-    Gt,  // >
-    Lte, // <=
-    Gte, // >=
+    /// ==
+    Eq,
+    /// !=
+    Neq,
+    /// <
+    Lt,
+    /// >
+    Gt,
+    /// <=
+    Lte,
+    /// >=
+    Gte,
 
-    Shl,    // <<
-    Shr,    // >>
-    BitOr,  // |
-    BitAnd, // &
-    BitXor, // ^
+    /// <<
+    Shl,
+    /// >>
+    Shr,
+    /// |
+    BitOr,
+    /// &
+    BitAnd,
+    /// ^
+    BitXor,
 
-    And, // &&
-    Or,  // ||
+    /// &&
+    And,
+    /// ||
+    Or,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AssignExpr<'src> {
     pub span: Span,
-    pub assignee: AtomExpr<&'src str>,
+    pub assignee: Atom<&'src str>,
     pub op: AssignOp,
     pub expr: Expression<'src>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AssignOp {
-    Basic,  // =
-    Plus,   // +=
-    Minus,  // -=
-    Mul,    // *=
-    Div,    // /=
-    Rem,    // %=
-    Pow,    // **=
-    Shl,    // <<=
-    Shr,    // >>=
-    BitOr,  // |=
-    BitAnd, // &=
-    BitXor, // ^=
+    /// =
+    Basic,
+    /// +=
+    Plus,
+    /// -=
+    Minus,
+    /// *=
+    Mul,
+    /// /=
+    Div,
+    /// %=
+    Rem,
+    /// **=
+    Pow,
+    /// <<=
+    Shl,
+    /// >>=
+    Shr,
+    /// |=
+    BitOr,
+    /// &=
+    BitAnd,
+    /// ^=
+    BitXor,
 }
 
 #[derive(Debug, Clone, PartialEq)]

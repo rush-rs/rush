@@ -14,9 +14,9 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
     pub fn new(lexer: Lexer) -> Self {
         Self {
             lexer,
-            // Initialize with dummy Eof tokens
-            prev_tok: TokenKind::Eof.spanned(Span::default()),
-            curr_tok: TokenKind::Eof.spanned(Span::default()),
+            // initialize with dummy Eof tokens
+            prev_tok: Token::default(),
+            curr_tok: Token::default(),
             errors: vec![],
         }
     }
@@ -33,6 +33,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         if let Err(err) = self.next() {
             return (Err(err), self.errors);
         }
+
         let program = match self.program() {
             Ok(program) => program,
             Err(err) => return (Err(err), self.errors),
@@ -41,7 +42,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         if self.curr_tok.kind != TokenKind::Eof {
             self.errors.push(Error::new(
                 ErrorKind::Syntax,
-                format!("expected EOF, found {}", self.curr_tok.kind),
+                format!("expected EOF, found `{}`", self.curr_tok.kind),
                 self.curr_tok.span,
             ))
         }
@@ -49,21 +50,22 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         (Ok(program), self.errors)
     }
 
-    // Move cursor to next token
+    // moves cursor to next token
     fn next(&mut self) -> Result<()> {
-        // Swap prev_tok and curr_tok in memory so that what was curr_tok is now prev_tok
+        // swap prev_tok and curr_tok in memory so that what was curr_tok is now prev_tok
         mem::swap(&mut self.prev_tok, &mut self.curr_tok);
-        // Overwrite curr_tok (which is now what prev_tok was) with the next token from the lexer
+        // overwrite curr_tok (which is now what prev_tok was) with the next token from the lexer
         self.curr_tok = self.lexer.next_token()?;
 
         Ok(())
     }
 
+    // expects the curr_tok to be of the specified kind
     fn expect(&mut self, kind: TokenKind) -> Result<()> {
         if self.curr_tok.kind != kind {
             return Err(Error::new(
                 ErrorKind::Syntax,
-                format!("expected {kind}, found {}", self.curr_tok.kind),
+                format!("expected `{kind}`, found `{}`", self.curr_tok.kind),
                 self.curr_tok.span,
             ));
         }
@@ -71,6 +73,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         Ok(())
     }
 
+    // expects the curr_tok to be an identifier and returns its name if this is the case
     fn expect_ident(&mut self) -> Result<&'src str> {
         match self.curr_tok.kind {
             TokenKind::Ident(ident) => {
@@ -79,17 +82,18 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             }
             _ => Err(Error::new(
                 ErrorKind::Syntax,
-                format!("expected identifier, found {}", self.curr_tok.kind),
+                format!("expected identifier, found `{}`", self.curr_tok.kind),
                 self.curr_tok.span,
             )),
         }
     }
 
-    fn expect_closing(&mut self, kind: TokenKind, name: &str) -> Result<()> {
+    // expects curr_tok to be the specified token kind and adds a soft error otherwise
+    fn expect_recoverable(&mut self, kind: TokenKind, message: impl Into<String>) -> Result<()> {
         if self.curr_tok.kind != kind {
             self.errors.push(Error::new(
                 ErrorKind::Syntax,
-                format!("missing closing {name}"),
+                message.into(),
                 self.curr_tok.span,
             ));
         } else {
@@ -126,17 +130,17 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
                     format!("unknown type `{ident}`"),
                     self.curr_tok.span,
                 ));
-                Type::Unit
+                Type::Unknown
             }
             TokenKind::LParen => {
                 self.next()?;
-                self.expect_closing(TokenKind::RParen, "parenthesis")?;
+                self.expect_recoverable(TokenKind::RParen, "missing closing parenthesis")?;
                 return Ok(Type::Unit);
             }
-            kind => {
+            invalid => {
                 return Err(Error::new(
                     ErrorKind::Syntax,
-                    format!("expected a type, found {kind}"),
+                    format!("expected a type, found `{invalid}`"),
                     self.curr_tok.span,
                 ));
             }
@@ -157,14 +161,14 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             params.push(self.parameter()?);
             while self.curr_tok.kind == TokenKind::Comma {
                 self.next()?;
-                if let TokenKind::RParen | TokenKind::Eof = self.curr_tok.kind {
+                if matches!(self.curr_tok.kind, TokenKind::RParen | TokenKind::Eof) {
                     break;
                 }
                 params.push(self.parameter()?);
             }
         }
 
-        self.expect_closing(TokenKind::RParen, "parenthesis")?;
+        self.expect_recoverable(TokenKind::RParen, "missing closing parenthesis")?;
 
         let return_type = match self.curr_tok.kind {
             TokenKind::Arrow => {
@@ -202,7 +206,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             stmts.push(self.statement()?);
         }
 
-        self.expect_closing(TokenKind::RBrace, "brace")?;
+        self.expect_recoverable(TokenKind::RBrace, "missing closing brace")?;
 
         Ok(Block {
             span: start_loc.until(self.prev_tok.span.end),
@@ -221,7 +225,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
     fn let_stmt(&mut self) -> Result<LetStmt<'src>> {
         let start_loc = self.curr_tok.span.start;
 
-        // this function is only called when self.curr_tok.kind == TokenKind::Let
+        // skip let token: this function is only called when self.curr_tok.kind == TokenKind::Let
         self.next()?;
 
         let mutable = self.curr_tok.kind == TokenKind::Mut;
@@ -241,16 +245,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
 
         self.expect(TokenKind::Assign)?;
         let expr = self.expression(0)?;
-
-        if self.curr_tok.kind != TokenKind::Semicolon {
-            self.errors.push(Error::new(
-                ErrorKind::Syntax,
-                "missing semicolon after statement".to_string(),
-                self.curr_tok.span,
-            ))
-        } else {
-            self.next()?;
-        }
+        self.expect_recoverable(TokenKind::Semicolon, "missing semicolon after statement")?;
 
         Ok(LetStmt {
             span: start_loc.until(self.prev_tok.span.end),
@@ -264,7 +259,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
     fn return_stmt(&mut self) -> Result<ReturnStmt<'src>> {
         let start_loc = self.curr_tok.span.start;
 
-        // this function is only called when self.curr_tok.kind == TokenKind::Return
+        // skip return token: this function is only called when self.curr_tok.kind == TokenKind::Return
         self.next()?;
 
         let expr = match self.curr_tok.kind {
@@ -272,15 +267,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             _ => Some(self.expression(0)?),
         };
 
-        if self.curr_tok.kind != TokenKind::Semicolon {
-            self.errors.push(Error::new(
-                ErrorKind::Syntax,
-                "missing semicolon after statement".to_string(),
-                self.curr_tok.span,
-            ))
-        } else {
-            self.next()?;
-        }
+        self.expect_recoverable(TokenKind::Semicolon, "missing semicolon after statement")?;
 
         Ok(ReturnStmt {
             span: start_loc.until(self.prev_tok.span.end),
@@ -320,18 +307,18 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         let mut lhs = match self.curr_tok.kind {
             TokenKind::LBrace => Expression::Block(self.block()?.into()),
             TokenKind::If => Expression::If(self.if_expr()?.into()),
-            TokenKind::Int(num) => Expression::Int(self.atom_expr(num)?),
-            TokenKind::Float(num) => Expression::Float(self.atom_expr(num)?),
-            TokenKind::True => Expression::Bool(self.atom_expr(true)?),
-            TokenKind::False => Expression::Bool(self.atom_expr(false)?),
-            TokenKind::Ident(ident) => Expression::Ident(self.atom_expr(ident)?),
+            TokenKind::Int(num) => Expression::Int(self.atom(num)?),
+            TokenKind::Float(num) => Expression::Float(self.atom(num)?),
+            TokenKind::True => Expression::Bool(self.atom(true)?),
+            TokenKind::False => Expression::Bool(self.atom(false)?),
+            TokenKind::Ident(ident) => Expression::Ident(self.atom(ident)?),
             TokenKind::Not => Expression::Prefix(self.prefix_expr(PrefixOp::Not)?.into()),
             TokenKind::Minus => Expression::Prefix(self.prefix_expr(PrefixOp::Neg)?.into()),
-            TokenKind::LParen => Expression::Grouped(self.expression(0)?.into()),
-            kind => {
+            TokenKind::LParen => Expression::Grouped(self.grouped_expr()?.into()),
+            invalid => {
                 return Err(Error::new(
                     ErrorKind::Syntax,
-                    format!("expected an expression, found {kind}"),
+                    format!("expected an expression, found `{invalid}`"),
                     self.curr_tok.span,
                 ));
             }
@@ -444,7 +431,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
     fn if_expr(&mut self) -> Result<IfExpr<'src>> {
         let start_loc = self.curr_tok.span.start;
 
-        // this function is only called when self.curr_tok.kind == TokenKind::If
+        // skip if token: this function is only called when self.curr_tok.kind == TokenKind::If
         self.next()?;
 
         let cond = self.expression(0)?;
@@ -464,10 +451,12 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
                         }
                     }
                     TokenKind::LBrace => self.block()?,
-                    kind => {
+                    invalid => {
                         return Err(Error::new(
                             ErrorKind::Syntax,
-                            format!("expected either `if` or block after `else`, found {kind}"),
+                            format!(
+                                "expected either `if` or block after `else`, found `{invalid}`"
+                            ),
                             self.curr_tok.span,
                         ));
                     }
@@ -484,10 +473,10 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         })
     }
 
-    fn atom_expr<T: Debug + Clone + PartialEq>(&mut self, value: T) -> Result<AtomExpr<T>> {
+    fn atom<T: Debug + Clone + PartialEq>(&mut self, value: T) -> Result<Atom<T>> {
         let start_loc = self.curr_tok.span.start;
         self.next()?;
-        Ok(AtomExpr {
+        Ok(Atom {
             span: start_loc.until(self.prev_tok.span.end),
             value,
         })
@@ -496,7 +485,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
     fn prefix_expr(&mut self, op: PrefixOp) -> Result<PrefixExpr<'src>> {
         let start_loc = self.curr_tok.span.start;
 
-        // Skip the operator token
+        // skip the operator token
         self.next()?;
 
         // PrefixExpr precedence is 29, higher than all InfixExpr precedences
@@ -506,6 +495,14 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             op,
             expr,
         })
+    }
+
+    fn grouped_expr(&mut self) -> Result<Expression<'src>> {
+        // skip the opening paranthesis
+        self.next()?;
+        let expr = self.expression(0)?;
+        self.expect_recoverable(TokenKind::RParen, "missing closing paranthesis")?;
+        Ok(expr)
     }
 
     fn infix_expr(
@@ -540,7 +537,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
                     "left hand side of assignment must be an identifier".to_string(),
                     self.curr_tok.span,
                 ));
-                AtomExpr {
+                Atom {
                     span: Span::default(),
                     value: "",
                 }
@@ -560,7 +557,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
     }
 
     fn call_expr(&mut self, start_loc: Location, expr: Expression<'src>) -> Result<CallExpr<'src>> {
-        // Skip opening paren
+        // skip opening parenthesis
         self.next()?;
 
         let mut args = vec![];
@@ -576,7 +573,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             }
         }
 
-        self.expect_closing(TokenKind::RParen, "parenthesis")?;
+        self.expect_recoverable(TokenKind::RParen, "missing closing parenthesis")?;
 
         Ok(CallExpr {
             span: start_loc.until(self.prev_tok.span.end),
@@ -586,7 +583,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
     }
 
     fn cast_expr(&mut self, start_loc: Location, expr: Expression<'src>) -> Result<CastExpr<'src>> {
-        // Skip `as` token
+        // skip `as` token
         self.next()?;
 
         let type_ = self.type_()?;
@@ -608,9 +605,7 @@ mod tests {
         T: Iterator<Item = Token<'src>>,
     {
         fn next_token(&mut self) -> Result<Token<'src>> {
-            Ok(self
-                .next()
-                .unwrap_or_else(|| TokenKind::Eof.spanned(Span::default())))
+            Ok(self.next().unwrap_or_default())
         }
     }
 
@@ -626,23 +621,33 @@ mod tests {
 
     #[test]
     fn arithmetic_expressions() -> Result<()> {
-        // 3-2
+        // 3-2-1
         expr_test(
             [
                 TokenKind::Int(3).spanned(span!(0..1)),
                 TokenKind::Minus.spanned(span!(1..2)),
                 TokenKind::Int(2).spanned(span!(2..3)),
+                TokenKind::Minus.spanned(span!(3..4)),
+                TokenKind::Int(1).spanned(span!(4..5)),
             ],
             Expression::Infix(Box::new(InfixExpr {
-                span: span!(0..3),
-                lhs: Expression::Int(AtomExpr {
-                    span: span!(0..1),
-                    value: 3,
-                }),
+                span: span!(0..5),
+                lhs: Expression::Infix(Box::new(InfixExpr {
+                    span: span!(0..3),
+                    lhs: Expression::Int(Atom {
+                        span: span!(0..1),
+                        value: 3,
+                    }),
+                    op: InfixOp::Minus,
+                    rhs: Expression::Int(Atom {
+                        span: span!(2..3),
+                        value: 2,
+                    }),
+                })),
                 op: InfixOp::Minus,
-                rhs: Expression::Int(AtomExpr {
-                    span: span!(2..3),
-                    value: 2,
+                rhs: Expression::Int(Atom {
+                    span: span!(4..5),
+                    value: 1,
                 }),
             })),
         )?;
@@ -658,19 +663,19 @@ mod tests {
             ],
             Expression::Infix(Box::new(InfixExpr {
                 span: span!(0..5),
-                lhs: Expression::Int(AtomExpr {
+                lhs: Expression::Int(Atom {
                     span: span!(0..1),
                     value: 1,
                 }),
                 op: InfixOp::Plus,
                 rhs: Expression::Infix(Box::new(InfixExpr {
                     span: span!(2..5),
-                    lhs: Expression::Int(AtomExpr {
+                    lhs: Expression::Int(Atom {
                         span: span!(2..3),
                         value: 2,
                     }),
                     op: InfixOp::Mul,
-                    rhs: Expression::Int(AtomExpr {
+                    rhs: Expression::Int(Atom {
                         span: span!(4..5),
                         value: 3,
                     }),
@@ -689,19 +694,19 @@ mod tests {
             ],
             Expression::Infix(Box::new(InfixExpr {
                 span: span!(0..7),
-                lhs: Expression::Int(AtomExpr {
+                lhs: Expression::Int(Atom {
                     span: span!(0..1),
                     value: 2,
                 }),
                 op: InfixOp::Pow,
                 rhs: Expression::Infix(Box::new(InfixExpr {
                     span: span!(3..7),
-                    lhs: Expression::Int(AtomExpr {
+                    lhs: Expression::Int(Atom {
                         span: span!(3..4),
                         value: 3,
                     }),
                     op: InfixOp::Pow,
-                    rhs: Expression::Int(AtomExpr {
+                    rhs: Expression::Int(Atom {
                         span: span!(6..7),
                         value: 4,
                     }),
@@ -723,12 +728,12 @@ mod tests {
             ],
             Expression::Assign(Box::new(AssignExpr {
                 span: span!(0..3),
-                assignee: AtomExpr {
+                assignee: Atom {
                     span: span!(0..1),
                     value: "a",
                 },
                 op: AssignOp::Basic,
-                expr: Expression::Int(AtomExpr {
+                expr: Expression::Int(Atom {
                     span: span!(2..3),
                     value: 1,
                 }),
@@ -744,12 +749,12 @@ mod tests {
             ],
             Expression::Assign(Box::new(AssignExpr {
                 span: span!(0..14),
-                assignee: AtomExpr {
+                assignee: Atom {
                     span: span!(0..6),
                     value: "answer",
                 },
                 op: AssignOp::Plus,
-                expr: Expression::Float(AtomExpr {
+                expr: Expression::Float(Atom {
                     span: span!(10..14),
                     value: 42.0,
                 }),
