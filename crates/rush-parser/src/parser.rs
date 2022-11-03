@@ -10,6 +10,7 @@ pub struct Parser<'src, Lexer: Lex<'src>> {
 }
 
 impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
+    /// Creates a new Parser
     pub fn new(lexer: Lexer) -> Self {
         Self {
             lexer,
@@ -20,13 +21,22 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         }
     }
 
-    pub fn errors(&self) -> &Vec<Error> {
-        &self.errors
-    }
-
-    pub fn parse(mut self) -> Result<Program<'src>> {
-        self.next()?;
-        let program = self.program()?;
+    /// Consumes this parser and tries to parse a [`Program`].
+    ///
+    /// # Returns
+    /// This function returns a tuple of a `Result<Program>`
+    /// and a `Vec<Error>`. Parsing can be
+    /// - successful: `(Some(Program), [])`
+    /// - partially successful: `(Some(Program), [..errors])`
+    /// - unsuccessful: `(Err(fatal_error), [..errors])`
+    pub fn parse(mut self) -> (Result<Program<'src>>, Vec<Error>) {
+        if let Err(err) = self.next() {
+            return (Err(err), self.errors);
+        }
+        let program = match self.program() {
+            Ok(program) => program,
+            Err(err) => return (Err(err), self.errors),
+        };
 
         if self.curr_tok.kind != TokenKind::Eof {
             self.errors.push(Error::new(
@@ -36,7 +46,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             ))
         }
 
-        Ok(program)
+        (Ok(program), self.errors)
     }
 
     // Move cursor to next token
