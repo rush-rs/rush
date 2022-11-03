@@ -428,12 +428,11 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
 
     fn grouped_expr(&mut self) -> Result<Atom<Box<ParsedExpression<'src>>>> {
         let start_loc = self.curr_tok.span.start;
-
-        // skip the opening paranthesis
+        // skip the opening parenthesis
         self.next()?;
 
         let expr = self.expression(0)?;
-        self.expect_recoverable(TokenKind::RParen, "missing closing paranthesis")?;
+        self.expect_recoverable(TokenKind::RParen, "missing closing parenthesis")?;
 
         Ok(Atom {
             span: start_loc.until(self.prev_tok.span.end),

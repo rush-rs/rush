@@ -475,7 +475,7 @@ mod tests {
                 Ok(TokenKind::Float(42.12345678).spanned(span!(0..11))),
             ),
             ("42.69", Ok(TokenKind::Float(42.69).spanned(span!(0..5)))),
-            // Paranthesis
+            // Parenthesis
             ("(", Ok(TokenKind::LParen.spanned(span!(0..1)))),
             (")", Ok(TokenKind::RParen.spanned(span!(0..1)))),
             ("{", Ok(TokenKind::LBrace.spanned(span!(0..1)))),
