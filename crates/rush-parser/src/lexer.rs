@@ -54,7 +54,6 @@ impl<'src> Lex<'src> for Lexer<'src> {
             Some('!') => char_construct!(self, Not, Neq, _, _,),
             Some('-') if self.next_char == Some('>') => {
                 self.next();
-                self.next();
                 TokenKind::Arrow
             }
             Some('-') => char_construct!(self, Minus, MinusAssign, _, _),
@@ -83,6 +82,7 @@ impl<'src> Lex<'src> for Lexer<'src> {
                 ));
             }
         };
+        self.next();
         Ok(Token::new(kind, Span::new(start_loc, self.location)))
     }
 }
