@@ -1,4 +1,4 @@
-use std::mem::{self, swap};
+use std::mem;
 use std::str::Chars;
 
 use crate::error::Result;
@@ -54,24 +54,19 @@ impl<'src> Lexer<'src> {
     }
 
     pub fn next_token(&mut self) -> Result<Token<'src>> {
-        // Skip any redundant characters
-        while let Some(' ' | '\t' | '\n' | '\r') = self.curr_char {
-            self.next();
+        while let Some(current) = self.curr_char {
+            match current {
+                ' ' | '\t' | '\n' | '\r' => self.next(),
+                '/' => self.skip_comment(),
+                _ => break,
+            }
         }
+
         let start_loc = self.location;
         let kind = match self.curr_char {
             None => TokenKind::Eof,
             Some('\'') => return self.make_char(),
-            Some('/') => {
-                /*
-                if let Some(token) = self.make_slash() {
-                    return Ok(token);
-                } else {
-                    return self.next_token();
-                };
-                */
-                todo!()
-            }
+            Some('/') => TokenKind::Slash,
             Some('(') => TokenKind::LParen,
             Some(')') => TokenKind::RParen,
             Some('{') => TokenKind::LBrace,
@@ -111,6 +106,34 @@ impl<'src> Lexer<'src> {
             }
         };
         Ok(Token::new(kind, Span::new(start_loc, self.location)))
+    }
+
+    fn skip_comment(&mut self) {
+        match self.next_char {
+            Some('/') => {
+                self.next();
+                self.next();
+                while self.curr_char != None && self.curr_char != Some('\n') {
+                    self.next()
+                }
+                self.next();
+            }
+            Some('*') => {
+                self.next();
+                self.next();
+                while let Some(current) = self.curr_char {
+                    match current {
+                        '*' if self.next_char == Some('/') => {
+                            self.next();
+                            self.next();
+                            break;
+                        }
+                        _ => self.next(),
+                    }
+                }
+            }
+            _ => (),
+        }
     }
 
     fn make_char_construct(
@@ -157,7 +180,7 @@ impl<'src> Lexer<'src> {
         }
     }
 
-    fn make_slash(&mut self) -> Option<Token> {
+    fn make_slash(&mut self) -> Option<Token<'src>> {
         todo!()
     }
 
@@ -201,7 +224,7 @@ impl<'src> Lexer<'src> {
                     self.next();
                     return Err(Error::new(
                         ErrorKind::Syntax,
-                        format!("expected hex excape character, found {other}"),
+                        format!("expected excape character, found {other}"),
                         Span::new(start_loc, self.location),
                     ));
                 }
@@ -215,28 +238,8 @@ impl<'src> Lexer<'src> {
                 }
             },
             Some(other) if other.is_ascii() => other as u8,
-            Some(other) => {
-                self.next();
-                return Err(Error::new(
-                    ErrorKind::Syntax,
-                    format!("illegal character in char literal: {other}"),
-                    Span::new(start_loc, self.location),
-                ));
-            }
+            _ => unreachable!(),
         };
-        self.next();
-
-        if self.curr_char != Some('\'') {
-            self.next();
-            return Err(Error::new(
-                ErrorKind::Syntax,
-                format!(
-                    "expected \"'\", found {}",
-                    self.curr_char.map_or("EOF".to_string(), |c| c.to_string())
-                ),
-                Span::new(start_loc, self.location),
-            ));
-        }
         self.next();
         Ok(Token::new(
             TokenKind::Char(char),
@@ -328,20 +331,81 @@ impl<'src> Lexer<'src> {
 
 #[cfg(test)]
 mod tests {
+    use std::vec;
+
     use super::*;
 
     #[test]
-    fn test_numbers() {
-        let code = "11.11  ";
-        let mut lexer = Lexer::new(code);
+    fn test_numbers_with_comments() {
+        let code = "
+            // skipped number: 42
 
-        println!();
+            /* inline comment */ 1.123
+            12 /* inline comment */
+            13.1 // line comment
+            /* prefix */ 14.12 /* suffix */
+        ";
+        let mut lexer = Lexer::new(code);
+        let mut tokens = vec![];
         loop {
             let current = lexer.next_token().unwrap();
             if current.kind == TokenKind::Eof {
                 break;
             }
-            println!("{:?}", current);
+            tokens.push(current);
+        }
+        let expected_kinds = vec![
+            TokenKind::Float(1.123),
+            TokenKind::Int(12),
+            TokenKind::Float(13.1),
+            TokenKind::Float(14.12),
+        ];
+        for (expected, actual) in expected_kinds.iter().zip(&tokens) {
+            assert_eq!(*expected, actual.kind);
         }
     }
+
+    #[test]
+    fn test_lexer() {
+        let code = r#"
+            '\'
+        "#;
+        let mut lexer = Lexer::new(code);
+        let tests = vec![
+            (
+                TokenKind::Char(b'_'),
+                Some("unterminated character literal"),
+            ),
+            // (TokenKind::Char(b'\''), None),
+        ];
+        println!();
+        for test in tests {
+            let res = lexer.next_token();
+            match (res, test.1, test.0) {
+                (Ok(_), Some(expected), _) => panic!("Expected error: {:?}, got none", expected),
+                (Err(err), None, _) => panic!("Unexpected error: {:?}", err),
+                (Err(got), Some(expected), _) => assert_eq!(expected, got.message),
+                (Ok(got), _, expected) => {
+                    match got.kind {
+                        TokenKind::Char(ch) => {
+                            println!("found char: {}", char::from_u32(ch as u32).unwrap())
+                        }
+                        _ => println!("{:?}", got),
+                    }
+                    assert_eq!(expected, got.kind)
+                }
+            }
+        }
+    }
+
+    /*
+    println!(
+        "\n{}",
+        tokens
+            .iter()
+            .map(|token| format!("{:?}", token))
+            .collect::<Vec<String>>()
+            .join("\n")
+    );
+    */
 }
