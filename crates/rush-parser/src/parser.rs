@@ -376,7 +376,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
                             span: if_expr.span,
                             stmts: vec![Statement::Expr(ExprStmt {
                                 span: if_expr.span,
-                                expr: Expression::If(Box::new(if_expr)).into(),
+                                expr: Expression::If(if_expr.into()).into(),
                             })],
                         }
                     }
@@ -437,7 +437,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
 
         Ok(Atom {
             span: start_loc.until(self.prev_tok.span.end),
-            value: Box::new(expr),
+            value: expr.into(),
         })
     }
 
@@ -585,30 +585,36 @@ mod tests {
                 TokenKind::Minus.spanned(span!(3..4)),
                 TokenKind::Int(1).spanned(span!(4..5)),
             ],
-            Expression::Infix(Box::new(InfixExpr {
-                span: span!(0..5),
-                lhs: Expression::Infix(Box::new(InfixExpr {
-                    span: span!(0..3),
-                    lhs: Expression::Int(Atom {
-                        span: span!(0..1),
-                        value: 3,
-                    })
+            Expression::Infix(
+                InfixExpr {
+                    span: span!(0..5),
+                    lhs: Expression::Infix(
+                        InfixExpr {
+                            span: span!(0..3),
+                            lhs: Expression::Int(Atom {
+                                span: span!(0..1),
+                                value: 3,
+                            })
+                            .into(),
+                            op: InfixOp::Minus,
+                            rhs: Expression::Int(Atom {
+                                span: span!(2..3),
+                                value: 2,
+                            })
+                            .into(),
+                        }
+                        .into(),
+                    )
                     .into(),
                     op: InfixOp::Minus,
                     rhs: Expression::Int(Atom {
-                        span: span!(2..3),
-                        value: 2,
+                        span: span!(4..5),
+                        value: 1,
                     })
                     .into(),
-                }))
+                }
                 .into(),
-                op: InfixOp::Minus,
-                rhs: Expression::Int(Atom {
-                    span: span!(4..5),
-                    value: 1,
-                })
-                .into(),
-            }))
+            )
             .into(),
         )?;
 
@@ -621,30 +627,36 @@ mod tests {
                 TokenKind::Star.spanned(span!(3..4)),
                 TokenKind::Int(3).spanned(span!(4..5)),
             ],
-            Expression::Infix(Box::new(InfixExpr {
-                span: span!(0..5),
-                lhs: Expression::Int(Atom {
-                    span: span!(0..1),
-                    value: 1,
-                })
-                .into(),
-                op: InfixOp::Plus,
-                rhs: Expression::Infix(Box::new(InfixExpr {
-                    span: span!(2..5),
+            Expression::Infix(
+                InfixExpr {
+                    span: span!(0..5),
                     lhs: Expression::Int(Atom {
-                        span: span!(2..3),
-                        value: 2,
+                        span: span!(0..1),
+                        value: 1,
                     })
                     .into(),
-                    op: InfixOp::Mul,
-                    rhs: Expression::Int(Atom {
-                        span: span!(4..5),
-                        value: 3,
-                    })
+                    op: InfixOp::Plus,
+                    rhs: Expression::Infix(
+                        InfixExpr {
+                            span: span!(2..5),
+                            lhs: Expression::Int(Atom {
+                                span: span!(2..3),
+                                value: 2,
+                            })
+                            .into(),
+                            op: InfixOp::Mul,
+                            rhs: Expression::Int(Atom {
+                                span: span!(4..5),
+                                value: 3,
+                            })
+                            .into(),
+                        }
+                        .into(),
+                    )
                     .into(),
-                }))
+                }
                 .into(),
-            }))
+            )
             .into(),
         )?;
 
@@ -657,30 +669,36 @@ mod tests {
                 TokenKind::Pow.spanned(span!(4..6)),
                 TokenKind::Int(4).spanned(span!(6..7)),
             ],
-            Expression::Infix(Box::new(InfixExpr {
-                span: span!(0..7),
-                lhs: Expression::Int(Atom {
-                    span: span!(0..1),
-                    value: 2,
-                })
-                .into(),
-                op: InfixOp::Pow,
-                rhs: Expression::Infix(Box::new(InfixExpr {
-                    span: span!(3..7),
+            Expression::Infix(
+                InfixExpr {
+                    span: span!(0..7),
                     lhs: Expression::Int(Atom {
-                        span: span!(3..4),
-                        value: 3,
+                        span: span!(0..1),
+                        value: 2,
                     })
                     .into(),
                     op: InfixOp::Pow,
-                    rhs: Expression::Int(Atom {
-                        span: span!(6..7),
-                        value: 4,
-                    })
+                    rhs: Expression::Infix(
+                        InfixExpr {
+                            span: span!(3..7),
+                            lhs: Expression::Int(Atom {
+                                span: span!(3..4),
+                                value: 3,
+                            })
+                            .into(),
+                            op: InfixOp::Pow,
+                            rhs: Expression::Int(Atom {
+                                span: span!(6..7),
+                                value: 4,
+                            })
+                            .into(),
+                        }
+                        .into(),
+                    )
                     .into(),
-                }))
+                }
                 .into(),
-            }))
+            )
             .into(),
         )?;
 
@@ -696,19 +714,22 @@ mod tests {
                 TokenKind::Assign.spanned(span!(1..2)),
                 TokenKind::Int(1).spanned(span!(2..3)),
             ],
-            Expression::Assign(Box::new(AssignExpr {
-                span: span!(0..3),
-                assignee: Atom {
-                    span: span!(0..1),
-                    value: "a",
-                },
-                op: AssignOp::Basic,
-                expr: Expression::Int(Atom {
-                    span: span!(2..3),
-                    value: 1,
-                })
+            Expression::Assign(
+                AssignExpr {
+                    span: span!(0..3),
+                    assignee: Atom {
+                        span: span!(0..1),
+                        value: "a",
+                    },
+                    op: AssignOp::Basic,
+                    expr: Expression::Int(Atom {
+                        span: span!(2..3),
+                        value: 1,
+                    })
+                    .into(),
+                }
                 .into(),
-            }))
+            )
             .into(),
         )?;
 
@@ -719,19 +740,22 @@ mod tests {
                 TokenKind::PlusAssign.spanned(span!(7..9)),
                 TokenKind::Float(42.0).spanned(span!(10..14)),
             ],
-            Expression::Assign(Box::new(AssignExpr {
-                span: span!(0..14),
-                assignee: Atom {
-                    span: span!(0..6),
-                    value: "answer",
-                },
-                op: AssignOp::Plus,
-                expr: Expression::Float(Atom {
-                    span: span!(10..14),
-                    value: 42.0,
-                })
+            Expression::Assign(
+                AssignExpr {
+                    span: span!(0..14),
+                    assignee: Atom {
+                        span: span!(0..6),
+                        value: "answer",
+                    },
+                    op: AssignOp::Plus,
+                    expr: Expression::Float(Atom {
+                        span: span!(10..14),
+                        value: 42.0,
+                    })
+                    .into(),
+                }
                 .into(),
-            }))
+            )
             .into(),
         )?;
 
