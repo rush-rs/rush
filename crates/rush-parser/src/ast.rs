@@ -52,7 +52,6 @@ impl Display for Type {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Program<'src, Annotation> {
     pub span: Span,
-    pub annotation: Annotation,
     pub functions: Vec<FunctionDefinition<'src, Annotation>>,
 }
 

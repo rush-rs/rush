@@ -1,14 +1,8 @@
 use std::collections::HashMap;
 
-use rush_parser::{
-    ast::{ParsedBlock, ParsedFunctionDefinition, ParsedProgram, ParsedStatement, Program, Type},
-    Span,
-};
+use rush_parser::{Span, ast::{Type, ParsedProgram}};
 
-use crate::{
-    ast::{AnnotatedBlock, AnnotatedFunctionDefinition, AnnotatedProgram, AnnotatedStatement},
-    Diagnostic, DiagnosticLevel, ErrorKind,
-};
+use crate::{Diagnostic, DiagnosticLevel, ErrorKind};
 
 pub struct Analyzer<'src> {
     pub functions: HashMap<&'src str, Function<'src>>,
@@ -60,4 +54,6 @@ impl<'src> Analyzer<'src> {
         self.diagnostics
             .push(Diagnostic::new(DiagnosticLevel::Error(kind), message, span))
     }
+
+    pub fn analyze(program: &ParsedProgram<'src>) ->
 }
