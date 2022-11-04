@@ -1,5 +1,7 @@
 use std::mem;
 
+use either::Either;
+
 use crate::{ast::*, Error, Lex, Location, Result, Span, Token, TokenKind};
 
 pub struct Parser<'src, Lexer: Lex<'src>> {
@@ -209,8 +211,15 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         self.expect(TokenKind::LBrace)?;
 
         let mut stmts = vec![];
+        let mut expr = None;
         while !matches!(self.curr_tok.kind, TokenKind::RBrace | TokenKind::Eof) {
-            stmts.push(self.statement()?);
+            match self.statement()? {
+                Either::Left(stmt) => stmts.push(stmt),
+                Either::Right(expression) => {
+                    expr = Some(expression);
+                    break;
+                }
+            }
         }
 
         self.expect_recoverable(TokenKind::RBrace, "missing closing brace")?;
@@ -218,18 +227,19 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         Ok(Block {
             span: start_loc.until(self.prev_tok.span.end),
             stmts,
+            expr,
         })
     }
 
-    fn statement(&mut self) -> Result<Statement<'src>> {
+    fn statement(&mut self) -> Result<Either<Statement<'src>, Expression<'src>>> {
         Ok(match self.curr_tok.kind {
-            TokenKind::Let => Statement::Let(self.let_stmt()?),
-            TokenKind::Return => Statement::Return(self.return_stmt()?),
-            _ => Statement::Expr(self.expr_stmt()?),
+            TokenKind::Let => Either::Left(self.let_stmt()?),
+            TokenKind::Return => Either::Left(self.return_stmt()?),
+            _ => self.expr_stmt()?,
         })
     }
 
-    fn let_stmt(&mut self) -> Result<LetStmt<'src>> {
+    fn let_stmt(&mut self) -> Result<Statement<'src>> {
         let start_loc = self.curr_tok.span.start;
 
         // skip let token: this function is only called when self.curr_tok.kind == TokenKind::Let
@@ -254,16 +264,16 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         let expr = self.expression(0)?;
         self.expect_recoverable(TokenKind::Semicolon, "missing semicolon after statement")?;
 
-        Ok(LetStmt {
+        Ok(Statement::Let(LetStmt {
             span: start_loc.until(self.prev_tok.span.end),
             mutable,
             type_,
             name,
             expr,
-        })
+        }))
     }
 
-    fn return_stmt(&mut self) -> Result<ReturnStmt<'src>> {
+    fn return_stmt(&mut self) -> Result<Statement<'src>> {
         let start_loc = self.curr_tok.span.start;
 
         // skip return token: this function is only called when self.curr_tok.kind == TokenKind::Return
@@ -276,13 +286,13 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
 
         self.expect_recoverable(TokenKind::Semicolon, "missing semicolon after statement")?;
 
-        Ok(ReturnStmt {
+        Ok(Statement::Return(ReturnStmt {
             span: start_loc.until(self.prev_tok.span.end),
             expr,
-        })
+        }))
     }
 
-    fn expr_stmt(&mut self) -> Result<ExprStmt<'src>> {
+    fn expr_stmt(&mut self) -> Result<Either<Statement<'src>, Expression<'src>>> {
         let start_loc = self.curr_tok.span.start;
 
         let (expr, with_block) = match self.curr_tok.kind {
@@ -294,6 +304,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         match (self.curr_tok.kind, with_block) {
             (TokenKind::Semicolon, true) => self.next()?,
             (TokenKind::Semicolon, false) => self.next()?,
+            (TokenKind::RBrace, _) => return Ok(Either::Right(expr)),
             (_, true) => {}
             (_, false) => self.errors.push(Error::new(
                 "missing semicolon after statement".to_string(),
@@ -301,10 +312,10 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             )),
         }
 
-        Ok(ExprStmt {
+        Ok(Either::Left(Statement::Expr(ExprStmt {
             span: start_loc.until(self.prev_tok.span.end),
             expr,
-        })
+        })))
     }
 
     fn expression(&mut self, prec: u8) -> Result<Expression<'src>> {
@@ -387,10 +398,8 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
                         let if_expr = self.if_expr()?;
                         Block {
                             span: if_expr.span,
-                            stmts: vec![Statement::Expr(ExprStmt {
-                                span: if_expr.span,
-                                expr: Expression::If(if_expr.into()),
-                            })],
+                            stmts: vec![],
+                            expr: Some(Expression::If(if_expr.into())),
                         }
                     }
                     TokenKind::LBrace => self.block()?,
@@ -598,7 +607,7 @@ mod tests {
     ) -> Result<()> {
         let mut parser = Parser::new(tokens.into_iter());
         parser.next()?;
-        assert_eq!(dbg!(parser.statement()?), dbg!(tree));
+        assert_eq!(dbg!(parser.statement()?), Either::Left(dbg!(tree)));
         assert!(dbg!(parser.errors).is_empty());
         Ok(())
     }
@@ -722,6 +731,41 @@ mod tests {
     }
 
     #[test]
+    fn if_expr() -> Result<()> {
+        // if 2 > 1 { 1 } else { 2 }
+        expr_test(
+            tokens![
+                If @ 0..2,
+                Int(2) @ 3..4,
+                Gt @ 5..6,
+                Int(1) @ 7..8,
+                LBrace @ 9..10,
+                Int(1) @ 11..12,
+                RBrace @ 13..14,
+                Else @ 15..19,
+                LBrace @ 20..21,
+                Int(2) @ 22..23,
+                RBrace @ 24..25,
+            ],
+            tree! {
+                (IfExpr @ 0..25,
+                    cond: (InfixExpr @ 3..8,
+                        lhs: (Int @ 3..4, 2),
+                        op: Gt,
+                        rhs: (Int @ 7..8, 1)),
+                    then_block: (Block @ 9..14,
+                        stmts: [],
+                        expr: (Some(Int @ 11..12, 1))),
+                    else_block: (Some(Block @ 20..25,
+                        stmts: [],
+                        expr: (Some(Int @ 22..23, 2)))))
+            },
+        )?;
+
+        Ok(())
+    }
+
+    #[test]
     fn let_stmt() -> Result<()> {
         // let a=1;
         stmt_test(
@@ -808,6 +852,33 @@ mod tests {
     }
 
     #[test]
+    fn expr_stmt() -> Result<()> {
+        // 1;
+        stmt_test(
+            tokens![
+                Int(1) @ 0..1,
+                Semicolon @ 1..2,
+            ],
+            tree! { (ExprStmt @ 0..2, (Int @ 0..1, 1)) },
+        )?;
+
+        // {}
+        stmt_test(
+            tokens![
+                LBrace @ 0..1,
+                RBrace @ 1..2,
+            ],
+            tree! {
+                (ExprStmt @ 0..2, (BlockExpr @ 0..2,
+                    stmts: [],
+                    expr: (None)))
+            },
+        )?;
+
+        Ok(())
+    }
+
+    #[test]
     fn programs() -> Result<()> {
         // fn main() { let a = true; a; }
         program_test(
@@ -832,13 +903,15 @@ mod tests {
                         name: (Spanned @ 3..7, "main"),
                         params: [],
                         return_type: (Spanned @ 8..11, Type::Unit),
-                        block: (Block @ 10..30, [
-                            (LetStmt @ 12..25,
-                                mutable: false,
-                                name: (Spanned @ 16..17, "a"),
-                                type: (None),
-                                expr: (Bool @ 20..24, true)),
-                            (ExprStmt @ 26..28, (Ident @ 26..27, "a"))]))])
+                        block: (Block @ 10..30,
+                            stmts: [
+                                (LetStmt @ 12..25,
+                                    mutable: false,
+                                    name: (Spanned @ 16..17, "a"),
+                                    type: (None),
+                                    expr: (Bool @ 20..24, true)),
+                                (ExprStmt @ 26..28, (Ident @ 26..27, "a"))],
+                            expr: (None)))])
             },
         )?;
 
@@ -874,11 +947,13 @@ mod tests {
                             ((Spanned @ 7..11, "left"), (Spanned @ 13..16, Type::Int)),
                             ((Spanned @ 18..23, "right"), (Spanned @ 25..28, Type::Int))],
                         return_type: (Spanned @ 33..36, Type::Int),
-                        block: (Block @ 37..61, [
-                            (ReturnStmt @ 39..59, (Some(InfixExpr @ 46..58,
-                                lhs: (Ident @ 46..50, "left"),
-                                op: Plus,
-                                rhs: (Ident @ 53..58, "right"))))]))])
+                        block: (Block @ 37..61,
+                            stmts: [
+                                (ReturnStmt @ 39..59, (Some(InfixExpr @ 46..58,
+                                    lhs: (Ident @ 46..50, "left"),
+                                    op: Plus,
+                                    rhs: (Ident @ 53..58, "right"))))],
+                            expr: (None)))])
             },
         )?;
 
@@ -904,12 +979,16 @@ mod tests {
                         name: (Spanned @ 3..4, "a"),
                         params: [],
                         return_type: (Spanned @ 5..8, Type::Unit),
-                        block: (Block @ 7..9, [])),
+                        block: (Block @ 7..9,
+                            stmts: [],
+                            expr: (None))),
                     (FunctionDefinition @ 10..19,
                         name: (Spanned @ 13..14, "b"),
                         params: [],
                         return_type: (Spanned @ 15..18, Type::Unit),
-                        block: (Block @ 17..19, []))])
+                        block: (Block @ 17..19,
+                            stmts: [],
+                            expr: (None)))])
             },
         )?;
 

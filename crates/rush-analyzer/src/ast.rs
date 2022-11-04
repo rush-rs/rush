@@ -15,6 +15,7 @@ pub struct AnalysedBlock<'src> {
     pub result_type: Type,
     pub constant: bool,
     pub stmts: Vec<AnalysedStatement<'src>>,
+    pub expr: Option<AnalysedExpression<'src>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

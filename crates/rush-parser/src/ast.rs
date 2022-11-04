@@ -58,6 +58,7 @@ pub struct FunctionDefinition<'src> {
 pub struct Block<'src> {
     pub span: Span,
     pub stmts: Vec<Statement<'src>>,
+    pub expr: Option<Expression<'src>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

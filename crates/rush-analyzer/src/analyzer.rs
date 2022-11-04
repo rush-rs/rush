@@ -191,13 +191,22 @@ impl<'src> Analyzer<'src> {
             stmts.push(statement);
         }
 
-        let result_type = stmts.last().map_or(Type::Unit, |stmt| stmt.result_type());
-        let constant = stmts.last().map_or(false, |stmt| stmt.constant());
+        // possibly mark trailing expression as unreachable
+        if let (Some(expr), true) = (&node.expr, is_unreachable) {
+            self.warn("unreachable expression".to_string(), expr.span());
+        }
+
+        // analyze expression
+        let expr = node.expr.map(|expr| self.visit_expression(expr));
+
+        let result_type = expr.as_ref().map_or(Type::Unit, |expr| expr.result_type());
+        let constant = expr.as_ref().map_or(false, |expr| expr.constant()) && stmts.is_empty();
 
         AnalysedBlock {
             result_type,
             constant,
             stmts,
+            expr,
         }
     }
 

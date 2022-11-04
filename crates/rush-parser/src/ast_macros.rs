@@ -52,10 +52,15 @@ macro_rules! tree {
         })
     };
 
-    ((Block @ $start:literal .. $end:literal, [$($stmt:tt),* $(,)?])) => {
+    ((
+        Block @ $start:literal .. $end:literal,
+        stmts: [$($stmt:tt),* $(,)?],
+        expr: $expr:tt $(,)?
+    )) => {
         Block {
             span: span!($start..$end),
             stmts: vec![$(tree!($stmt)),*],
+            expr: tree!($expr),
         }
     };
     ((BlockExpr $($rest:tt)*)) => {

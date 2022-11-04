@@ -5,7 +5,7 @@ FunctionDefinition = 'fn' , ident , '(' , [ ParameterList ] , ')'
 ParameterList      = Parameter , { ',' , Parameter } , [ ',' ] ;
 Parameter          = ident , ':' , Type ;
 
-Block = '{' , { Statement } , '}' ;
+Block = '{' , { Statement } , [ Expression ] , '}' ;
 Type  = ident
       | '(' , ')' ;
 
