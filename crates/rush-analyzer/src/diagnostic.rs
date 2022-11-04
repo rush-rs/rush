@@ -38,6 +38,7 @@ pub enum DiagnosticLevel {
 pub enum ErrorKind {
     Syntax,
     Type,
+    Semantic,
 }
 
 impl ErrorKind {
