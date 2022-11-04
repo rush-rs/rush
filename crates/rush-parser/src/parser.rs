@@ -742,7 +742,7 @@ mod tests {
     }
 
     #[test]
-    fn let_statement() -> Result<()> {
+    fn let_stmt() -> Result<()> {
         // let a=1;
         stmt_test(
             tokens![
@@ -778,6 +778,50 @@ mod tests {
                     type: (None),
                     expr: (Int @ 12..13, 2))
             },
+        )?;
+
+        // let c: float = 3f;
+        stmt_test(
+            tokens![
+                Let @ 0..3,
+                Ident("c") @ 4..5,
+                Colon @ 5..6,
+                Ident("float") @ 7..12,
+                Assign @ 13..14,
+                Float(3.0) @ 15..17,
+                Semicolon @ 17..18,
+            ],
+            tree! {
+                (LetStmt @ 0..18,
+                    mutable: false,
+                    name: (Atom @ 4..5, "c"),
+                    type: (Some(Atom @ 7..12, TypeKind::Float)),
+                    expr: (Float @ 15..17, 3.0))
+            },
+        )?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn return_stmt() -> Result<()> {
+        // return;
+        stmt_test(
+            tokens![
+                Return @ 0..6,
+                Semicolon @ 6..7,
+            ],
+            tree! { (ReturnStmt @ 0..7, (None)) },
+        )?;
+
+        // return 1;
+        stmt_test(
+            tokens![
+                Return @ 0..6,
+                Int(1) @ 6..7,
+                Semicolon @ 7..8,
+            ],
+            tree! { (ReturnStmt @ 0..8, (Some(Int @ 6..7, 1))) },
         )?;
 
         Ok(())
@@ -855,6 +899,37 @@ mod tests {
                                 lhs: (Ident @ 46..50, "left"),
                                 op: Plus,
                                 rhs: (Ident @ 53..58, "right"))))]))])
+            },
+        )?;
+
+        // fn a() {} fn b() {}
+        program_test(
+            tokens![
+                Fn @ 0..2,
+                Ident("a") @ 3..4,
+                LParen @ 4..5,
+                RParen @ 5..6,
+                LBrace @ 7..8,
+                RBrace @ 8..9,
+                Fn @ 10..12,
+                Ident("b") @ 13..14,
+                LParen @ 14..15,
+                RParen @ 15..16,
+                LBrace @ 17..18,
+                RBrace @ 18..19,
+            ],
+            tree! {
+                (Program @ 0..19, [
+                    (FunctionDefinition @ 0..9,
+                        name: (Atom @ 3..4, "a"),
+                        params: [],
+                        return_type: (Atom @ 5..8, TypeKind::Unit),
+                        block: (Block @ 7..9, [])),
+                    (FunctionDefinition @ 10..19,
+                        name: (Atom @ 13..14, "b"),
+                        params: [],
+                        return_type: (Atom @ 15..18, TypeKind::Unit),
+                        block: (Block @ 17..19, []))])
             },
         )?;
 
