@@ -12,9 +12,8 @@ pub struct Analyzer<'src> {
 }
 
 pub struct Function<'src> {
-    pub span: Span,
-    pub params: Vec<(AnnotatedIdent<'src>, AnnotatedType<'src>)>,
-    pub return_type: AnnotatedType<'src>,
+    pub params: Vec<(Spanned<&'src str>, Spanned<Type>)>,
+    pub return_type: Spanned<Type>,
 }
 
 #[derive(Debug)]
@@ -25,7 +24,7 @@ pub struct Scope<'src> {
 
 #[derive(Debug)]
 pub struct Variable {
-    pub type_: TypeKind,
+    pub type_: Type,
     pub span: Span,
     pub used: bool,
     pub mutable: bool,
@@ -58,15 +57,12 @@ impl<'src> Analyzer<'src> {
             .push(Diagnostic::new(DiagnosticLevel::Error(kind), message, span))
     }
 
-    pub fn analyze(mut self, program: ParsedProgram<'src>) -> AnnotatedProgram<'src> {
-        AnnotatedProgram {
-            span: program.span,
-            functions: program
-                .functions
-                .into_iter()
-                .map(|func| self.visit_function_declaration(func))
-                .collect(),
-        }
+    pub fn analyze(mut self, program: Program<'src>) -> AnalysedProgram<'src> {
+        program
+            .functions
+            .into_iter()
+            .map(|func| self.visit_function_declaration(func))
+            .collect()
     }
 
     /// Removes the current scope of the function and checks whether the
@@ -89,14 +85,14 @@ impl<'src> Analyzer<'src> {
 
     fn visit_function_declaration(
         &mut self,
-        function: ParsedFunctionDefinition<'src>,
-    ) -> AnnotatedFunctionDefinition<'src> {
+        node: FunctionDefinition<'src>,
+    ) -> AnalysedFunctionDefinition<'src> {
         // check for duplicate function names
-        if self.functions.contains_key(function.name.value) {
+        if self.functions.contains_key(node.name.inner) {
             self.error(
                 ErrorKind::Semantic,
                 "duplicate function definition".to_string(),
-                function.name.span,
+                node.name.span,
             );
         }
 
@@ -105,9 +101,9 @@ impl<'src> Analyzer<'src> {
         // check the function parameters
         let mut params = vec![];
         let mut param_names = HashSet::new();
-        for (ident, type_) in &function.params {
+        for (ident, type_) in node.params {
             // check for duplicate function parameters
-            if !param_names.insert(ident.value) {
+            if !param_names.insert(ident.inner) {
                 self.error(
                     ErrorKind::Semantic,
                     "duplicate parameter name".to_string(),
@@ -115,134 +111,122 @@ impl<'src> Analyzer<'src> {
                 );
             }
             vars.insert(
-                ident.value,
+                ident.inner,
                 Variable {
-                    type_: type_.value,
+                    type_: type_.inner,
                     span: ident.span,
                     used: false,
                     // TODO: maybe allow `mut` params
                     mutable: false,
                 },
             );
-            params.push((
-                AnnotatedIdent {
-                    span: ident.span,
-                    annotation: Annotation::new(type_.value, false),
-                    value: ident.value,
-                },
-                AnnotatedType {
-                    span: type_.span,
-                    annotation: Annotation::new(type_.value, false),
-                    value: type_.value,
-                },
-            ));
+            params.push((ident, type_));
         }
-
-        let return_type = AnnotatedType {
-            span: function.return_type.span,
-            annotation: Annotation::new(function.return_type.value, false),
-            value: function.return_type.value,
-        };
 
         // set scope to new blank scope
         self.scope = Some(Scope {
-            fn_name: function.name.value,
+            fn_name: node.name.inner,
             vars,
         });
 
         // check that the block returns a legal type
-        let block = self.visit_block(function.block);
-        if block.annotation.result_type != function.return_type.value {
+        let block_result_span = node
+            .block
+            .stmts
+            .last()
+            .map_or(node.block.span, |stmt| stmt.span());
+        let block = self.visit_block(node.block);
+        if block.result_type != node.return_type.inner {
             self.error(
                 ErrorKind::Type,
                 format!(
                     "mismatched types: expected `{}`, found `{}`",
-                    function.return_type.value, block.annotation.result_type,
+                    node.return_type.inner, block.result_type,
                 ),
-                block.stmts.last().map_or(block.span, |stmt| stmt.span()),
+                block_result_span,
             );
             self.hint(
                 "function return value defined here".to_string(),
-                function.return_type.span,
+                node.return_type.span,
             );
         }
 
+        let params_without_spans = params
+            .iter()
+            .map(|(ident, type_)| (ident.inner, type_.inner))
+            .collect();
+
         // add the function to the analyzer's function list
         self.functions.insert(
-            function.name.value,
+            node.name.inner,
             Function {
-                span: function.span,
-                params: params.clone(),
-                return_type: return_type.clone(),
+                params,
+                return_type: node.return_type.clone(),
             },
         );
 
         // drop the scope when finished (also checks variables)
         self.drop_scope();
 
-        AnnotatedFunctionDefinition {
-            span: function.span,
-            annotation: Annotation::new(function.return_type.value, false),
-            name: AnnotatedIdent {
-                span: function.name.span,
-                annotation: Annotation::new(TypeKind::Unknown, false),
-                value: function.name.value,
-            },
-            params,
-            return_type,
+        AnalysedFunctionDefinition {
+            name: node.name.inner,
+            params: params_without_spans,
+            return_type: node.return_type.inner,
             block,
         }
     }
 
-    fn visit_block(&mut self, block: ParsedBlock<'src>) -> AnnotatedBlock<'src> {
+    fn visit_block(&mut self, node: Block<'src>) -> AnalysedBlock<'src> {
         let mut stmts = vec![];
         let mut is_unreachable = false;
 
-        for statement in block.stmts {
+        for statement in node.stmts {
             if is_unreachable {
                 self.warn("unreachable statement".to_string(), statement.span());
             }
             let statement = self.visit_statement(statement);
-            if statement.annotation().result_type == TypeKind::Never {
+            if statement.result_type() == Type::Never {
                 is_unreachable = true;
             }
             stmts.push(statement);
         }
 
-        let return_type = stmts
-            .last()
-            .map_or(TypeKind::Unit, |l| l.annotation().result_type);
+        let result_type = stmts.last().map_or(Type::Unit, |stmt| stmt.result_type());
+        let constant = stmts.last().map_or(false, |stmt| stmt.constant());
 
-        AnnotatedBlock {
-            span: block.span,
-            annotation: Annotation::new(return_type, false),
+        AnalysedBlock {
+            result_type,
+            constant,
             stmts,
         }
     }
 
-    fn visit_statement(&mut self, statement: ParsedStatement<'src>) -> AnnotatedStatement<'src> {
-        match statement {
-            Statement::Let(node) => self.visit_let_statement(node),
-            Statement::Return(node) => self.visit_return_statement(node),
-            Statement::Expr(node) => self.visit_expression_stmt(node),
+    fn visit_statement(&mut self, node: Statement<'src>) -> AnalysedStatement<'src> {
+        match node {
+            Statement::Let(node) => self.visit_let_stmt(node),
+            Statement::Return(node) => self.visit_return_stmt(node),
+            Statement::Expr(node) => self.visit_expr_stmt(node),
         }
     }
 
-    fn visit_let_statement(&mut self, node: ParsedLetStmt<'src>) -> AnnotatedStatement<'src> {
+    fn visit_let_stmt(&mut self, node: LetStmt<'src>) -> AnalysedStatement<'src> {
+        // save the expression's span for later use
+        let expr_span = node.expr.span();
+
         // analyze the right hand side first
         let expr = self.visit_expression(node.expr);
 
         // check if the optional type conflicts with the rhs
         if let Some(declared) = node.type_ {
-            if declared.value != expr.annotation().result_type {
+            if declared.inner != expr.result_type() {
                 self.error(
                     ErrorKind::Type,
                     format!(
                         "mismatched types: expected `{}`, found `{}`",
-                        declared.value,
-                        expr.annotation().result_type,
+                        declared.inner,
+                        expr.result_type(),
                     ),
-                    expr.span(),
+                    expr_span,
                 );
                 self.hint("expected due to this".to_string(), declared.span);
             }
@@ -250,9 +234,9 @@ impl<'src> Analyzer<'src> {
 
         // insert and do additional checks if variable is shadowed
         if let Some(old) = self.scope.as_mut().unwrap().vars.insert(
-            node.name.value,
+            node.name.inner,
             Variable {
-                type_: expr.annotation().result_type,
+                type_: expr.result_type(),
                 span: node.name.span,
                 used: false,
                 mutable: node.mutable,
@@ -260,38 +244,27 @@ impl<'src> Analyzer<'src> {
         ) {
             // a previous variable is shadowed by this declaration, analyze its use
             if !old.used {
-                self.warn(format!("unused variable `{}`", node.name.value), old.span);
+                self.warn(format!("unused variable `{}`", node.name.inner), old.span);
                 self.hint(
-                    format!("variable `{}` shadowed here", node.name.value),
+                    format!("variable `{}` shadowed here", node.name.inner),
                     node.name.span,
                 );
             }
         }
 
-        AnnotatedStatement::Let(AnnotatedLetStmt {
-            span: node.span,
-            annotation: Annotation::new(TypeKind::Unit, false),
+        AnalysedStatement::Let(AnalysedLetStmt {
             mutable: node.mutable,
-            name: AnnotatedIdent {
-                span: node.name.span,
-                annotation: Annotation::new(TypeKind::Unit, false),
-                value: node.name.value,
-            },
-            type_: None,
+            name: node.name.inner,
             expr,
         })
     }
 
-    fn visit_return_statement(&mut self, node: ParsedReturnStmt<'src>) -> AnnotatedStatement<'src> {
+    fn visit_return_stmt(&mut self, node: ReturnStmt<'src>) -> AnalysedStatement<'src> {
         // if there is an expression, visit it
-        let expr = node
-            .expr
-            .map_or_else(|| None, |expr| Some(self.visit_expression(expr)));
+        let expr = node.expr.map(|expr| self.visit_expression(expr));
 
         // create the return value based on the expr (Unit as fallback)
-        let return_type = expr
-            .as_ref()
-            .map_or(TypeKind::Unit, |expr| expr.annotation().result_type);
+        let return_type = expr.as_ref().map_or(Type::Unit, |expr| expr.result_type());
 
         let curr_fn = self
             .functions
@@ -299,14 +272,14 @@ impl<'src> Analyzer<'src> {
             .unwrap();
 
         // test if the return type is legal in the current function
-        if curr_fn.return_type.value != return_type {
+        if curr_fn.return_type.inner != return_type {
             let fn_type_span = curr_fn.return_type.span;
 
             self.error(
                 ErrorKind::Type,
                 format!(
                     "mismatched types: expected `{}`, found `{}`",
-                    curr_fn.return_type.value, return_type
+                    curr_fn.return_type.inner, return_type
                 ),
                 node.span,
             );
@@ -316,24 +289,14 @@ impl<'src> Analyzer<'src> {
             )
         }
 
-        AnnotatedStatement::Return(AnnotatedReturnStmt {
-            span: node.span,
-            annotation: Annotation::new(TypeKind::Unit, false),
-            expr,
-        })
+        AnalysedStatement::Return(expr)
     }
 
-    fn visit_expression_stmt(
-        &mut self,
-        expression: ParsedExprStmt<'src>,
-    ) -> AnnotatedStatement<'src> {
+    fn visit_expr_stmt(&mut self, node: ExprStmt<'src>) -> AnalysedStatement<'src> {
         todo!("@RubixDev will implement from here")
     }
 
-    fn visit_expression(
-        &mut self,
-        expression: ParsedExpression<'src>,
-    ) -> AnnotatedExpression<'src> {
+    fn visit_expression(&mut self, node: Expression<'src>) -> AnalysedExpression<'src> {
         todo!("@RubixDev will implement from here")
     }
 }

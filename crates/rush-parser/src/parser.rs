@@ -29,7 +29,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
     /// - successful: `(Some(Program), [])`
     /// - partially successful: `(Some(Program), [..errors])`
     /// - unsuccessful: `(Err(fatal_error), [..errors])`
-    pub fn parse(mut self) -> (Result<ParsedProgram<'src>>, Vec<Error>) {
+    pub fn parse(mut self) -> (Result<Program<'src>>, Vec<Error>) {
         if let Err(err) = self.next() {
             return (Err(err), self.errors);
         }
@@ -72,13 +72,12 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
     }
 
     // expects the curr_tok to be an identifier and returns its name if this is the case
-    fn expect_ident(&mut self) -> Result<ParsedIdent<'src>> {
+    fn expect_ident(&mut self) -> Result<Spanned<&'src str>> {
         match self.curr_tok.kind {
-            TokenKind::Ident(value) => {
-                let ident = ParsedIdent {
+            TokenKind::Ident(ident) => {
+                let ident = Spanned {
                     span: self.curr_tok.span,
-                    annotation: (),
-                    value,
+                    inner: ident,
                 };
                 self.next()?;
                 Ok(ident)
@@ -103,7 +102,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
 
     //////////////////////////
 
-    fn program(&mut self) -> Result<ParsedProgram<'src>> {
+    fn program(&mut self) -> Result<Program<'src>> {
         let start_loc = self.curr_tok.span.start;
         let mut functions = vec![];
 
@@ -117,27 +116,26 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         })
     }
 
-    fn type_(&mut self) -> Result<ParsedType<'src>> {
+    fn type_(&mut self) -> Result<Spanned<Type>> {
         let start_loc = self.curr_tok.span.start;
         let type_ = match self.curr_tok.kind {
-            TokenKind::Ident("int") => TypeKind::Int,
-            TokenKind::Ident("float") => TypeKind::Float,
-            TokenKind::Ident("bool") => TypeKind::Bool,
-            TokenKind::Ident("char") => TypeKind::Char,
+            TokenKind::Ident("int") => Type::Int,
+            TokenKind::Ident("float") => Type::Float,
+            TokenKind::Ident("bool") => Type::Bool,
+            TokenKind::Ident("char") => Type::Char,
             TokenKind::Ident(ident) => {
                 self.errors.push(Error::new(
                     format!("unknown type `{ident}`"),
                     self.curr_tok.span,
                 ));
-                TypeKind::Unknown
+                Type::Unknown
             }
             TokenKind::LParen => {
                 self.next()?;
                 self.expect_recoverable(TokenKind::RParen, "missing closing parenthesis")?;
-                return Ok(ParsedType {
+                return Ok(Spanned {
                     span: start_loc.until(self.curr_tok.span.end),
-                    annotation: (),
-                    value: TypeKind::Unit,
+                    inner: Type::Unit,
                 });
             }
             invalid => {
@@ -148,14 +146,13 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             }
         };
         self.next()?;
-        Ok(ParsedType {
+        Ok(Spanned {
             span: start_loc.until(self.prev_tok.span.end),
-            annotation: (),
-            value: type_,
+            inner: type_,
         })
     }
 
-    fn function_definition(&mut self) -> Result<ParsedFunctionDefinition<'src>> {
+    fn function_definition(&mut self) -> Result<FunctionDefinition<'src>> {
         let start_loc = self.curr_tok.span.start;
 
         self.expect(TokenKind::Fn)?;
@@ -182,10 +179,9 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
                 self.next()?;
                 self.type_()?
             }
-            _ => ParsedType {
+            _ => Spanned {
                 span: rparen_loc.until(self.curr_tok.span.end),
-                annotation: (),
-                value: TypeKind::Unit,
+                inner: Type::Unit,
             },
         };
 
@@ -193,7 +189,6 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
 
         Ok(FunctionDefinition {
             span: start_loc.until(self.prev_tok.span.end),
-            annotation: (),
             name,
             params,
             return_type,
@@ -201,14 +196,14 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         })
     }
 
-    fn parameter(&mut self) -> Result<(ParsedIdent<'src>, ParsedType<'src>)> {
+    fn parameter(&mut self) -> Result<(Spanned<&'src str>, Spanned<Type>)> {
         let name = self.expect_ident()?;
         self.expect(TokenKind::Colon)?;
         let type_ = self.type_()?;
         Ok((name, type_))
     }
 
-    fn block(&mut self) -> Result<ParsedBlock<'src>> {
+    fn block(&mut self) -> Result<Block<'src>> {
         let start_loc = self.curr_tok.span.start;
 
         self.expect(TokenKind::LBrace)?;
@@ -222,12 +217,11 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
 
         Ok(Block {
             span: start_loc.until(self.prev_tok.span.end),
-            annotation: (),
             stmts,
         })
     }
 
-    fn statement(&mut self) -> Result<ParsedStatement<'src>> {
+    fn statement(&mut self) -> Result<Statement<'src>> {
         Ok(match self.curr_tok.kind {
             TokenKind::Let => Statement::Let(self.let_stmt()?),
             TokenKind::Return => Statement::Return(self.return_stmt()?),
@@ -235,7 +229,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         })
     }
 
-    fn let_stmt(&mut self) -> Result<ParsedLetStmt<'src>> {
+    fn let_stmt(&mut self) -> Result<LetStmt<'src>> {
         let start_loc = self.curr_tok.span.start;
 
         // skip let token: this function is only called when self.curr_tok.kind == TokenKind::Let
@@ -262,7 +256,6 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
 
         Ok(LetStmt {
             span: start_loc.until(self.prev_tok.span.end),
-            annotation: (),
             mutable,
             type_,
             name,
@@ -270,7 +263,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         })
     }
 
-    fn return_stmt(&mut self) -> Result<ParsedReturnStmt<'src>> {
+    fn return_stmt(&mut self) -> Result<ReturnStmt<'src>> {
         let start_loc = self.curr_tok.span.start;
 
         // skip return token: this function is only called when self.curr_tok.kind == TokenKind::Return
@@ -285,12 +278,11 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
 
         Ok(ReturnStmt {
             span: start_loc.until(self.prev_tok.span.end),
-            annotation: (),
             expr,
         })
     }
 
-    fn expr_stmt(&mut self) -> Result<ParsedExprStmt<'src>> {
+    fn expr_stmt(&mut self) -> Result<ExprStmt<'src>> {
         let start_loc = self.curr_tok.span.start;
 
         let (expr, with_block) = match self.curr_tok.kind {
@@ -311,12 +303,11 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
 
         Ok(ExprStmt {
             span: start_loc.until(self.prev_tok.span.end),
-            annotation: (),
             expr,
         })
     }
 
-    fn expression(&mut self, prec: u8) -> Result<ParsedExpression<'src>> {
+    fn expression(&mut self, prec: u8) -> Result<Expression<'src>> {
         let start_loc = self.curr_tok.span.start;
 
         let mut lhs = match self.curr_tok.kind {
@@ -380,7 +371,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         Ok(lhs)
     }
 
-    fn if_expr(&mut self) -> Result<ParsedIfExpr<'src>> {
+    fn if_expr(&mut self) -> Result<IfExpr<'src>> {
         let start_loc = self.curr_tok.span.start;
 
         // skip if token: this function is only called when self.curr_tok.kind == TokenKind::If
@@ -396,10 +387,8 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
                         let if_expr = self.if_expr()?;
                         Block {
                             span: if_expr.span,
-                            annotation: (),
                             stmts: vec![Statement::Expr(ExprStmt {
                                 span: if_expr.span,
-                                annotation: (),
                                 expr: Expression::If(if_expr.into()),
                             })],
                         }
@@ -420,24 +409,22 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
 
         Ok(IfExpr {
             span: start_loc.until(self.prev_tok.span.end),
-            annotation: (),
             cond,
             then_block,
             else_block,
         })
     }
 
-    fn atom<T>(&mut self, value: T) -> Result<ParsedAtom<T>> {
+    fn atom<T>(&mut self, inner: T) -> Result<Spanned<T>> {
         let start_loc = self.curr_tok.span.start;
         self.next()?;
-        Ok(Atom {
+        Ok(Spanned {
             span: start_loc.until(self.prev_tok.span.end),
-            annotation: (),
-            value,
+            inner,
         })
     }
 
-    fn prefix_expr(&mut self, op: PrefixOp) -> Result<ParsedPrefixExpr<'src>> {
+    fn prefix_expr(&mut self, op: PrefixOp) -> Result<PrefixExpr<'src>> {
         let start_loc = self.curr_tok.span.start;
 
         // skip the operator token
@@ -447,13 +434,12 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         let expr = self.expression(29)?;
         Ok(PrefixExpr {
             span: start_loc.until(self.prev_tok.span.end),
-            annotation: (),
             op,
             expr,
         })
     }
 
-    fn grouped_expr(&mut self) -> Result<ParsedAtom<Box<ParsedExpression<'src>>>> {
+    fn grouped_expr(&mut self) -> Result<Spanned<Box<Expression<'src>>>> {
         let start_loc = self.curr_tok.span.start;
         // skip the opening parenthesis
         self.next()?;
@@ -461,19 +447,18 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         let expr = self.expression(0)?;
         self.expect_recoverable(TokenKind::RParen, "missing closing parenthesis")?;
 
-        Ok(Atom {
+        Ok(Spanned {
             span: start_loc.until(self.prev_tok.span.end),
-            annotation: (),
-            value: expr.into(),
+            inner: expr.into(),
         })
     }
 
     fn infix_expr(
         &mut self,
         start_loc: Location,
-        lhs: ParsedExpression<'src>,
+        lhs: Expression<'src>,
         op: InfixOp,
-    ) -> Result<ParsedExpression<'src>> {
+    ) -> Result<Expression<'src>> {
         let right_prec = self.curr_tok.kind.prec().1;
         self.next()?;
         let rhs = self.expression(right_prec)?;
@@ -481,7 +466,6 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         Ok(Expression::Infix(
             InfixExpr {
                 span: start_loc.until(self.prev_tok.span.end),
-                annotation: (),
                 lhs,
                 op,
                 rhs,
@@ -493,9 +477,9 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
     fn assign_expr(
         &mut self,
         start_loc: Location,
-        lhs: ParsedExpression<'src>,
+        lhs: Expression<'src>,
         op: AssignOp,
-    ) -> Result<ParsedExpression<'src>> {
+    ) -> Result<Expression<'src>> {
         let assignee = match lhs {
             Expression::Ident(item) => item,
             _ => {
@@ -503,10 +487,9 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
                     "left hand side of assignment must be an identifier".to_string(),
                     self.curr_tok.span,
                 ));
-                Atom {
+                Spanned {
                     span: Span::default(),
-                    annotation: (),
-                    value: "",
+                    inner: "",
                 }
             }
         };
@@ -518,7 +501,6 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         Ok(Expression::Assign(
             AssignExpr {
                 span: start_loc.until(self.prev_tok.span.end),
-                annotation: (),
                 assignee,
                 op,
                 expr,
@@ -530,8 +512,8 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
     fn call_expr(
         &mut self,
         start_loc: Location,
-        expr: ParsedExpression<'src>,
-    ) -> Result<ParsedExpression<'src>> {
+        expr: Expression<'src>,
+    ) -> Result<Expression<'src>> {
         // skip opening parenthesis
         self.next()?;
 
@@ -553,7 +535,6 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         Ok(Expression::Call(
             CallExpr {
                 span: start_loc.until(self.prev_tok.span.end),
-                annotation: (),
                 expr,
                 args,
             }
@@ -564,8 +545,8 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
     fn cast_expr(
         &mut self,
         start_loc: Location,
-        expr: ParsedExpression<'src>,
-    ) -> Result<ParsedExpression<'src>> {
+        expr: Expression<'src>,
+    ) -> Result<Expression<'src>> {
         // skip `as` token
         self.next()?;
 
@@ -574,7 +555,6 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         Ok(Expression::Cast(
             CastExpr {
                 span: start_loc.until(self.prev_tok.span.end),
-                annotation: (),
                 expr,
                 type_,
             }
@@ -601,7 +581,7 @@ mod tests {
     /// without any errors
     fn expr_test(
         tokens: impl IntoIterator<Item = Token<'static>>,
-        tree: ParsedExpression<'static>,
+        tree: Expression<'static>,
     ) -> Result<()> {
         let mut parser = Parser::new(tokens.into_iter());
         parser.next()?;
@@ -614,7 +594,7 @@ mod tests {
     /// without any errors
     fn stmt_test(
         tokens: impl IntoIterator<Item = Token<'static>>,
-        tree: ParsedStatement<'static>,
+        tree: Statement<'static>,
     ) -> Result<()> {
         let mut parser = Parser::new(tokens.into_iter());
         parser.next()?;
@@ -627,7 +607,7 @@ mod tests {
     /// without any errors
     fn program_test(
         tokens: impl IntoIterator<Item = Token<'static>>,
-        tree: ParsedProgram<'static>,
+        tree: Program<'static>,
     ) -> Result<()> {
         let parser = Parser::new(tokens.into_iter());
         let (res, errors) = parser.parse();
@@ -712,7 +692,7 @@ mod tests {
             ],
             tree! {
                 (AssignExpr @ 0..3,
-                    assignee: (Atom @ 0..1, "a"),
+                    assignee: (Spanned @ 0..1, "a"),
                     op: Basic,
                     expr: (Int @ 2..3, 1))
             },
@@ -729,7 +709,7 @@ mod tests {
             ],
             tree! {
                 (AssignExpr @ 0..19,
-                    assignee: (Atom @ 0..6, "answer"),
+                    assignee: (Spanned @ 0..6, "answer"),
                     op: Plus,
                     expr: (InfixExpr @ 10..19,
                         lhs: (Float @ 10..14, 42.0),
@@ -755,7 +735,7 @@ mod tests {
             tree! {
                 (LetStmt @ 0..8,
                     mutable: false,
-                    name: (Atom @ 4..5, "a"),
+                    name: (Spanned @ 4..5, "a"),
                     type: (None),
                     expr: (Int @ 6..7, 1))
             },
@@ -774,7 +754,7 @@ mod tests {
             tree! {
                 (LetStmt @ 0..14,
                     mutable: true,
-                    name: (Atom @ 8..9, "b"),
+                    name: (Spanned @ 8..9, "b"),
                     type: (None),
                     expr: (Int @ 12..13, 2))
             },
@@ -794,8 +774,8 @@ mod tests {
             tree! {
                 (LetStmt @ 0..18,
                     mutable: false,
-                    name: (Atom @ 4..5, "c"),
-                    type: (Some(Atom @ 7..12, TypeKind::Float)),
+                    name: (Spanned @ 4..5, "c"),
+                    type: (Some(Spanned @ 7..12, Type::Float)),
                     expr: (Float @ 15..17, 3.0))
             },
         )?;
@@ -849,13 +829,13 @@ mod tests {
             tree! {
                 (Program @ 0..30, [
                     (FunctionDefinition @ 0..30,
-                        name: (Atom @ 3..7, "main"),
+                        name: (Spanned @ 3..7, "main"),
                         params: [],
-                        return_type: (Atom @ 8..11, TypeKind::Unit),
+                        return_type: (Spanned @ 8..11, Type::Unit),
                         block: (Block @ 10..30, [
                             (LetStmt @ 12..25,
                                 mutable: false,
-                                name: (Atom @ 16..17, "a"),
+                                name: (Spanned @ 16..17, "a"),
                                 type: (None),
                                 expr: (Bool @ 20..24, true)),
                             (ExprStmt @ 26..28, (Ident @ 26..27, "a"))]))])
@@ -889,11 +869,11 @@ mod tests {
             tree! {
                 (Program @ 0..61, [
                     (FunctionDefinition @ 0..61,
-                        name: (Atom @ 3..6, "add"),
+                        name: (Spanned @ 3..6, "add"),
                         params: [
-                            ((Atom @ 7..11, "left"), (Atom @ 13..16, TypeKind::Int)),
-                            ((Atom @ 18..23, "right"), (Atom @ 25..28, TypeKind::Int))],
-                        return_type: (Atom @ 33..36, TypeKind::Int),
+                            ((Spanned @ 7..11, "left"), (Spanned @ 13..16, Type::Int)),
+                            ((Spanned @ 18..23, "right"), (Spanned @ 25..28, Type::Int))],
+                        return_type: (Spanned @ 33..36, Type::Int),
                         block: (Block @ 37..61, [
                             (ReturnStmt @ 39..59, (Some(InfixExpr @ 46..58,
                                 lhs: (Ident @ 46..50, "left"),
@@ -921,14 +901,14 @@ mod tests {
             tree! {
                 (Program @ 0..19, [
                     (FunctionDefinition @ 0..9,
-                        name: (Atom @ 3..4, "a"),
+                        name: (Spanned @ 3..4, "a"),
                         params: [],
-                        return_type: (Atom @ 5..8, TypeKind::Unit),
+                        return_type: (Spanned @ 5..8, Type::Unit),
                         block: (Block @ 7..9, [])),
                     (FunctionDefinition @ 10..19,
-                        name: (Atom @ 13..14, "b"),
+                        name: (Spanned @ 13..14, "b"),
                         params: [],
-                        return_type: (Atom @ 15..18, TypeKind::Unit),
+                        return_type: (Spanned @ 15..18, Type::Unit),
                         block: (Block @ 17..19, []))])
             },
         )?;

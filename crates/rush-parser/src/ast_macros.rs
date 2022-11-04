@@ -17,7 +17,6 @@ macro_rules! tree {
     )) => {
         FunctionDefinition {
             span: span!($start..$end),
-            annotation: (),
             name: tree!($ident),
             params: vec![$((tree!($param), tree!($type))),*],
             return_type: tree!($return_type),
@@ -34,7 +33,6 @@ macro_rules! tree {
     )) => {
         Statement::Let(LetStmt {
             span: span!($start..$end),
-            annotation: (),
             mutable: $mut,
             name: tree!($ident),
             type_: tree!($type),
@@ -44,14 +42,12 @@ macro_rules! tree {
     ((ReturnStmt @ $start:literal .. $end:literal, $expr:tt $(,)?)) => {
         Statement::Return(ReturnStmt {
             span: span!($start..$end),
-            annotation: (),
             expr: tree!($expr),
         })
     };
     ((ExprStmt @ $start:literal .. $end:literal, $expr:tt $(,)?)) => {
         Statement::Expr(ExprStmt {
             span: span!($start..$end),
-            annotation: (),
             expr: tree!($expr),
         })
     };
@@ -59,7 +55,6 @@ macro_rules! tree {
     ((Block @ $start:literal .. $end:literal, [$($stmt:tt),* $(,)?])) => {
         Block {
             span: span!($start..$end),
-            annotation: (),
             stmts: vec![$(tree!($stmt)),*],
         }
     };
@@ -74,28 +69,25 @@ macro_rules! tree {
     )) => {
         Expression::If(IfExpr {
             span: span!($start..$end),
-            annotation: (),
             cond: tree!($cond),
             then_block: tree!($then_block),
             else_block: tree!($else_block),
         }.into())
     };
-    ((Atom @ $start:literal .. $end:literal, $value:expr)) => {
-        Atom {
+    ((Spanned @ $start:literal .. $end:literal, $value:expr)) => {
+        Spanned {
             span: span!($start..$end),
-            annotation: (),
-            value: $value,
+            inner: $value,
         }
     };
-    ((Int $($rest:tt)*)) => { Expression::Int(tree!((Atom $($rest)*))) };
-    ((Float $($rest:tt)*)) => { Expression::Float(tree!((Atom $($rest)*))) };
-    ((Bool $($rest:tt)*)) => { Expression::Bool(tree!((Atom $($rest)*))) };
-    ((Ident $($rest:tt)*)) => { Expression::Ident(tree!((Atom $($rest)*))) };
+    ((Int $($rest:tt)*)) => { Expression::Int(tree!((Spanned $($rest)*))) };
+    ((Float $($rest:tt)*)) => { Expression::Float(tree!((Spanned $($rest)*))) };
+    ((Bool $($rest:tt)*)) => { Expression::Bool(tree!((Spanned $($rest)*))) };
+    ((Ident $($rest:tt)*)) => { Expression::Ident(tree!((Spanned $($rest)*))) };
     ((Grouped @ $start:literal .. $end:literal, $expr:tt)) => {
-        Expression::Grouped(Atom {
+        Expression::Grouped(Spanned {
             span: span!($start..$end),
-            annotation: (),
-            value: tree!($expr).into(),
+            inner: tree!($expr).into(),
         })
     };
     ((
@@ -105,7 +97,6 @@ macro_rules! tree {
     )) => {
         Expression::Prefix(PrefixExpr {
             span: span!($start..$end),
-            annotation: (),
             op: PrefixOp::$op,
             expr: tree!($expr),
         }.into())
@@ -118,7 +109,6 @@ macro_rules! tree {
     )) => {
         Expression::Infix(InfixExpr {
             span: span!($start..$end),
-            annotation: (),
             lhs: tree!($lhs),
             op: InfixOp::$op,
             rhs: tree!($rhs),
@@ -132,7 +122,6 @@ macro_rules! tree {
     )) => {
         Expression::Assign(AssignExpr {
             span: span!($start..$end),
-            annotation: (),
             assignee: tree!($assignee),
             op: AssignOp::$op,
             expr: tree!($expr),

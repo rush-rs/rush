@@ -119,7 +119,7 @@ impl<'src> Lexer<'src> {
         match self.curr_char {
             Some('/') => {
                 self.next();
-                while self.curr_char != None && self.curr_char != Some('\n') {
+                while self.curr_char.is_none() && self.curr_char != Some('\n') {
                     self.next()
                 }
                 self.next();
