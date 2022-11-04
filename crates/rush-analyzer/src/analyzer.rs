@@ -1,22 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
-use rush_parser::{
-    ast::{
-        ParsedBlock, ParsedExprStmt, ParsedExpression, ParsedFunctionDefinition, ParsedLetStmt,
-        ParsedProgram, ParsedReturnStmt, ParsedStatement, Statement, TypeKind,
-    },
-    Span,
-};
+use rush_parser::{ast::*, Span};
 
-use crate::{
-    ast::{
-        AnnotatedBlock, AnnotatedExpression, AnnotatedFunctionDefinition, AnnotatedIdent,
-        AnnotatedLetStmt, AnnotatedProgram, AnnotatedReturnStmt, AnnotatedStatement, AnnotatedType,
-        Annotation,
-    },
-    Diagnostic, DiagnosticLevel, ErrorKind,
-};
+use crate::{ast::*, Diagnostic, DiagnosticLevel, ErrorKind};
 
+#[derive(Default)]
 pub struct Analyzer<'src> {
     pub functions: HashMap<&'src str, Function<'src>>,
     scope: Option<Scope<'src>>,
@@ -43,20 +31,10 @@ pub struct Variable {
     pub mutable: bool,
 }
 
-impl<'src> Default for Analyzer<'src> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl<'src> Analyzer<'src> {
     /// Creates a new [`Analyzer`].
     pub fn new() -> Self {
-        Self {
-            functions: HashMap::new(),
-            scope: None,
-            diagnostics: vec![],
-        }
+        Self::default()
     }
 
     /// Adds a new diagnostic with the hint level
@@ -81,19 +59,18 @@ impl<'src> Analyzer<'src> {
     }
 
     pub fn analyze(mut self, program: ParsedProgram<'src>) -> AnnotatedProgram<'src> {
-        let mut functions = vec![];
-        for function in program.functions {
-            let fun = self.visit_function_declaration(function);
-            functions.push(fun);
-        }
         AnnotatedProgram {
             span: program.span,
-            functions,
+            functions: program
+                .functions
+                .into_iter()
+                .map(|func| self.visit_function_declaration(func))
+                .collect(),
         }
     }
 
-    /// Removes the current scope of the function
-    /// also analyzes if variables in the scope have been used
+    /// Removes the current scope of the function and checks whether the
+    /// variables in the scope have been used.
     fn drop_scope(&mut self) {
         // consume / drop the scope
         let scope = self
@@ -103,21 +80,10 @@ impl<'src> Analyzer<'src> {
 
         // analyze its values
         for (name, var) in scope.vars {
-            if !var.used {
-                let label = match self
-                    .functions
-                    .get(scope.fn_name)
-                    .expect("a scope always has a function")
-                    .params
-                    .iter()
-                    .any(|c| c.0.value == name)
-                {
-                    true => "argument",
-                    false => "variable",
-                };
-
-                self.warn(format!("unused {label} `{}`", name), var.span);
+            if var.used {
+                continue;
             }
+            self.warn(format!("unused variable `{}`", name), var.span);
         }
     }
 
@@ -125,45 +91,64 @@ impl<'src> Analyzer<'src> {
         &mut self,
         function: ParsedFunctionDefinition<'src>,
     ) -> AnnotatedFunctionDefinition<'src> {
-        if self.functions.get(function.name.value).is_some() {
+        // check for duplicate function names
+        if self.functions.contains_key(function.name.value) {
             self.error(
                 ErrorKind::Semantic,
                 "duplicate function definition".to_string(),
                 function.name.span,
-            )
+            );
         }
+
+        let mut vars = HashMap::new();
 
         // check the function parameters
         let mut params = vec![];
         let mut param_names = HashSet::new();
-        for param in &function.params {
+        for (ident, type_) in &function.params {
             // check for duplicate function parameters
-            if !param_names.insert(param.0.value) {
+            if !param_names.insert(ident.value) {
                 self.error(
                     ErrorKind::Semantic,
                     "duplicate parameter name".to_string(),
-                    param.0.span,
-                )
+                    ident.span,
+                );
             }
+            vars.insert(
+                ident.value,
+                Variable {
+                    type_: type_.value,
+                    span: ident.span,
+                    used: false,
+                    // TODO: maybe allow `mut` params
+                    mutable: false,
+                },
+            );
             params.push((
                 AnnotatedIdent {
-                    span: param.0.span,
-                    annotation: Annotation::new(param.1.value, false),
-                    value: param.0.value,
+                    span: ident.span,
+                    annotation: Annotation::new(type_.value, false),
+                    value: ident.value,
                 },
                 AnnotatedType {
-                    span: param.1.span,
-                    annotation: Annotation::new(param.1.value, false),
-                    value: param.1.value,
+                    span: type_.span,
+                    annotation: Annotation::new(type_.value, false),
+                    value: type_.value,
                 },
-            ))
+            ));
         }
 
         let return_type = AnnotatedType {
             span: function.return_type.span,
-            annotation: Annotation::new(TypeKind::Unknown, false),
+            annotation: Annotation::new(function.return_type.value, false),
             value: function.return_type.value,
         };
+
+        // set scope to new blank scope
+        self.scope = Some(Scope {
+            fn_name: function.name.value,
+            vars,
+        });
 
         // check that the block returns a legal type
         let block = self.visit_block(function.block);
@@ -174,7 +159,7 @@ impl<'src> Analyzer<'src> {
                     "mismatched types: expected `{}`, found `{}`",
                     function.return_type.value, block.annotation.result_type,
                 ),
-                block.stmts.last().map_or(block.span, |l| l.span()),
+                block.stmts.last().map_or(block.span, |stmt| stmt.span()),
             );
             self.hint(
                 "function return value defined here".to_string(),
@@ -182,7 +167,7 @@ impl<'src> Analyzer<'src> {
             );
         }
 
-        // add the function to the analyzer's function scope
+        // add the function to the analyzer's function list
         self.functions.insert(
             function.name.value,
             Function {

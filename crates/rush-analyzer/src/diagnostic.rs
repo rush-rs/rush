@@ -1,14 +1,14 @@
-use rush_parser::Span;
+use rush_parser::{Error, Span};
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Diagnostic {
     pub level: DiagnosticLevel,
     pub message: String,
     pub span: Span,
 }
 
-impl From<rush_parser::Error> for Diagnostic {
-    fn from(err: rush_parser::Error) -> Self {
+impl From<Error> for Diagnostic {
+    fn from(err: Error) -> Self {
         Self::new(
             DiagnosticLevel::Error(ErrorKind::Syntax),
             err.message,
@@ -27,7 +27,7 @@ impl Diagnostic {
     }
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum DiagnosticLevel {
     Hint,
     Info,
@@ -35,7 +35,7 @@ pub enum DiagnosticLevel {
     Error(ErrorKind),
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum ErrorKind {
     Syntax,
     Type,
