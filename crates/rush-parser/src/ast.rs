@@ -13,6 +13,7 @@ pub type ParsedExpression<'src> = Expression<'src, ()>;
 pub type ParsedIfExpr<'src> = IfExpr<'src, ()>;
 pub type ParsedAtom<T> = Atom<T, ()>;
 pub type ParsedIdent<'src> = Atom<&'src str, ()>;
+pub type ParsedType<'src> = Atom<TypeKind, ()>;
 pub type ParsedPrefixExpr<'src> = PrefixExpr<'src, ()>;
 pub type ParsedInfixExpr<'src> = InfixExpr<'src, ()>;
 pub type ParsedAssignExpr<'src> = AssignExpr<'src, ()>;
@@ -20,7 +21,7 @@ pub type ParsedCallExpr<'src> = CallExpr<'src, ()>;
 pub type ParsedCastExpr<'src> = CastExpr<'src, ()>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Type {
+pub enum TypeKind {
     Int,
     Float,
     Bool,
@@ -32,7 +33,7 @@ pub enum Type {
     Unknown,
 }
 
-impl Display for Type {
+impl Display for TypeKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -61,8 +62,8 @@ pub struct FunctionDefinition<'src, Annotation> {
     pub span: Span,
     pub annotation: Annotation,
     pub name: Ident<'src, Annotation>,
-    pub params: Vec<(Ident<'src, Annotation>, Type)>,
-    pub return_type: Type,
+    pub params: Vec<(Ident<'src, Annotation>, Type<'src, Annotation>)>,
+    pub return_type: Type<'src, Annotation>,
     pub block: Block<'src, Annotation>,
 }
 
@@ -104,7 +105,7 @@ pub struct LetStmt<'src, Annotation> {
     pub annotation: Annotation,
     pub mutable: bool,
     pub name: Ident<'src, Annotation>,
-    pub type_: Option<Type>,
+    pub type_: Option<Type<'src, Annotation>>,
     pub expr: Expression<'src, Annotation>,
 }
 
@@ -184,6 +185,7 @@ pub struct IfExpr<'src, Annotation> {
 }
 
 pub type Ident<'src, Annotation> = Atom<&'src str, Annotation>;
+pub type Type<'src, Annotation> = Atom<TypeKind, Annotation>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Atom<T, Annotation> {
@@ -266,7 +268,7 @@ pub enum InfixOp {
 pub struct AssignExpr<'src, Annotation> {
     pub span: Span,
     pub annotation: Annotation,
-    pub assignee: Atom<&'src str, Annotation>,
+    pub assignee: ParsedIdent<'src>,
     pub op: AssignOp,
     pub expr: Expression<'src, Annotation>,
 }
@@ -312,5 +314,5 @@ pub struct CastExpr<'src, Annotation> {
     pub span: Span,
     pub annotation: Annotation,
     pub expr: Expression<'src, Annotation>,
-    pub type_: Type,
+    pub type_: Type<'src, Annotation>,
 }

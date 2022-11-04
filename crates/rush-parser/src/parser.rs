@@ -75,12 +75,13 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
     fn expect_ident(&mut self) -> Result<ParsedIdent<'src>> {
         match self.curr_tok.kind {
             TokenKind::Ident(value) => {
-                self.next()?;
-                Ok(ParsedIdent {
+                let ident = ParsedIdent {
                     span: self.curr_tok.span,
                     annotation: (),
                     value,
-                })
+                };
+                self.next()?;
+                Ok(ident)
             }
             _ => Err(Error::new(
                 format!("expected identifier, found `{}`", self.curr_tok.kind),
@@ -116,23 +117,28 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         })
     }
 
-    fn type_(&mut self) -> Result<Type> {
+    fn type_(&mut self) -> Result<ParsedType<'src>> {
+        let start_loc = self.curr_tok.span.start;
         let type_ = match self.curr_tok.kind {
-            TokenKind::Ident("int") => Type::Int,
-            TokenKind::Ident("float") => Type::Float,
-            TokenKind::Ident("bool") => Type::Bool,
-            TokenKind::Ident("char") => Type::Char,
+            TokenKind::Ident("int") => TypeKind::Int,
+            TokenKind::Ident("float") => TypeKind::Float,
+            TokenKind::Ident("bool") => TypeKind::Bool,
+            TokenKind::Ident("char") => TypeKind::Char,
             TokenKind::Ident(ident) => {
                 self.errors.push(Error::new(
                     format!("unknown type `{ident}`"),
                     self.curr_tok.span,
                 ));
-                Type::Unknown
+                TypeKind::Unknown
             }
             TokenKind::LParen => {
                 self.next()?;
                 self.expect_recoverable(TokenKind::RParen, "missing closing parenthesis")?;
-                return Ok(Type::Unit);
+                return Ok(ParsedType {
+                    span: start_loc.until(self.curr_tok.span.end),
+                    annotation: (),
+                    value: TypeKind::Unit,
+                });
             }
             invalid => {
                 return Err(Error::new(
@@ -142,7 +148,11 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             }
         };
         self.next()?;
-        Ok(type_)
+        Ok(ParsedType {
+            span: start_loc.until(self.curr_tok.span.end),
+            annotation: (),
+            value: type_,
+        })
     }
 
     fn function_definition(&mut self) -> Result<ParsedFunctionDefinition<'src>> {
@@ -171,7 +181,11 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
                 self.next()?;
                 self.type_()?
             }
-            _ => Type::Unit,
+            _ => ParsedType {
+                span: Span::default(),
+                annotation: (),
+                value: TypeKind::Unit,
+            },
         };
 
         let block = self.block()?;
@@ -186,7 +200,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         })
     }
 
-    fn parameter(&mut self) -> Result<(ParsedIdent<'src>, Type)> {
+    fn parameter(&mut self) -> Result<(ParsedIdent<'src>, ParsedType<'src>)> {
         let name = self.expect_ident()?;
         self.expect(TokenKind::Colon)?;
         let type_ = self.type_()?;
@@ -591,6 +605,16 @@ mod tests {
         Ok(())
     }
 
+    fn stmt_test(
+        tokens: impl IntoIterator<Item = Token<'static>>,
+        tree: ParsedStatement<'static>,
+    ) -> Result<()> {
+        let mut parser = Parser::new(tokens.into_iter());
+        parser.next()?;
+        assert_eq!(parser.statement()?, tree);
+        Ok(())
+    }
+
     #[test]
     fn arithmetic_expressions() -> Result<()> {
         // 3-2-1
@@ -735,7 +759,7 @@ mod tests {
                 AssignExpr {
                     span: span!(0..3),
                     annotation: (),
-                    assignee: Atom {
+                    assignee: ParsedIdent {
                         span: span!(0..1),
                         annotation: (),
                         value: "a",
@@ -762,7 +786,7 @@ mod tests {
                 AssignExpr {
                     span: span!(0..14),
                     annotation: (),
-                    assignee: Atom {
+                    assignee: ParsedIdent {
                         span: span!(0..6),
                         annotation: (),
                         value: "answer",
@@ -778,6 +802,36 @@ mod tests {
             ),
         )?;
 
+        Ok(())
+    }
+
+    #[test]
+    fn let_statement() -> Result<()> {
+        // let a=1;
+        stmt_test(
+            [
+                TokenKind::Let.spanned(span!(0..3)),
+                TokenKind::Ident("a").spanned(span!(4..5)),
+                TokenKind::Assign.spanned(span!(5..6)),
+                TokenKind::Int(1).spanned(span!(6..7)),
+            ],
+            Statement::Let(LetStmt {
+                span: span!(0..7),
+                annotation: (),
+                mutable: false,
+                name: ParsedIdent {
+                    span: span!(4..5),
+                    annotation: (),
+                    value: "a",
+                },
+                type_: None,
+                expr: Expression::Int(Atom {
+                    span: span!(6..7),
+                    annotation: (),
+                    value: 1,
+                }),
+            }),
+        )?;
         Ok(())
     }
 
