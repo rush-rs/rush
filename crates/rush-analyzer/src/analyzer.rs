@@ -163,6 +163,8 @@ impl<'src> Analyzer<'src> {
             },
         );
 
+        // TODO: add scope cleaning fn here
+
         AnnotatedFunctionDefinition {
             span: function.span,
             annotation: Annotation::new(function.return_type.value, false),
