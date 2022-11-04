@@ -5,6 +5,15 @@ pub struct Annotation {
     pub constant: bool,
 }
 
+impl Annotation {
+    pub fn new(result_type: TypeKind, constant: bool) -> Self {
+        Self {
+            result_type,
+            constant,
+        }
+    }
+}
+
 pub type AnnotatedProgram<'src> = Program<'src, Annotation>;
 pub type AnnotatedFunctionDefinition<'src> = FunctionDefinition<'src, Annotation>;
 pub type AnnotatedBlock<'src> = Block<'src, Annotation>;
