@@ -16,6 +16,10 @@ macro_rules! span {
     };
 }
 
+#[cfg(test)]
+#[macro_use]
+mod ast_macros;
+
 pub mod ast;
 mod error;
 mod lexer;

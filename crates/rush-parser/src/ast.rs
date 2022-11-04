@@ -20,6 +20,8 @@ pub type ParsedAssignExpr<'src> = AssignExpr<'src, ()>;
 pub type ParsedCallExpr<'src> = CallExpr<'src, ()>;
 pub type ParsedCastExpr<'src> = CastExpr<'src, ()>;
 
+pub type Type<'src, Annotation> = Atom<TypeKind, Annotation>;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TypeKind {
     Int,
@@ -185,7 +187,6 @@ pub struct IfExpr<'src, Annotation> {
 }
 
 pub type Ident<'src, Annotation> = Atom<&'src str, Annotation>;
-pub type Type<'src, Annotation> = Atom<TypeKind, Annotation>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Atom<T, Annotation> {

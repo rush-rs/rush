@@ -149,7 +149,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         };
         self.next()?;
         Ok(ParsedType {
-            span: start_loc.until(self.curr_tok.span.end),
+            span: start_loc.until(self.prev_tok.span.end),
             annotation: (),
             value: type_,
         })
@@ -587,6 +587,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
 mod tests {
     use super::*;
 
+    // Impl Lex trait for any iterator over tokens
     impl<'src, T> Lex<'src> for T
     where
         T: Iterator<Item = Token<'src>>,
@@ -596,23 +597,42 @@ mod tests {
         }
     }
 
+    /// Parses the `tokens` into an [`Expression`] and asserts equality with `tree`
+    /// without any errors
     fn expr_test(
         tokens: impl IntoIterator<Item = Token<'static>>,
         tree: ParsedExpression<'static>,
     ) -> Result<()> {
         let mut parser = Parser::new(tokens.into_iter());
         parser.next()?;
-        assert_eq!(parser.expression(0)?, tree);
+        assert_eq!(dbg!(parser.expression(0)?), dbg!(tree));
+        assert!(dbg!(parser.errors).is_empty());
         Ok(())
     }
 
+    /// Parses the `tokens` into a [`Statement`] and asserts equality with `tree`
+    /// without any errors
     fn stmt_test(
         tokens: impl IntoIterator<Item = Token<'static>>,
         tree: ParsedStatement<'static>,
     ) -> Result<()> {
         let mut parser = Parser::new(tokens.into_iter());
         parser.next()?;
-        assert_eq!(parser.statement()?, tree);
+        assert_eq!(dbg!(parser.statement()?), dbg!(tree));
+        assert!(dbg!(parser.errors).is_empty());
+        Ok(())
+    }
+
+    /// Parses the `tokens` into a [`Program`] and asserts equality with `tree`
+    /// without any errors
+    fn program_test(
+        tokens: impl IntoIterator<Item = Token<'static>>,
+        tree: ParsedProgram<'static>,
+    ) -> Result<()> {
+        let parser = Parser::new(tokens.into_iter());
+        let (res, errors) = parser.parse();
+        assert_eq!(dbg!(res?), dbg!(tree));
+        assert!(dbg!(errors).is_empty());
         Ok(())
     }
 
@@ -620,128 +640,62 @@ mod tests {
     fn arithmetic_expressions() -> Result<()> {
         // 3-2-1
         expr_test(
-            [
-                TokenKind::Int(3).spanned(span!(0..1)),
-                TokenKind::Minus.spanned(span!(1..2)),
-                TokenKind::Int(2).spanned(span!(2..3)),
-                TokenKind::Minus.spanned(span!(3..4)),
-                TokenKind::Int(1).spanned(span!(4..5)),
+            tokens![
+                Int(3) @ 0..1,
+                Minus @ 1..2,
+                Int(2) @ 2..3,
+                Minus @ 3..4,
+                Int(1) @ 4..5,
             ],
-            Expression::Infix(
-                InfixExpr {
-                    span: span!(0..5),
-                    annotation: (),
-                    lhs: Expression::Infix(
-                        InfixExpr {
-                            span: span!(0..3),
-                            annotation: (),
-                            lhs: Expression::Int(Atom {
-                                span: span!(0..1),
-                                annotation: (),
-                                value: 3,
-                            }),
-                            op: InfixOp::Minus,
-                            rhs: Expression::Int(Atom {
-                                span: span!(2..3),
-                                annotation: (),
-                                value: 2,
-                            }),
-                        }
-                        .into(),
-                    ),
-                    op: InfixOp::Minus,
-                    rhs: Expression::Int(Atom {
-                        span: span!(4..5),
-                        annotation: (),
-                        value: 1,
-                    }),
-                }
-                .into(),
-            ),
+            tree! {
+                (InfixExpr @ 0..5,
+                    lhs: (InfixExpr @ 0..3,
+                        lhs: (Int @ 0..1, 3),
+                        op: Minus,
+                        rhs: (Int @ 2..3, 2)),
+                    op: Minus,
+                    rhs: (Int @ 4..5, 1))
+            },
         )?;
 
         // 1+2*3
         expr_test(
-            [
-                TokenKind::Int(1).spanned(span!(0..1)),
-                TokenKind::Plus.spanned(span!(1..2)),
-                TokenKind::Int(2).spanned(span!(2..3)),
-                TokenKind::Star.spanned(span!(3..4)),
-                TokenKind::Int(3).spanned(span!(4..5)),
+            tokens![
+                Int(1) @ 0..1,
+                Plus @ 1..2,
+                Int(2) @ 2..3,
+                Star @ 3..4,
+                Int(3) @ 4..5,
             ],
-            Expression::Infix(
-                InfixExpr {
-                    span: span!(0..5),
-                    annotation: (),
-                    lhs: Expression::Int(Atom {
-                        span: span!(0..1),
-                        annotation: (),
-                        value: 1,
-                    }),
-                    op: InfixOp::Plus,
-                    rhs: Expression::Infix(
-                        InfixExpr {
-                            span: span!(2..5),
-                            annotation: (),
-                            lhs: Expression::Int(Atom {
-                                span: span!(2..3),
-                                annotation: (),
-                                value: 2,
-                            }),
-                            op: InfixOp::Mul,
-                            rhs: Expression::Int(Atom {
-                                span: span!(4..5),
-                                annotation: (),
-                                value: 3,
-                            }),
-                        }
-                        .into(),
-                    ),
-                }
-                .into(),
-            ),
+            tree! {
+                (InfixExpr @ 0..5,
+                    lhs: (Int @ 0..1, 1),
+                    op: Plus,
+                    rhs: (InfixExpr @ 2..5,
+                        lhs: (Int @ 2..3, 2),
+                        op: Mul,
+                        rhs: (Int @ 4..5, 3)))
+            },
         )?;
 
         // 2**3**4
         expr_test(
-            [
-                TokenKind::Int(2).spanned(span!(0..1)),
-                TokenKind::Pow.spanned(span!(1..3)),
-                TokenKind::Int(3).spanned(span!(3..4)),
-                TokenKind::Pow.spanned(span!(4..6)),
-                TokenKind::Int(4).spanned(span!(6..7)),
+            tokens![
+                Int(2) @ 0..1,
+                Pow @ 1..3,
+                Int(3) @ 3..4,
+                Pow @ 4..6,
+                Int(4) @ 6..7,
             ],
-            Expression::Infix(
-                InfixExpr {
-                    span: span!(0..7),
-                    annotation: (),
-                    lhs: Expression::Int(Atom {
-                        span: span!(0..1),
-                        annotation: (),
-                        value: 2,
-                    }),
-                    op: InfixOp::Pow,
-                    rhs: Expression::Infix(
-                        InfixExpr {
-                            span: span!(3..7),
-                            annotation: (),
-                            lhs: Expression::Int(Atom {
-                                span: span!(3..4),
-                                annotation: (),
-                                value: 3,
-                            }),
-                            op: InfixOp::Pow,
-                            rhs: Expression::Int(Atom {
-                                span: span!(6..7),
-                                annotation: (),
-                                value: 4,
-                            }),
-                        }
-                        .into(),
-                    ),
-                }
-                .into(),
-            ),
+            tree! {
+                (InfixExpr @ 0..7,
+                    lhs: (Int @ 0..1, 2),
+                    op: Pow,
+                    rhs: (InfixExpr @ 3..7,
+                        lhs: (Int @ 3..4, 3),
+                        op: Pow,
+                        rhs: (Int @ 6..7, 4)))
+            },
         )?;
 
         Ok(())
@@ -751,56 +705,37 @@ mod tests {
     fn assignment_expressions() -> Result<()> {
         // a=1
         expr_test(
-            [
-                TokenKind::Ident("a").spanned(span!(0..1)),
-                TokenKind::Assign.spanned(span!(1..2)),
-                TokenKind::Int(1).spanned(span!(2..3)),
+            tokens![
+                Ident("a") @ 0..1,
+                Assign @ 1..2,
+                Int(1) @ 2..3,
             ],
-            Expression::Assign(
-                AssignExpr {
-                    span: span!(0..3),
-                    annotation: (),
-                    assignee: ParsedIdent {
-                        span: span!(0..1),
-                        annotation: (),
-                        value: "a",
-                    },
-                    op: AssignOp::Basic,
-                    expr: Expression::Int(Atom {
-                        span: span!(2..3),
-                        annotation: (),
-                        value: 1,
-                    }),
-                }
-                .into(),
-            ),
+            tree! {
+                (AssignExpr @ 0..3,
+                    assignee: (Atom @ 0..1, "a"),
+                    op: Basic,
+                    expr: (Int @ 2..3, 1))
+            },
         )?;
 
-        // answer += 42.0
+        // answer += 42.0 - 0f
         expr_test(
-            [
-                TokenKind::Ident("answer").spanned(span!(0..6)),
-                TokenKind::PlusAssign.spanned(span!(7..9)),
-                TokenKind::Float(42.0).spanned(span!(10..14)),
+            tokens![
+                Ident("answer") @ 0..6,
+                PlusAssign @ 7..9,
+                Float(42.0) @ 10..14,
+                Minus @ 15..16,
+                Float(0.0) @ 17..19,
             ],
-            Expression::Assign(
-                AssignExpr {
-                    span: span!(0..14),
-                    annotation: (),
-                    assignee: ParsedIdent {
-                        span: span!(0..6),
-                        annotation: (),
-                        value: "answer",
-                    },
-                    op: AssignOp::Plus,
-                    expr: Expression::Float(Atom {
-                        span: span!(10..14),
-                        annotation: (),
-                        value: 42.0,
-                    }),
-                }
-                .into(),
-            ),
+            tree! {
+                (AssignExpr @ 0..19,
+                    assignee: (Atom @ 0..6, "answer"),
+                    op: Plus,
+                    expr: (InfixExpr @ 10..19,
+                        lhs: (Float @ 10..14, 42.0),
+                        op: Minus,
+                        rhs: (Float @ 17..19, 0.0)))
+            },
         )?;
 
         Ok(())
@@ -810,31 +745,119 @@ mod tests {
     fn let_statement() -> Result<()> {
         // let a=1;
         stmt_test(
-            [
-                TokenKind::Let.spanned(span!(0..3)),
-                TokenKind::Ident("a").spanned(span!(4..5)),
-                TokenKind::Assign.spanned(span!(5..6)),
-                TokenKind::Int(1).spanned(span!(6..7)),
+            tokens![
+                Let @ 0..3,
+                Ident("a") @ 4..5,
+                Assign @ 5..6,
+                Int(1) @ 6..7,
+                Semicolon @ 7..8,
             ],
-            Statement::Let(LetStmt {
-                span: span!(0..7),
-                annotation: (),
-                mutable: false,
-                name: ParsedIdent {
-                    span: span!(4..5),
-                    annotation: (),
-                    value: "a",
-                },
-                type_: None,
-                expr: Expression::Int(Atom {
-                    span: span!(6..7),
-                    annotation: (),
-                    value: 1,
-                }),
-            }),
+            tree! {
+                (LetStmt @ 0..8,
+                    mutable: false,
+                    name: (Atom @ 4..5, "a"),
+                    type: (None),
+                    expr: (Int @ 6..7, 1))
+            },
         )?;
+
+        // let mut b = 2;
+        stmt_test(
+            tokens![
+                Let @ 0..3,
+                Mut @ 4..7,
+                Ident("b") @ 8..9,
+                Assign @ 10..11,
+                Int(2) @ 12..13,
+                Semicolon @ 13..14,
+            ],
+            tree! {
+                (LetStmt @ 0..14,
+                    mutable: true,
+                    name: (Atom @ 8..9, "b"),
+                    type: (None),
+                    expr: (Int @ 12..13, 2))
+            },
+        )?;
+
         Ok(())
     }
 
-    // TODO: more tests
+    #[test]
+    fn programs() -> Result<()> {
+        // fn main() { let a = true; a; }
+        program_test(
+            tokens![
+                Fn @ 0..2,
+                Ident("main") @ 3..7,
+                LParen @ 7..8,
+                RParen @ 8..9,
+                LBrace @ 10..11,
+                Let @ 12..15,
+                Ident("a") @ 16..17,
+                Assign @ 18..19,
+                True @ 20..24,
+                Semicolon @ 24..25,
+                Ident("a") @ 26..27,
+                Semicolon @ 27..28,
+                RBrace @ 29..30,
+            ],
+            tree! {
+                (Program @ 0..30, [
+                    (FunctionDefinition @ 0..30,
+                        name: (Atom @ 3..7, "main"),
+                        params: [],
+                        return_type: (Atom @ 8..11, TypeKind::Unit),
+                        block: (Block @ 10..30, [
+                            (LetStmt @ 12..25,
+                                mutable: false,
+                                name: (Atom @ 16..17, "a"),
+                                type: (None),
+                                expr: (Bool @ 20..24, true)),
+                            (ExprStmt @ 26..28, (Ident @ 26..27, "a"))]))])
+            },
+        )?;
+
+        // fn add(left: int, right: int) -> int { return left + right; }
+        program_test(
+            tokens![
+                Fn @ 0..2,
+                Ident("add") @ 3..6,
+                LParen @ 6..7,
+                Ident("left") @ 7..11,
+                Colon @ 11..12,
+                Ident("int") @ 13..16,
+                Comma @ 16..17,
+                Ident("right") @ 18..23,
+                Colon @ 23..24,
+                Ident("int") @ 25..28,
+                RParen @ 28..29,
+                Arrow @ 30..32,
+                Ident("int") @ 33..36,
+                LBrace @ 37..38,
+                Return @ 39..45,
+                Ident("left") @ 46..50,
+                Plus @ 51..52,
+                Ident("right") @ 53..58,
+                Semicolon @ 58..59,
+                RBrace @ 60..61,
+            ],
+            tree! {
+                (Program @ 0..61, [
+                    (FunctionDefinition @ 0..61,
+                        name: (Atom @ 3..6, "add"),
+                        params: [
+                            ((Atom @ 7..11, "left"), (Atom @ 13..16, TypeKind::Int)),
+                            ((Atom @ 18..23, "right"), (Atom @ 25..28, TypeKind::Int))],
+                        return_type: (Atom @ 33..36, TypeKind::Int),
+                        block: (Block @ 37..61, [
+                            (ReturnStmt @ 39..59, (Some(InfixExpr @ 46..58,
+                                lhs: (Ident @ 46..50, "left"),
+                                op: Plus,
+                                rhs: (Ident @ 53..58, "right"))))]))])
+            },
+        )?;
+
+        Ok(())
+    }
 }
