@@ -174,6 +174,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             }
         }
 
+        let rparen_loc = self.curr_tok.span.start;
         self.expect_recoverable(TokenKind::RParen, "missing closing parenthesis")?;
 
         let return_type = match self.curr_tok.kind {
@@ -182,7 +183,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
                 self.type_()?
             }
             _ => ParsedType {
-                span: Span::default(),
+                span: rparen_loc.until(self.curr_tok.span.end),
                 annotation: (),
                 value: TypeKind::Unit,
             },
