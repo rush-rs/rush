@@ -92,6 +92,35 @@ impl<'src> Analyzer<'src> {
         }
     }
 
+    /// Removes the current scope of the function
+    /// also analyzes if variables in the scope have been used
+    fn drop_scope(&mut self) {
+        // consume / drop the scope
+        let scope = self
+            .scope
+            .take()
+            .expect("drop_scope should only be called from a scope");
+
+        // analyze its values
+        for (name, var) in scope.vars {
+            if !var.used {
+                let label = match self
+                    .functions
+                    .get(scope.fn_name)
+                    .expect("a scope always has a function")
+                    .params
+                    .iter()
+                    .any(|c| c.0.value == name)
+                {
+                    true => "argument",
+                    false => "variable",
+                };
+
+                self.warn(format!("unused {label} `{}`", name), var.span);
+            }
+        }
+    }
+
     fn visit_function_declaration(
         &mut self,
         function: ParsedFunctionDefinition<'src>,
@@ -163,7 +192,8 @@ impl<'src> Analyzer<'src> {
             },
         );
 
-        // TODO: add scope cleaning fn here
+        // drop the scope when finished (also checks variables)
+        self.drop_scope();
 
         AnnotatedFunctionDefinition {
             span: function.span,
