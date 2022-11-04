@@ -1,21 +1,17 @@
-use std::{
-    collections::{HashMap, HashSet},
-    fmt::format,
-};
+use std::collections::{HashMap, HashSet};
 
 use rush_parser::{
     ast::{
-        Expression, LetStmt, ParsedBlock, ParsedExprStmt, ParsedExpression,
-        ParsedFunctionDefinition, ParsedLetStmt, ParsedProgram, ParsedReturnStmt, ParsedStatement,
-        ReturnStmt, Statement, TypeKind,
+        ParsedBlock, ParsedExprStmt, ParsedExpression, ParsedFunctionDefinition, ParsedLetStmt,
+        ParsedProgram, ParsedReturnStmt, ParsedStatement, Statement, TypeKind,
     },
     Span,
 };
 
 use crate::{
     ast::{
-        AnnotatedBlock, AnnotatedExprStmt, AnnotatedExpression, AnnotatedFunctionDefinition,
-        AnnotatedIdent, AnnotatedLetStmt, AnnotatedProgram, AnnotatedStatement, AnnotatedType,
+        AnnotatedBlock, AnnotatedExpression, AnnotatedFunctionDefinition, AnnotatedIdent,
+        AnnotatedLetStmt, AnnotatedProgram, AnnotatedReturnStmt, AnnotatedStatement, AnnotatedType,
         Annotation,
     },
     Diagnostic, DiagnosticLevel, ErrorKind,
@@ -140,7 +136,24 @@ impl<'src> Analyzer<'src> {
             value: function.return_type.value,
         };
 
-        // add the functin to the analyzer's function scope
+        // check that the block returns a legal type
+        let block = self.visit_block(function.block);
+        if block.annotation.result_type != function.return_type.value {
+            self.error(
+                ErrorKind::Type,
+                format!(
+                    "mismatched types: expected `{}`, found `{}`",
+                    function.return_type.value, block.annotation.result_type,
+                ),
+                block.stmts.last().map_or(block.span, |l| l.span()),
+            );
+            self.hint(
+                "function return value defined here".to_string(),
+                function.return_type.span,
+            );
+        }
+
+        // add the function to the analyzer's function scope
         self.functions.insert(
             function.name.value,
             Function {
@@ -160,7 +173,7 @@ impl<'src> Analyzer<'src> {
             },
             params,
             return_type,
-            block: self.visit_block(function.block),
+            block,
         }
     }
 
@@ -194,7 +207,7 @@ impl<'src> Analyzer<'src> {
         match statement {
             Statement::Let(node) => self.visit_let_statement(node),
             Statement::Return(node) => self.visit_return_statement(node),
-            Statement::Expr(node) => self.visit_expression(node.expr),
+            Statement::Expr(node) => self.visit_expression_stmt(node),
         }
     }
 
@@ -238,7 +251,7 @@ impl<'src> Analyzer<'src> {
             }
         }
 
-        AnnotatedStatement(AnnotatedLetStmt {
+        AnnotatedStatement::Let(AnnotatedLetStmt {
             span: node.span,
             annotation: Annotation::new(TypeKind::Unit, false),
             mutable: node.mutable,
@@ -252,17 +265,51 @@ impl<'src> Analyzer<'src> {
         })
     }
 
-    fn visit_return_statement(
-        &mut self,
-        return_stmt: ParsedReturnStmt<'src>,
-    ) -> AnnotatedStatement<'src> {
-        todo!()
+    fn visit_return_statement(&mut self, node: ParsedReturnStmt<'src>) -> AnnotatedStatement<'src> {
+        // if there is an expression, visit it
+        let expr = node
+            .expr
+            .map_or_else(|| None, |expr| Some(self.visit_expression(expr)));
+
+        // create the return value based on the expr (Unit as fallback)
+        let return_type = expr
+            .as_ref()
+            .map_or(TypeKind::Unit, |expr| expr.annotation().result_type);
+
+        let curr_fn = self
+            .functions
+            .get(self.scope.as_ref().unwrap().fn_name)
+            .unwrap();
+
+        // test if the return type is legal in the current function
+        if curr_fn.return_type.value != return_type {
+            let fn_type_span = curr_fn.return_type.span;
+
+            self.error(
+                ErrorKind::Type,
+                format!(
+                    "mismatched types: expected `{}`, found `{}`",
+                    curr_fn.return_type.value, return_type
+                ),
+                node.span,
+            );
+            self.hint(
+                "function return value defined here".to_string(),
+                fn_type_span,
+            )
+        }
+
+        AnnotatedStatement::Return(AnnotatedReturnStmt {
+            span: node.span,
+            annotation: Annotation::new(TypeKind::Unit, false),
+            expr,
+        })
     }
 
     fn visit_expression_stmt(
         &mut self,
         expression: ParsedExprStmt<'src>,
-    ) -> AnnotatedExprStmt<'src> {
+    ) -> AnnotatedStatement<'src> {
         todo!("@RubixDev will implement from here")
     }
 
