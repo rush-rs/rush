@@ -1,5 +1,6 @@
 use rush_parser::ast::*;
 
+#[derive(Debug, Clone, Copy)]
 pub struct Annotation {
     pub result_type: TypeKind,
     pub constant: bool,

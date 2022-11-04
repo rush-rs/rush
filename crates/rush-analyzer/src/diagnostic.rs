@@ -29,6 +29,7 @@ impl Diagnostic {
 
 #[derive(PartialEq, Eq, Debug)]
 pub enum DiagnosticLevel {
+    Hint,
     Info,
     Warning,
     Error(ErrorKind),
