@@ -72,11 +72,15 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
     }
 
     // expects the curr_tok to be an identifier and returns its name if this is the case
-    fn expect_ident(&mut self) -> Result<&'src str> {
+    fn expect_ident(&mut self) -> Result<ParsedIdent<'src>> {
         match self.curr_tok.kind {
-            TokenKind::Ident(ident) => {
+            TokenKind::Ident(value) => {
                 self.next()?;
-                Ok(ident)
+                Ok(ParsedIdent {
+                    span: self.curr_tok.span,
+                    annotation: (),
+                    value,
+                })
             }
             _ => Err(Error::new(
                 format!("expected identifier, found `{}`", self.curr_tok.kind),
@@ -108,7 +112,6 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
 
         Ok(Program {
             span: start_loc.until(self.prev_tok.span.end),
-            annotation: (),
             functions,
         })
     }
@@ -183,7 +186,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         })
     }
 
-    fn parameter(&mut self) -> Result<(&'src str, Type)> {
+    fn parameter(&mut self) -> Result<(ParsedIdent<'src>, Type)> {
         let name = self.expect_ident()?;
         self.expect(TokenKind::Colon)?;
         let type_ = self.type_()?;

@@ -12,6 +12,7 @@ pub type ParsedExprStmt<'src> = ExprStmt<'src, ()>;
 pub type ParsedExpression<'src> = Expression<'src, ()>;
 pub type ParsedIfExpr<'src> = IfExpr<'src, ()>;
 pub type ParsedAtom<T> = Atom<T, ()>;
+pub type ParsedIdent<'src> = Atom<&'src str, ()>;
 pub type ParsedPrefixExpr<'src> = PrefixExpr<'src, ()>;
 pub type ParsedInfixExpr<'src> = InfixExpr<'src, ()>;
 pub type ParsedAssignExpr<'src> = AssignExpr<'src, ()>;
@@ -59,8 +60,8 @@ pub struct Program<'src, Annotation> {
 pub struct FunctionDefinition<'src, Annotation> {
     pub span: Span,
     pub annotation: Annotation,
-    pub name: &'src str,
-    pub params: Vec<(&'src str, Type)>,
+    pub name: Ident<'src, Annotation>,
+    pub params: Vec<(Ident<'src, Annotation>, Type)>,
     pub return_type: Type,
     pub block: Block<'src, Annotation>,
 }
@@ -102,7 +103,7 @@ pub struct LetStmt<'src, Annotation> {
     pub span: Span,
     pub annotation: Annotation,
     pub mutable: bool,
-    pub name: &'src str,
+    pub name: Ident<'src, Annotation>,
     pub type_: Option<Type>,
     pub expr: Expression<'src, Annotation>,
 }
@@ -181,6 +182,8 @@ pub struct IfExpr<'src, Annotation> {
     pub then_block: Block<'src, Annotation>,
     pub else_block: Option<Block<'src, Annotation>>,
 }
+
+pub type Ident<'src, Annotation> = Atom<&'src str, Annotation>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Atom<T, Annotation> {
