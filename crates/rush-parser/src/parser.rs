@@ -732,7 +732,25 @@ mod tests {
 
     #[test]
     fn if_expr() -> Result<()> {
-        // if 2 > 1 { 1 } else { 2 }
+        // if true{}
+        expr_test(
+            tokens![
+                If @ 0..2,
+                True @ 3..7,
+                LBrace @ 7..8,
+                RBrace @ 8..9,
+            ],
+            tree! {
+                (IfExpr @ 0..9,
+                    cond: (Bool @ 3..7, true),
+                    then_block: (Block @ 7..9,
+                        stmts: [],
+                        expr: (None)),
+                    else_block: (None))
+            },
+        )?;
+
+        // if 2 > 1 { 1 } else { { 2 } }
         expr_test(
             tokens![
                 If @ 0..2,
@@ -744,11 +762,13 @@ mod tests {
                 RBrace @ 13..14,
                 Else @ 15..19,
                 LBrace @ 20..21,
-                Int(2) @ 22..23,
-                RBrace @ 24..25,
+                LBrace @ 22..23,
+                Int(2) @ 24..25,
+                RBrace @ 26..27,
+                RBrace @ 28..29,
             ],
             tree! {
-                (IfExpr @ 0..25,
+                (IfExpr @ 0..29,
                     cond: (InfixExpr @ 3..8,
                         lhs: (Int @ 3..4, 2),
                         op: Gt,
@@ -756,9 +776,44 @@ mod tests {
                     then_block: (Block @ 9..14,
                         stmts: [],
                         expr: (Some(Int @ 11..12, 1))),
-                    else_block: (Some(Block @ 20..25,
+                    else_block: (Some(Block @ 20..29,
                         stmts: [],
-                        expr: (Some(Int @ 22..23, 2)))))
+                        expr: (Some(BlockExpr @ 22..27,
+                            stmts: [],
+                            expr: (Some(Int @ 24..25, 2)))))))
+            },
+        )?;
+
+        // if false {} else if cond {1;}
+        expr_test(
+            tokens![
+                If @ 0..2,
+                False @ 3..8,
+                LBrace @ 9..10,
+                RBrace @ 10..11,
+                Else @ 12..16,
+                If @ 17..19,
+                Ident("cond") @ 20..24,
+                LBrace @ 25..26,
+                Int(1) @ 26..27,
+                Semicolon @ 27..28,
+                RBrace @ 28..29,
+            ],
+            tree! {
+                (IfExpr @ 0..29,
+                    cond: (Bool @ 3..8, false),
+                    then_block: (Block @ 9..11,
+                        stmts: [],
+                        expr: (None)),
+                    else_block: (Some(Block @ 17..29,
+                        stmts: [],
+                        expr: (Some(IfExpr @ 17..29,
+                            cond: (Ident @ 20..24, "cond"),
+                            then_block: (Block @ 25..29,
+                                stmts: [
+                                    (ExprStmt @ 26..28, (Int @ 26..27, 1))],
+                                expr: (None)),
+                            else_block: (None))))))
             },
         )?;
 
