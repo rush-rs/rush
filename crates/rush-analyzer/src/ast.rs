@@ -1,7 +1,7 @@
 use rush_parser::ast::*;
 
 pub struct Annotation {
-    pub result_type: Type,
+    pub result_type: TypeKind,
     pub constant: bool,
 }
 
@@ -19,3 +19,5 @@ pub type AnnotatedInfixExpr<'src> = InfixExpr<'src, Annotation>;
 pub type AnnotatedAssignExpr<'src> = AssignExpr<'src, Annotation>;
 pub type AnnotatedCallExpr<'src> = CallExpr<'src, Annotation>;
 pub type AnnotatedCastExpr<'src> = CastExpr<'src, Annotation>;
+pub type AnnotatedIdent<'src> = Atom<&'src str, Annotation>;
+pub type AnnotatedType<'src> = Atom<TypeKind, Annotation>;
