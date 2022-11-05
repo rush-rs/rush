@@ -6,7 +6,7 @@ use rush_parser::{Error, Span};
 pub struct Diagnostic {
     pub level: DiagnosticLevel,
     pub message: Cow<'static, str>,
-    pub hints: Vec<String>,
+    pub notes: Vec<String>,
     pub span: Span,
 }
 
@@ -25,13 +25,13 @@ impl Diagnostic {
     pub fn new(
         level: DiagnosticLevel,
         message: impl Into<Cow<'static, str>>,
-        hints: Vec<String>,
+        notes: Vec<String>,
         span: Span,
     ) -> Self {
         Self {
             level,
             message: message.into(),
-            hints,
+            notes,
             span,
         }
     }
@@ -46,10 +46,10 @@ impl Diagnostic {
             DiagnosticLevel::Error(_) => ("^", 1),
         };
 
-        let hints = self
-            .hints
+        let notes = self
+            .notes
             .iter()
-            .map(|hint| format!("\x1b[1;34mhint:\x1b[0m {hint}"))
+            .map(|note| format!("\x1b[1;34mnote:\x1b[0m {note}"))
             .collect::<Vec<String>>()
             .join("\n");
 
@@ -58,7 +58,7 @@ impl Diagnostic {
         if source_code.is_empty() {
             return format!(
                 "\x1b[1;3{}m{}\x1b[39m in {}\x1b[0m\n{}\n{}",
-                color, self.level, filename, self.message, hints
+                color, self.level, filename, self.message, notes
             );
         }
 
@@ -111,7 +111,7 @@ impl Diagnostic {
             line3,
             color,
             self.message,
-            hints,
+            notes,
         )
     }
 }
@@ -144,19 +144,12 @@ pub enum ErrorKind {
     Syntax,
     Type,
     Semantic,
+    Reference,
 }
 
 impl Display for ErrorKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Self::Syntax => "SyntaxError",
-                Self::Type => "TypeError",
-                Self::Semantic => "SemanticError",
-            }
-        )
+        write!(f, "{self:?}Error")
     }
 }
 
@@ -165,7 +158,7 @@ impl ErrorKind {
         Diagnostic {
             level: DiagnosticLevel::Error(self),
             message: message.into(),
-            hints: vec![],
+            notes: vec![],
             span,
         }
     }

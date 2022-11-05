@@ -41,36 +41,47 @@ impl<'src> Analyzer<'src> {
     }
 
     /// Adds a new diagnostic with the `Hint` level
-    fn hint(&mut self, message: impl Into<Cow<'static, str>>, hints: Vec<String>, span: Span) {
-        self.diagnostics
-            .push(Diagnostic::new(DiagnosticLevel::Hint, message, hints, span))
-    }
-    /// Adds a new diagnostic with the `Info` level
-    fn info(&mut self, message: impl Into<Cow<'static, str>>, hints: Vec<String>, span: Span) {
-        self.diagnostics
-            .push(Diagnostic::new(DiagnosticLevel::Info, message, hints, span))
-    }
-    /// Adds a new diagnostic with the `Warning` level
-    fn warn(&mut self, message: impl Into<Cow<'static, str>>, hints: Vec<String>, span: Span) {
+    fn hint(&mut self, message: impl Into<Cow<'static, str>>, span: Span) {
         self.diagnostics.push(Diagnostic::new(
-            DiagnosticLevel::Warning,
+            DiagnosticLevel::Hint,
             message,
-            hints,
+            vec![],
             span,
         ))
     }
+
+    /// Adds a new diagnostic with the `Info` level
+    fn info(&mut self, message: impl Into<Cow<'static, str>>, span: Span) {
+        self.diagnostics.push(Diagnostic::new(
+            DiagnosticLevel::Info,
+            message,
+            vec![],
+            span,
+        ))
+    }
+
+    /// Adds a new diagnostic with the `Warning` level
+    fn warn(&mut self, message: impl Into<Cow<'static, str>>, notes: Vec<String>, span: Span) {
+        self.diagnostics.push(Diagnostic::new(
+            DiagnosticLevel::Warning,
+            message,
+            notes,
+            span,
+        ))
+    }
+
     /// Adds a new diagnostic with the `Error` level using the specified error kind
     fn error(
         &mut self,
         kind: ErrorKind,
         message: impl Into<Cow<'static, str>>,
-        hints: Vec<String>,
+        notes: Vec<String>,
         span: Span,
     ) {
         self.diagnostics.push(Diagnostic::new(
             DiagnosticLevel::Error(kind),
             message,
-            hints,
+            notes,
             span,
         ))
     }
@@ -207,11 +218,7 @@ impl<'src> Analyzer<'src> {
                 vec![],
                 block_result_span,
             );
-            self.hint(
-                "function return type defined here",
-                vec![],
-                node.return_type.span,
-            );
+            self.hint("function return type defined here", node.return_type.span);
         }
 
         let params_without_spans = params
@@ -318,7 +325,7 @@ impl<'src> Analyzer<'src> {
                     )],
                     expr_span,
                 );
-                self.hint("expected due to this", vec![], declared.span);
+                self.hint("expected due to this", declared.span);
             }
         }
 
@@ -344,7 +351,6 @@ impl<'src> Analyzer<'src> {
                 );
                 self.hint(
                     format!("variable `{}` shadowed here", node.name.inner),
-                    vec![],
                     node.name.span,
                 );
             }
@@ -386,7 +392,7 @@ impl<'src> Analyzer<'src> {
                 )],
                 node.span,
             );
-            self.hint("function return type defined here", vec![], fn_type_span)
+            self.hint("function return type defined here", fn_type_span)
         }
 
         AnalyzedStatement::Return(expr)
@@ -456,12 +462,11 @@ impl<'src> Analyzer<'src> {
                             then_block.result_type, else_block.result_type
                         ),
                         vec![
-                            "the `if` and `else` branches must result in the same type"
-                                .to_string(),
+                            "the `if` and `else` branches must result in the same type".to_string()
                         ],
                         else_result_span,
                     );
-                    self.hint("expected due to this", vec![], then_result_span);
+                    self.hint("expected due to this", then_result_span);
                 };
                 Some(else_block)
             }
