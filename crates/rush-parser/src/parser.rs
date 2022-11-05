@@ -640,9 +640,9 @@ mod tests {
                 (InfixExpr @ 0..5,
                     lhs: (InfixExpr @ 0..3,
                         lhs: (Int 3, @ 0..1),
-                        op: Minus,
+                        op: InfixOp::Minus,
                         rhs: (Int 2, @ 2..3)),
-                    op: Minus,
+                    op: InfixOp::Minus,
                     rhs: (Int 1, @ 4..5))
             },
         )?;
@@ -659,10 +659,10 @@ mod tests {
             tree! {
                 (InfixExpr @ 0..5,
                     lhs: (Int 1, @ 0..1),
-                    op: Plus,
+                    op: InfixOp::Plus,
                     rhs: (InfixExpr @ 2..5,
                         lhs: (Int 2, @ 2..3),
-                        op: Mul,
+                        op: InfixOp::Mul,
                         rhs: (Int 3, @ 4..5)))
             },
         )?;
@@ -679,10 +679,10 @@ mod tests {
             tree! {
                 (InfixExpr @ 0..7,
                     lhs: (Int 2, @ 0..1),
-                    op: Pow,
+                    op: InfixOp::Pow,
                     rhs: (InfixExpr @ 3..7,
                         lhs: (Int 3, @ 3..4),
-                        op: Pow,
+                        op: InfixOp::Pow,
                         rhs: (Int 4, @ 6..7)))
             },
         )?;
@@ -702,7 +702,7 @@ mod tests {
             tree! {
                 (AssignExpr @ 0..3,
                     assignee: ("a", @ 0..1),
-                    op: Basic,
+                    op: AssignOp::Basic,
                     expr: (Int 1, @ 2..3))
             },
         )?;
@@ -719,10 +719,10 @@ mod tests {
             tree! {
                 (AssignExpr @ 0..19,
                     assignee: ("answer", @ 0..6),
-                    op: Plus,
+                    op: AssignOp::Plus,
                     expr: (InfixExpr @ 10..19,
                         lhs: (Float 42.0, @ 10..14),
-                        op: Minus,
+                        op: InfixOp::Minus,
                         rhs: (Float 0.0, @ 17..19)))
             },
         )?;
@@ -771,7 +771,7 @@ mod tests {
                 (IfExpr @ 0..29,
                     cond: (InfixExpr @ 3..8,
                         lhs: (Int 2, @ 3..4),
-                        op: Gt,
+                        op: InfixOp::Gt,
                         rhs: (Int 1, @ 7..8)),
                     then_block: (Block @ 9..14,
                         stmts: [],
@@ -816,6 +816,81 @@ mod tests {
                             else_block: (None))))))
             },
         )?;
+
+        Ok(())
+    }
+
+    fn infix_expr_test(token: TokenKind<'static>, op: InfixOp) -> Result<()> {
+        expr_test(
+            [
+                TokenKind::Int(1).spanned(span!(0..1)),
+                token.spanned(span!(1..2)),
+                TokenKind::Int(2).spanned(span!(2..3)),
+            ],
+            tree! {
+                (InfixExpr @ 0..3,
+                    lhs: (Int 1, @ 0..1),
+                    op: op,
+                    rhs: (Int 2, @ 2..3))
+            },
+        )
+    }
+
+    #[test]
+    fn infix_expr() -> Result<()> {
+        infix_expr_test(TokenKind::Plus, InfixOp::Plus)?;
+        infix_expr_test(TokenKind::Minus, InfixOp::Minus)?;
+        infix_expr_test(TokenKind::Star, InfixOp::Mul)?;
+        infix_expr_test(TokenKind::Slash, InfixOp::Div)?;
+        infix_expr_test(TokenKind::Percent, InfixOp::Rem)?;
+        infix_expr_test(TokenKind::Pow, InfixOp::Pow)?;
+        infix_expr_test(TokenKind::Eq, InfixOp::Eq)?;
+        infix_expr_test(TokenKind::Neq, InfixOp::Neq)?;
+        infix_expr_test(TokenKind::Lt, InfixOp::Lt)?;
+        infix_expr_test(TokenKind::Gt, InfixOp::Gt)?;
+        infix_expr_test(TokenKind::Lte, InfixOp::Lte)?;
+        infix_expr_test(TokenKind::Gte, InfixOp::Gte)?;
+        infix_expr_test(TokenKind::Shl, InfixOp::Shl)?;
+        infix_expr_test(TokenKind::Shr, InfixOp::Shr)?;
+        infix_expr_test(TokenKind::BitOr, InfixOp::BitOr)?;
+        infix_expr_test(TokenKind::BitAnd, InfixOp::BitAnd)?;
+        infix_expr_test(TokenKind::BitXor, InfixOp::BitXor)?;
+        infix_expr_test(TokenKind::And, InfixOp::And)?;
+        infix_expr_test(TokenKind::Or, InfixOp::Or)?;
+
+        Ok(())
+    }
+
+    fn assign_expr_test(token: TokenKind<'static>, op: AssignOp) -> Result<()> {
+        expr_test(
+            [
+                TokenKind::Ident("a").spanned(span!(0..1)),
+                token.spanned(span!(1..2)),
+                TokenKind::Int(2).spanned(span!(2..3)),
+            ],
+            tree! {
+                (AssignExpr @ 0..3,
+                    assignee: ("a", @ 0..1),
+                    op: op,
+                    expr: (Int 2, @ 2..3))
+            },
+        )
+    }
+
+    #[test]
+    fn assign_expr() -> Result<()> {
+        assign_expr_test(TokenKind::Assign, AssignOp::Basic)?;
+        assign_expr_test(TokenKind::PlusAssign, AssignOp::Plus)?;
+        assign_expr_test(TokenKind::MinusAssign, AssignOp::Minus)?;
+        assign_expr_test(TokenKind::MulAssign, AssignOp::Mul)?;
+        assign_expr_test(TokenKind::DivAssign, AssignOp::Div)?;
+        assign_expr_test(TokenKind::RemAssign, AssignOp::Rem)?;
+        assign_expr_test(TokenKind::PowAssign, AssignOp::Pow)?;
+        assign_expr_test(TokenKind::ShlAssign, AssignOp::Shl)?;
+        assign_expr_test(TokenKind::ShrAssign, AssignOp::Shr)?;
+        assign_expr_test(TokenKind::BitOrAssign, AssignOp::BitOr)?;
+        assign_expr_test(TokenKind::BitAndAssign, AssignOp::BitAnd)?;
+        assign_expr_test(TokenKind::BitXorAssign, AssignOp::BitXor)?;
 
         Ok(())
     }
@@ -1006,7 +1081,7 @@ mod tests {
                             stmts: [
                                 (ReturnStmt @ 39..59, (Some(InfixExpr @ 46..58,
                                     lhs: (Ident "left", @ 46..50),
-                                    op: Plus,
+                                    op: InfixOp::Plus,
                                     rhs: (Ident "right", @ 53..58))))],
                             expr: (None)))])
             },

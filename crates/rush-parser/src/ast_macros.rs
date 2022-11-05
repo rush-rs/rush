@@ -91,38 +91,38 @@ macro_rules! tree {
     };
     ((
         PrefixExpr @ $start:literal .. $end:literal,
-        op: $op:ident,
+        op: $op:expr,
         expr: $expr:tt $(,)?
     )) => {
         Expression::Prefix(PrefixExpr {
             span: span!($start..$end),
-            op: PrefixOp::$op,
+            op: $op,
             expr: tree!($expr),
         }.into())
     };
     ((
         InfixExpr @ $start:literal .. $end:literal,
         lhs: $lhs:tt,
-        op: $op:ident,
+        op: $op:expr,
         rhs: $rhs:tt $(,)?
     )) => {
         Expression::Infix(InfixExpr {
             span: span!($start..$end),
             lhs: tree!($lhs),
-            op: InfixOp::$op,
+            op: $op,
             rhs: tree!($rhs),
         }.into())
     };
     ((
         AssignExpr @ $start:literal .. $end:literal,
         assignee: $assignee:tt,
-        op: $op:ident,
+        op: $op:expr,
         expr: $expr:tt $(,)?
     )) => {
         Expression::Assign(AssignExpr {
             span: span!($start..$end),
             assignee: tree!($assignee),
-            op: AssignOp::$op,
+            op: $op,
             expr: tree!($expr),
         }.into())
     };
