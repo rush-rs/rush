@@ -79,16 +79,10 @@ macro_rules! tree {
             else_block: tree!($else_block),
         }.into())
     };
-    ((Spanned @ $start:literal .. $end:literal, $value:expr)) => {
-        Spanned {
-            span: span!($start..$end),
-            inner: $value,
-        }
-    };
-    ((Int $($rest:tt)*)) => { Expression::Int(tree!((Spanned $($rest)*))) };
-    ((Float $($rest:tt)*)) => { Expression::Float(tree!((Spanned $($rest)*))) };
-    ((Bool $($rest:tt)*)) => { Expression::Bool(tree!((Spanned $($rest)*))) };
-    ((Ident $($rest:tt)*)) => { Expression::Ident(tree!((Spanned $($rest)*))) };
+    ((Int $($rest:tt)*)) => { Expression::Int(tree!(($($rest)*))) };
+    ((Float $($rest:tt)*)) => { Expression::Float(tree!(($($rest)*))) };
+    ((Bool $($rest:tt)*)) => { Expression::Bool(tree!(($($rest)*))) };
+    ((Ident $($rest:tt)*)) => { Expression::Ident(tree!(($($rest)*))) };
     ((Grouped @ $start:literal .. $end:literal, $expr:tt)) => {
         Expression::Grouped(Spanned {
             span: span!($start..$end),
@@ -153,6 +147,13 @@ macro_rules! tree {
             expr: tree!($expr),
             type_: $type,
         }.into())
+    };
+
+    (($value:expr, @ $start:literal .. $end:literal)) => {
+        Spanned {
+            span: span!($start..$end),
+            inner: $value,
+        }
     };
 }
 

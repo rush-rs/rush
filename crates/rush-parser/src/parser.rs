@@ -639,11 +639,11 @@ mod tests {
             tree! {
                 (InfixExpr @ 0..5,
                     lhs: (InfixExpr @ 0..3,
-                        lhs: (Int @ 0..1, 3),
+                        lhs: (Int 3, @ 0..1),
                         op: Minus,
-                        rhs: (Int @ 2..3, 2)),
+                        rhs: (Int 2, @ 2..3)),
                     op: Minus,
-                    rhs: (Int @ 4..5, 1))
+                    rhs: (Int 1, @ 4..5))
             },
         )?;
 
@@ -658,12 +658,12 @@ mod tests {
             ],
             tree! {
                 (InfixExpr @ 0..5,
-                    lhs: (Int @ 0..1, 1),
+                    lhs: (Int 1, @ 0..1),
                     op: Plus,
                     rhs: (InfixExpr @ 2..5,
-                        lhs: (Int @ 2..3, 2),
+                        lhs: (Int 2, @ 2..3),
                         op: Mul,
-                        rhs: (Int @ 4..5, 3)))
+                        rhs: (Int 3, @ 4..5)))
             },
         )?;
 
@@ -678,12 +678,12 @@ mod tests {
             ],
             tree! {
                 (InfixExpr @ 0..7,
-                    lhs: (Int @ 0..1, 2),
+                    lhs: (Int 2, @ 0..1),
                     op: Pow,
                     rhs: (InfixExpr @ 3..7,
-                        lhs: (Int @ 3..4, 3),
+                        lhs: (Int 3, @ 3..4),
                         op: Pow,
-                        rhs: (Int @ 6..7, 4)))
+                        rhs: (Int 4, @ 6..7)))
             },
         )?;
 
@@ -701,9 +701,9 @@ mod tests {
             ],
             tree! {
                 (AssignExpr @ 0..3,
-                    assignee: (Spanned @ 0..1, "a"),
+                    assignee: ("a", @ 0..1),
                     op: Basic,
-                    expr: (Int @ 2..3, 1))
+                    expr: (Int 1, @ 2..3))
             },
         )?;
 
@@ -718,12 +718,12 @@ mod tests {
             ],
             tree! {
                 (AssignExpr @ 0..19,
-                    assignee: (Spanned @ 0..6, "answer"),
+                    assignee: ("answer", @ 0..6),
                     op: Plus,
                     expr: (InfixExpr @ 10..19,
-                        lhs: (Float @ 10..14, 42.0),
+                        lhs: (Float 42.0, @ 10..14),
                         op: Minus,
-                        rhs: (Float @ 17..19, 0.0)))
+                        rhs: (Float 0.0, @ 17..19)))
             },
         )?;
 
@@ -742,7 +742,7 @@ mod tests {
             ],
             tree! {
                 (IfExpr @ 0..9,
-                    cond: (Bool @ 3..7, true),
+                    cond: (Bool true, @ 3..7),
                     then_block: (Block @ 7..9,
                         stmts: [],
                         expr: (None)),
@@ -770,17 +770,17 @@ mod tests {
             tree! {
                 (IfExpr @ 0..29,
                     cond: (InfixExpr @ 3..8,
-                        lhs: (Int @ 3..4, 2),
+                        lhs: (Int 2, @ 3..4),
                         op: Gt,
-                        rhs: (Int @ 7..8, 1)),
+                        rhs: (Int 1, @ 7..8)),
                     then_block: (Block @ 9..14,
                         stmts: [],
-                        expr: (Some(Int @ 11..12, 1))),
+                        expr: (Some(Int 1, @ 11..12))),
                     else_block: (Some(Block @ 20..29,
                         stmts: [],
                         expr: (Some(BlockExpr @ 22..27,
                             stmts: [],
-                            expr: (Some(Int @ 24..25, 2)))))))
+                            expr: (Some(Int 2, @ 24..25)))))))
             },
         )?;
 
@@ -801,17 +801,17 @@ mod tests {
             ],
             tree! {
                 (IfExpr @ 0..29,
-                    cond: (Bool @ 3..8, false),
+                    cond: (Bool false, @ 3..8),
                     then_block: (Block @ 9..11,
                         stmts: [],
                         expr: (None)),
                     else_block: (Some(Block @ 17..29,
                         stmts: [],
                         expr: (Some(IfExpr @ 17..29,
-                            cond: (Ident @ 20..24, "cond"),
+                            cond: (Ident "cond", @ 20..24),
                             then_block: (Block @ 25..29,
                                 stmts: [
-                                    (ExprStmt @ 26..28, (Int @ 26..27, 1))],
+                                    (ExprStmt @ 26..28, (Int 1, @ 26..27))],
                                 expr: (None)),
                             else_block: (None))))))
             },
@@ -834,9 +834,9 @@ mod tests {
             tree! {
                 (LetStmt @ 0..8,
                     mutable: false,
-                    name: (Spanned @ 4..5, "a"),
+                    name: ("a", @ 4..5),
                     type: (None),
-                    expr: (Int @ 6..7, 1))
+                    expr: (Int 1, @ 6..7))
             },
         )?;
 
@@ -853,9 +853,9 @@ mod tests {
             tree! {
                 (LetStmt @ 0..14,
                     mutable: true,
-                    name: (Spanned @ 8..9, "b"),
+                    name: ("b", @ 8..9),
                     type: (None),
-                    expr: (Int @ 12..13, 2))
+                    expr: (Int 2, @ 12..13))
             },
         )?;
 
@@ -873,9 +873,9 @@ mod tests {
             tree! {
                 (LetStmt @ 0..18,
                     mutable: false,
-                    name: (Spanned @ 4..5, "c"),
-                    type: (Some(Spanned @ 7..12, Type::Float)),
-                    expr: (Float @ 15..17, 3.0))
+                    name: ("c", @ 4..5),
+                    type: (Some(Type::Float, @ 7..12)),
+                    expr: (Float 3.0, @ 15..17))
             },
         )?;
 
@@ -900,7 +900,7 @@ mod tests {
                 Int(1) @ 6..7,
                 Semicolon @ 7..8,
             ],
-            tree! { (ReturnStmt @ 0..8, (Some(Int @ 6..7, 1))) },
+            tree! { (ReturnStmt @ 0..8, (Some(Int 1, @ 6..7))) },
         )?;
 
         Ok(())
@@ -914,7 +914,7 @@ mod tests {
                 Int(1) @ 0..1,
                 Semicolon @ 1..2,
             ],
-            tree! { (ExprStmt @ 0..2, (Int @ 0..1, 1)) },
+            tree! { (ExprStmt @ 0..2, (Int 1, @ 0..1)) },
         )?;
 
         // {}
@@ -955,17 +955,17 @@ mod tests {
             tree! {
                 (Program @ 0..30, [
                     (FunctionDefinition @ 0..30,
-                        name: (Spanned @ 3..7, "main"),
+                        name: ("main", @ 3..7),
                         params: [],
-                        return_type: (Spanned @ 8..11, Type::Unit),
+                        return_type: (Type::Unit, @ 8..11),
                         block: (Block @ 10..30,
                             stmts: [
                                 (LetStmt @ 12..25,
                                     mutable: false,
-                                    name: (Spanned @ 16..17, "a"),
+                                    name: ("a", @ 16..17),
                                     type: (None),
-                                    expr: (Bool @ 20..24, true)),
-                                (ExprStmt @ 26..28, (Ident @ 26..27, "a"))],
+                                    expr: (Bool true, @ 20..24)),
+                                (ExprStmt @ 26..28, (Ident "a", @ 26..27))],
                             expr: (None)))])
             },
         )?;
@@ -997,17 +997,17 @@ mod tests {
             tree! {
                 (Program @ 0..61, [
                     (FunctionDefinition @ 0..61,
-                        name: (Spanned @ 3..6, "add"),
+                        name: ("add", @ 3..6),
                         params: [
-                            ((Spanned @ 7..11, "left"), (Spanned @ 13..16, Type::Int)),
-                            ((Spanned @ 18..23, "right"), (Spanned @ 25..28, Type::Int))],
-                        return_type: (Spanned @ 33..36, Type::Int),
+                            (("left", @ 7..11), (Type::Int, @ 13..16)),
+                            (("right", @ 18..23), (Type::Int, @ 25..28))],
+                        return_type: (Type::Int, @ 33..36),
                         block: (Block @ 37..61,
                             stmts: [
                                 (ReturnStmt @ 39..59, (Some(InfixExpr @ 46..58,
-                                    lhs: (Ident @ 46..50, "left"),
+                                    lhs: (Ident "left", @ 46..50),
                                     op: Plus,
-                                    rhs: (Ident @ 53..58, "right"))))],
+                                    rhs: (Ident "right", @ 53..58))))],
                             expr: (None)))])
             },
         )?;
@@ -1031,16 +1031,16 @@ mod tests {
             tree! {
                 (Program @ 0..19, [
                     (FunctionDefinition @ 0..9,
-                        name: (Spanned @ 3..4, "a"),
+                        name: ("a", @ 3..4),
                         params: [],
-                        return_type: (Spanned @ 5..8, Type::Unit),
+                        return_type: (Type::Unit, @ 5..8),
                         block: (Block @ 7..9,
                             stmts: [],
                             expr: (None))),
                     (FunctionDefinition @ 10..19,
-                        name: (Spanned @ 13..14, "b"),
+                        name: ("b", @ 13..14),
                         params: [],
-                        return_type: (Spanned @ 15..18, Type::Unit),
+                        return_type: (Type::Unit, @ 15..18),
                         block: (Block @ 17..19,
                             stmts: [],
                             expr: (None)))])
