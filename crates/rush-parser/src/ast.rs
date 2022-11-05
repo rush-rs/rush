@@ -159,7 +159,7 @@ pub struct PrefixExpr<'src> {
     pub expr: Expression<'src>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrefixOp {
     /// !
     Not,
@@ -175,7 +175,7 @@ pub struct InfixExpr<'src> {
     pub rhs: Expression<'src>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InfixOp {
     /// +
     Plus,
@@ -220,6 +220,36 @@ pub enum InfixOp {
     Or,
 }
 
+impl Display for InfixOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Plus => "+",
+                Self::Minus => "-",
+                Self::Mul => "*",
+                Self::Div => "/",
+                Self::Rem => "%",
+                Self::Pow => "**",
+                Self::Eq => "==",
+                Self::Neq => "!=",
+                Self::Lt => "<",
+                Self::Gt => ">",
+                Self::Lte => "<=",
+                Self::Gte => ">=",
+                Self::Shl => "<<",
+                Self::Shr => ">>",
+                Self::BitOr => "|",
+                Self::BitAnd => "&",
+                Self::BitXor => "^",
+                Self::And => "&&",
+                Self::Or => "||",
+            }
+        )
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct AssignExpr<'src> {
     pub span: Span,
@@ -228,7 +258,7 @@ pub struct AssignExpr<'src> {
     pub expr: Expression<'src>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssignOp {
     /// =
     Basic,
@@ -254,6 +284,29 @@ pub enum AssignOp {
     BitAnd,
     /// ^=
     BitXor,
+}
+
+impl Display for AssignOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}=",
+            match self {
+                Self::Basic => "",
+                Self::Plus => "+",
+                Self::Minus => "-",
+                Self::Mul => "*",
+                Self::Div => "/",
+                Self::Rem => "%",
+                Self::Pow => "**",
+                Self::Shl => "<<",
+                Self::Shr => ">>",
+                Self::BitOr => "|",
+                Self::BitAnd => "&",
+                Self::BitXor => "^",
+            }
+        )
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

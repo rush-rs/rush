@@ -63,7 +63,7 @@ pub enum AnalyzedExpression<'src> {
     Int(i64),
     Float(f64),
     Bool(bool),
-    Ident(IdentExpr<'src>),
+    Ident(AnalyzedIdentExpr<'src>),
     Prefix(Box<AnalyzedPrefixExpr<'src>>),
     Infix(Box<AnalyzedInfixExpr<'src>>),
     Assign(Box<AnalyzedAssignExpr<'src>>),
@@ -100,7 +100,7 @@ impl AnalyzedExpression<'_> {
             Self::If(expr) => expr.constant,
             Self::Prefix(expr) => expr.constant,
             Self::Infix(expr) => expr.constant,
-            Self::Assign(expr) => expr.constant,
+            Self::Assign(_) => false,
             Self::Call(expr) => expr.constant,
             Self::Cast(expr) => expr.constant,
             Self::Grouped(expr) => expr.constant(),
@@ -118,9 +118,16 @@ pub struct AnalyzedIfExpr<'src> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IdentExpr<'src> {
+pub struct AnalyzedIdentExpr<'src> {
     pub result_type: Type,
     pub ident: &'src str,
+    pub kind: AnalyzedIdentKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AnalyzedIdentKind {
+    Variable,
+    Function,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -143,7 +150,6 @@ pub struct AnalyzedInfixExpr<'src> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnalyzedAssignExpr<'src> {
     pub result_type: Type,
-    pub constant: bool,
     pub assignee: &'src str,
     pub op: AssignOp,
     pub expr: AnalyzedExpression<'src>,

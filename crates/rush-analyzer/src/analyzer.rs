@@ -402,16 +402,18 @@ impl<'src> Analyzer<'src> {
         match node {
             Expression::Block(node) => AnalyzedExpression::Block(self.visit_block(*node).into()),
             Expression::If(node) => self.visit_if_expression(*node),
-            Expression::Int(node) => todo!(),
-            Expression::Float(node) => todo!(),
-            Expression::Bool(node) => todo!(),
-            Expression::Ident(node) => todo!(),
-            Expression::Prefix(node) => todo!(),
-            Expression::Infix(node) => todo!(),
-            Expression::Assign(node) => todo!(),
-            Expression::Call(node) => todo!(),
-            Expression::Cast(node) => todo!(),
-            Expression::Grouped(node) => todo!(),
+            Expression::Int(node) => AnalyzedExpression::Int(node.inner),
+            Expression::Float(node) => AnalyzedExpression::Float(node.inner),
+            Expression::Bool(node) => AnalyzedExpression::Bool(node.inner),
+            Expression::Ident(node) => self.visit_ident_expr(node),
+            Expression::Prefix(node) => self.visit_prefix_expr(*node),
+            Expression::Infix(node) => self.visit_infix_expr(*node),
+            Expression::Assign(node) => self.visit_assign_expr(*node),
+            Expression::Call(node) => self.visit_call_expr(*node),
+            Expression::Cast(node) => self.visit_cast_expr(*node),
+            Expression::Grouped(node) => {
+                AnalyzedExpression::Grouped(self.visit_expression(*node.inner).into())
+            }
         }
     }
 
@@ -505,5 +507,245 @@ impl<'src> Analyzer<'src> {
             }
             .into(),
         )
+    }
+
+    fn visit_ident_expr(&mut self, node: Spanned<&'src str>) -> AnalyzedExpression<'src> {
+        let (result_type, kind) = match self.scope_mut().vars.get_mut(node.inner) {
+            Some(var) => {
+                var.used = true;
+                (var.type_, AnalyzedIdentKind::Variable)
+            }
+            None => match self.functions.get_mut(node.inner) {
+                Some(func) => {
+                    func.used = true;
+                    (func.return_type.inner, AnalyzedIdentKind::Function)
+                }
+                None => {
+                    self.error(
+                        ErrorKind::Reference,
+                        format!("use of undeclared name `{}`", node.inner),
+                        vec![],
+                        node.span,
+                    );
+                    (Type::Unknown, AnalyzedIdentKind::Variable)
+                }
+            },
+        };
+
+        AnalyzedExpression::Ident(AnalyzedIdentExpr {
+            result_type,
+            ident: node.inner,
+            kind,
+        })
+    }
+
+    fn visit_prefix_expr(&mut self, node: PrefixExpr<'src>) -> AnalyzedExpression<'src> {
+        let expr = self.visit_expression(node.expr);
+
+        let result_type = match node.op {
+            PrefixOp::Not => {
+                match expr.result_type() {
+                    Type::Bool => Type::Bool,
+                    Type::Unknown => Type::Unknown,
+                    _ => {
+                        self.error(
+                            ErrorKind::Type,
+                            format!("prefix operator `!` does not allow values of type `bool`, got `{}`", expr.result_type()),
+                            vec![],
+                            node.span,
+                        );
+                        Type::Unknown
+                    }
+                }
+            }
+            PrefixOp::Neg => match expr.result_type() {
+                Type::Bool | Type::Char | Type::Unit => {
+                    self.error(
+                        ErrorKind::Type,
+                        format!(
+                            "prefix operator `-` does not allow values of type `{}`",
+                            expr.result_type()
+                        ),
+                        vec![],
+                        node.span,
+                    );
+                    Type::Unknown
+                }
+                type_ => type_,
+            },
+        };
+
+        AnalyzedExpression::Prefix(
+            AnalyzedPrefixExpr {
+                result_type,
+                constant: expr.constant(),
+                op: node.op,
+                expr,
+            }
+            .into(),
+        )
+    }
+
+    fn infix_test_types(
+        &mut self,
+        types: &[Type],
+        left_type: Type,
+        right_type: Type,
+        op: InfixOp,
+        span: Span,
+    ) -> Type {
+        match (left_type, right_type) {
+            (Type::Unknown, _) | (_, Type::Unknown) => Type::Unknown,
+            (Type::Never, _) | (_, Type::Never) => Type::Never,
+            (left, right) if left == right && types.contains(&left) => left,
+            (left, right) if left != right => {
+                self.error(
+                    ErrorKind::Type,
+                    format!(
+                        "infix expressions require equal types on both sides, got `{left}` and `{right}`"
+                    ),
+                    vec![],
+                    span,
+                );
+                Type::Unknown
+            }
+            (type_, _) => {
+                self.error(
+                    ErrorKind::Type,
+                    format!("infix operator `{op}` does not allow values of type `{type_}`"),
+                    vec![],
+                    span,
+                );
+                Type::Unknown
+            }
+        }
+    }
+
+    fn visit_infix_expr(&mut self, node: InfixExpr<'src>) -> AnalyzedExpression<'src> {
+        let lhs = self.visit_expression(node.lhs);
+        let rhs = self.visit_expression(node.rhs);
+
+        let expected_types = match node.op {
+            InfixOp::Plus
+            | InfixOp::Minus
+            | InfixOp::Mul
+            | InfixOp::Div
+            | InfixOp::Lt
+            | InfixOp::Gt
+            | InfixOp::Lte
+            | InfixOp::Gte => &[Type::Int, Type::Float][..],
+            InfixOp::Rem | InfixOp::Pow | InfixOp::Shl | InfixOp::Shr => &[Type::Int],
+            InfixOp::Eq | InfixOp::Neq => &[Type::Int, Type::Float, Type::Bool, Type::Char],
+            InfixOp::BitOr | InfixOp::BitAnd | InfixOp::BitXor => &[Type::Int, Type::Bool],
+            InfixOp::And | InfixOp::Or => &[Type::Bool],
+        };
+        let result_type = self.infix_test_types(
+            expected_types,
+            lhs.result_type(),
+            rhs.result_type(),
+            node.op,
+            node.span,
+        );
+
+        AnalyzedExpression::Infix(
+            AnalyzedInfixExpr {
+                result_type,
+                constant: lhs.constant() && rhs.constant(),
+                lhs,
+                op: node.op,
+                rhs,
+            }
+            .into(),
+        )
+    }
+
+    fn assign_type_error(&mut self, op: AssignOp, type_: Type, span: Span) -> Type {
+        self.error(
+            ErrorKind::Type,
+            format!("assignment operator `{op}` does not allow values of type `{type_}`"),
+            vec![],
+            span,
+        );
+        Type::Unknown
+    }
+
+    fn visit_assign_expr(&mut self, node: AssignExpr<'src>) -> AnalyzedExpression<'src> {
+        let var_type = match self.scope().vars.get(node.assignee.inner) {
+            Some(var) => var.type_,
+            None => match self.functions.get(node.assignee.inner) {
+                Some(_) => {
+                    self.error(
+                        ErrorKind::Type,
+                        "cannot assign to functions",
+                        vec![],
+                        node.assignee.span,
+                    );
+                    Type::Unknown
+                }
+                None => {
+                    self.error(
+                        ErrorKind::Reference,
+                        format!("use of undeclared name `{}`", node.assignee.inner),
+                        vec![],
+                        node.assignee.span,
+                    );
+                    Type::Unknown
+                }
+            },
+        };
+
+        let expr_span = node.expr.span();
+        let expr = self.visit_expression(node.expr);
+        let result_type = match (node.op, var_type, expr.result_type()) {
+            (_, Type::Unknown, _) | (_, _, Type::Unknown) => Type::Unknown,
+            (_, Type::Never, _) | (_, _, Type::Never) => Type::Never,
+            (_, left, right) if left != right => {
+                self.error(
+                    ErrorKind::Type,
+                    format!("mismatched types: expected `{left}`, found `{right}`"),
+                    vec![],
+                    expr_span,
+                );
+                self.hint(
+                    format!("this variable has type `{left}`"),
+                    node.assignee.span,
+                );
+                Type::Unknown
+            }
+            (AssignOp::Plus | AssignOp::Minus | AssignOp::Mul | AssignOp::Div, _, type_)
+                if ![Type::Int, Type::Float].contains(&type_) =>
+            {
+                self.assign_type_error(node.op, type_, expr_span)
+            }
+            (AssignOp::Rem | AssignOp::Pow | AssignOp::Shl | AssignOp::Shr, _, type_)
+                if type_ != Type::Int =>
+            {
+                self.assign_type_error(node.op, type_, expr_span)
+            }
+            (AssignOp::BitOr | AssignOp::BitAnd | AssignOp::BitXor, _, type_)
+                if ![Type::Int, Type::Bool].contains(&type_) =>
+            {
+                self.assign_type_error(node.op, type_, expr_span)
+            }
+            (_, _, _) => Type::Unit,
+        };
+
+        AnalyzedExpression::Assign(
+            AnalyzedAssignExpr {
+                result_type,
+                assignee: node.assignee.inner,
+                op: node.op,
+                expr,
+            }
+            .into(),
+        )
+    }
+
+    fn visit_call_expr(&mut self, node: CallExpr<'src>) -> AnalyzedExpression<'src> {
+        todo!()
+    }
+
+    fn visit_cast_expr(&mut self, node: CastExpr<'src>) -> AnalyzedExpression<'src> {
+        todo!()
     }
 }
