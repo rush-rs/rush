@@ -112,7 +112,7 @@ impl<'src> Analyzer<'src> {
         let unused_funcs: Vec<(&'src str, Span)> = self
             .functions
             .iter()
-            .filter(|func| !func.1.used)
+            .filter(|(ident, func)| !ident.starts_with('_') && !func.used)
             .map(|func| (*func.0, func.1.ident.span))
             .collect();
 
