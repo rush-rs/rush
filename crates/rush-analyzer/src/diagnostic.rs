@@ -53,8 +53,8 @@ impl Diagnostic {
             .collect::<Vec<String>>()
             .join("\n");
 
-        // take special action if the source code is empty
-        if source_code.is_empty() {
+        // take special action if the source code is empty or there is no useful span
+        if source_code.is_empty() || self.span == Span::default() {
             return format!(
                 "\x1b[1;3{}m{}\x1b[39m in {}\x1b[0m\n{}\n{}",
                 color, self.level, filename, self.message, notes
@@ -89,8 +89,25 @@ impl Diagnostic {
             self.span.start.line == self.span.end.line,
             self.span.start.column + 1 == self.span.end.column,
         ) {
+            // same line, wide column difference
             (true, false) => raw_marker.repeat(self.span.end.column - self.span.start.column),
-            (_, _) => raw_marker_single.to_string(),
+            // same line, just one column difference
+            (true, true) => raw_marker_single.to_string(),
+            // multiline span
+            (_, _) => {
+                format!(
+                    "{} ...\n{}\x1b[1;32m+ {} more line{}\x1b[1;0m",
+                    raw_marker
+                        .repeat(lines[self.span.start.line - 1].len() - self.span.start.column + 1),
+                    " ".repeat(self.span.start.column + 6),
+                    self.span.end.line - self.span.start.line,
+                    if self.span.end.line - self.span.start.line == 1 {
+                        ""
+                    } else {
+                        "s"
+                    },
+                )
+            }
         };
 
         let marker = format!(
