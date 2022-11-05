@@ -136,7 +136,7 @@ impl<'src> Analyzer<'src> {
                         "the `main` function can be implemented like this:\n\n  fn main() {\n    ...\n  }"
                             .to_string(),
                     ],
-                    program.span,
+                    Span::default(),
                 );
                 Err(self.diagnostics)
             }
