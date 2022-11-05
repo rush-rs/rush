@@ -513,7 +513,7 @@ impl<'src> Analyzer<'src> {
                     "expected value of type bool, found `{}`",
                     cond.result_type()
                 ),
-                vec!["a if condition must be a bool value: `if true { ... }`".to_string()],
+                vec!["a condition must be a bool value: `if true { ... }`".to_string()],
                 cond_span,
             )
         } else {
@@ -558,7 +558,7 @@ impl<'src> Analyzer<'src> {
                             then_block.result_type, else_block.result_type
                         ),
                         vec![
-                            "the `if` and `else` branches must result in the same type".to_string()
+                            "results of the `if` and `else` branches must coerce to the same type".to_string()
                         ],
                         else_result_span,
                     );
