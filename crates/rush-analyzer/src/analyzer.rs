@@ -16,6 +16,7 @@ pub struct Analyzer<'src> {
 }
 
 pub struct Function<'src> {
+    pub ident: Spanned<&'src str>,
     pub params: Vec<(Spanned<&'src str>, Spanned<Type>)>,
     pub return_type: Spanned<Type>,
     pub used: bool,
@@ -104,6 +105,24 @@ impl<'src> Analyzer<'src> {
                 }
                 _ => functions.push(func),
             }
+        }
+
+        // check if there are any unused functions
+        let unused_funcs: Vec<(&'src str, Span)> = self
+            .functions
+            .iter()
+            .filter(|func| !func.1.used)
+            .map(|func| (*func.0, func.1.ident.span))
+            .collect();
+
+        for (name, ident_span) in unused_funcs {
+            self.warn(
+                format!("function `{}` is never called", name),
+                vec![format!(
+                    "remove the function declaration or name it `_{name}` to hide this warning"
+                )],
+                ident_span,
+            )
         }
 
         match main_fn {
@@ -299,6 +318,7 @@ impl<'src> Analyzer<'src> {
                     params,
                     return_type: node.return_type.clone(),
                     used: false,
+                    ident: node.name.clone(),
                 },
             );
         };
