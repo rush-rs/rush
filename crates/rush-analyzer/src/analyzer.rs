@@ -10,7 +10,6 @@ use crate::{ast::*, Diagnostic, DiagnosticLevel, ErrorKind};
 #[derive(Default, Debug)]
 pub struct Analyzer<'src> {
     pub functions: HashMap<&'src str, Function<'src>>,
-    pub has_main_fn: bool,
     scope: Option<Scope<'src>>,
     pub diagnostics: Vec<Diagnostic>,
 }
@@ -64,7 +63,12 @@ impl<'src> Analyzer<'src> {
     }
 
     /// Adds a new diagnostic with the `Warning` level
-    fn warn(&mut self, message: impl Into<Cow<'static, str>>, notes: Vec<String>, span: Span) {
+    fn warn(
+        &mut self,
+        message: impl Into<Cow<'static, str>>,
+        notes: Vec<Cow<'static, str>>,
+        span: Span,
+    ) {
         self.diagnostics.push(Diagnostic::new(
             DiagnosticLevel::Warning,
             message,
@@ -78,7 +82,7 @@ impl<'src> Analyzer<'src> {
         &mut self,
         kind: ErrorKind,
         message: impl Into<Cow<'static, str>>,
-        notes: Vec<String>,
+        notes: Vec<Cow<'static, str>>,
         span: Span,
     ) {
         self.diagnostics.push(Diagnostic::new(
@@ -102,26 +106,26 @@ impl<'src> Analyzer<'src> {
             match func.name {
                 "main" => {
                     main_fn = Some(func.block);
-                    self.has_main_fn = true
                 }
                 _ => functions.push(func),
             }
         }
 
         // check if there are any unused functions
-        let unused_funcs: Vec<(&'src str, Span)> = self
+        let unused_funcs: Vec<_> = self
             .functions
             .iter()
             .filter(|(ident, func)| !ident.starts_with('_') && !func.used)
-            .map(|func| (*func.0, func.1.ident.span))
+            .map(|(ident, func)| (*ident, func.ident.span))
             .collect();
 
         for (name, ident_span) in unused_funcs {
             self.warn(
                 format!("function `{}` is never called", name),
                 vec![format!(
-                    "remove the function declaration or name it `_{name}` to hide this warning"
-                )],
+                    "if this is intentional, change the name to `_{name}` to hide this warning"
+                )
+                .into()],
                 ident_span,
             )
         }
@@ -133,8 +137,8 @@ impl<'src> Analyzer<'src> {
                     ErrorKind::Semantic,
                     "missing `main` function",
                     vec![
-                        "the `main` function can be implemented like this:\n\n  fn main() {\n    ...\n  }"
-                            .to_string(),
+                        "the `main` function can be implemented like this: `fn main() { ... }`"
+                            .into(),
                     ],
                     Span::default(),
                 );
@@ -159,8 +163,9 @@ impl<'src> Analyzer<'src> {
                 self.warn(
                     format!("unused variable `{}`", name),
                     vec![format!(
-                        "remove the variable or call it `_{name}` to hide this warning"
-                    )],
+                        "if this is intentional, change the name to `_{name}` to hide this warning"
+                    )
+                    .into()],
                     var.span,
                 );
             }
@@ -171,14 +176,14 @@ impl<'src> Analyzer<'src> {
     fn scope(&self) -> &Scope<'src> {
         self.scope
             .as_ref()
-            .expect("statements only exist in function bodies")
+            .expect("statements and expressions only exist in function bodies")
     }
 
     /// Unwrap the current scope mutably
     fn scope_mut(&mut self) -> &mut Scope<'src> {
         self.scope
             .as_mut()
-            .expect("statements only exist in function bodies")
+            .expect("statements and expressions only exist in function bodies")
     }
 
     fn visit_function_declaration(
@@ -189,7 +194,7 @@ impl<'src> Analyzer<'src> {
         if self.functions.contains_key(node.name.inner) {
             self.error(
                 ErrorKind::Semantic,
-                "duplicate function definition",
+                format!("duplicate function definition `{}`", node.name.inner),
                 vec![],
                 node.name.span,
             );
@@ -199,16 +204,6 @@ impl<'src> Analyzer<'src> {
         let is_main_fn = node.name.inner == "main";
 
         if is_main_fn {
-            // check if the main function was already defined
-            if self.has_main_fn {
-                self.error(
-                    ErrorKind::Semantic,
-                    "duplicate `main` function definition",
-                    vec!["a rush program always contains exactly 1 `main` function".to_string()],
-                    node.name.span,
-                );
-            }
-
             // the main function must have no parameters
             if !node.params.is_empty() {
                 self.error(
@@ -218,7 +213,7 @@ impl<'src> Analyzer<'src> {
                         node.params.len(),
                         if node.params.len() == 1 { "is" } else { "are" },
                     ),
-                    vec!["remove the parameters: `fn main() { ... }`".to_string()],
+                    vec!["remove the parameters: `fn main() { ... }`".into()],
                     node.params
                         .first()
                         .expect("this error is created by a parameter")
@@ -228,22 +223,23 @@ impl<'src> Analyzer<'src> {
                         .until(
                             node.params
                                 .last()
-                                .expect("if there is a first parameter, there is a last")
+                                .expect("when there is a first parameter, there is a last")
                                 .1
                                 .span
                                 .end,
                         ),
                 )
             }
+
             // the main function must return `()`
             if node.return_type.inner != Type::Unit {
                 self.error(
                     ErrorKind::Semantic,
                     format!(
-                        "the `main` function's return type must be `()` but is declared as `{}`",
+                        "the `main` function's return type must be `()`, but is declared as `{}`",
                         node.return_type.inner
                     ),
-                    vec!["remove the return type: `fn main() { ... }`".to_string()],
+                    vec!["remove the return type: `fn main() { ... }`".into()],
                     node.return_type.span,
                 )
             }
@@ -262,7 +258,7 @@ impl<'src> Analyzer<'src> {
                 if !param_names.insert(ident.inner) {
                     self.error(
                         ErrorKind::Semantic,
-                        "duplicate parameter name",
+                        format!("duplicate parameter name `{}`", ident.inner),
                         vec![],
                         ident.span,
                     );
@@ -279,17 +275,18 @@ impl<'src> Analyzer<'src> {
                 );
                 params.push((ident, type_));
             }
-            // add the function to the analyzer's function list
-            self.functions.insert(
-                node.name.inner,
-                Function {
-                    params: params.clone(),
-                    return_type: node.return_type.clone(),
-                    used: false,
-                    ident: node.name.clone(),
-                },
-            );
         }
+
+        // add the function to the analyzer's function map
+        self.functions.insert(
+            node.name.inner,
+            Function {
+                params: params.clone(),
+                return_type: node.return_type.clone(),
+                used: false,
+                ident: node.name.clone(),
+            },
+        );
 
         // set the scope to a new blank scope
         self.scope = Some(Scope {
@@ -297,10 +294,11 @@ impl<'src> Analyzer<'src> {
             vars: scope_vars,
         });
 
-        // check that the block results in a legal type
+        // analyze the function body
         let block_result_span = node.block.result_span();
         let block = self.visit_block(node.block);
-        // if the block results in `{unknown}`, no not cause another error
+
+        // check that the block results in the expected type
         if block.result_type != node.return_type.inner && block.result_type != Type::Unknown {
             self.error(
                 ErrorKind::Type,
@@ -319,7 +317,7 @@ impl<'src> Analyzer<'src> {
             .map(|(ident, type_)| (ident.inner, type_.inner))
             .collect();
 
-        // drop the scope when finished (also checks variables)
+        // drop the scope when finished
         self.drop_scope();
 
         AnalyzedFunctionDefinition {
@@ -336,32 +334,24 @@ impl<'src> Analyzer<'src> {
         let mut is_unreachable = false;
         let mut warned_unreachable = false;
 
-        for statement in node.stmts {
+        for stmt in node.stmts {
             if is_unreachable && !warned_unreachable {
-                self.warn(
-                    "unreachable statement",
-                    vec!["there is a statement with the `!` type above this line".to_string()],
-                    statement.span(),
-                );
+                self.warn("unreachable statement", vec![], stmt.span());
                 warned_unreachable = true;
             }
-            let statement = self.visit_statement(statement);
-            if statement.result_type() == Type::Never {
+            let stmt = self.visit_statement(stmt);
+            if stmt.result_type() == Type::Never {
                 is_unreachable = true;
             }
-            stmts.push(statement);
+            stmts.push(stmt);
         }
 
         // possibly mark trailing expression as unreachable
         if let (Some(expr), true, false) = (&node.expr, is_unreachable, warned_unreachable) {
-            self.warn(
-                "unreachable expression",
-                vec!["there is a statement with the `!` type above this line".to_string()],
-                expr.span(),
-            );
+            self.warn("unreachable expression", vec![], expr.span());
         }
 
-        // analyze expression
+        // analyze the expression
         let expr = node.expr.map(|expr| self.visit_expression(expr));
 
         let result_type = expr.as_ref().map_or(Type::Unit, |expr| expr.result_type());
@@ -401,11 +391,7 @@ impl<'src> Analyzer<'src> {
                         declared.inner,
                         expr.result_type(),
                     ),
-                    vec![format!(
-                        "you could change this statement to look like this: `let {}: {} = ...`",
-                        node.name.inner,
-                        expr.result_type()
-                    )],
+                    vec![],
                     expr_span,
                 );
                 self.hint("expected due to this", declared.span);
@@ -423,13 +409,14 @@ impl<'src> Analyzer<'src> {
             },
         ) {
             // a previous variable is shadowed by this declaration, analyze its use
-            if !old.used {
+            if !old.used && !node.name.inner.starts_with('_') {
                 self.warn(
                     format!("unused variable `{}`", node.name.inner),
                     vec![format!(
-                        "remove the variable or call it `_{}` to hide this warning",
+                        "if this is intentional, change the name to `_{}` to hide this warning",
                         node.name.inner
-                    )],
+                    )
+                    .into()],
                     old.span,
                 );
                 self.hint(
@@ -458,8 +445,7 @@ impl<'src> Analyzer<'src> {
             .get(self.scope().fn_name)
             .expect("a scope's function always exists");
 
-        // test if the return type is legal in the current function
-        // if the return type is `{unknown}`, do not return another error
+        // test if the return type is correct
         if curr_fn.return_type.inner != return_type && return_type != Type::Unknown {
             let fn_type_span = curr_fn.return_type.span;
 
@@ -469,11 +455,7 @@ impl<'src> Analyzer<'src> {
                     "mismatched types: expected `{}`, found `{}`",
                     curr_fn.return_type.inner, return_type
                 ),
-                vec![format!(
-                    "you can change the function return type like this: `fn {} (...) -> {} {{ ...",
-                    self.scope().fn_name,
-                    curr_fn.return_type.inner,
-                )],
+                vec![],
                 node.span,
             );
             self.hint("function return type defined here", fn_type_span)
@@ -505,15 +487,15 @@ impl<'src> Analyzer<'src> {
         let cond_span = node.cond.span();
         let cond = self.visit_expression(node.cond);
 
-        // check that the type of the cond is bool
+        // check that the condition is of type bool
         if !matches!(cond.result_type(), Type::Bool | Type::Unknown) {
             self.error(
                 ErrorKind::Type,
                 format!(
-                    "expected value of type bool, found `{}`",
+                    "expected value of type `bool`, found `{}`",
                     cond.result_type()
                 ),
-                vec!["a condition must be a bool value: `if true { ... }`".to_string()],
+                vec!["a condition must have the type `bool`".into()],
                 cond_span,
             )
         } else {
@@ -521,7 +503,7 @@ impl<'src> Analyzer<'src> {
             if cond.constant() {
                 self.warn(
                     "redundant if expression: condition is constant",
-                    vec!["the condition always evaluates to either `true` or `false`".to_string()],
+                    vec![],
                     cond_span,
                 )
             }
@@ -531,70 +513,60 @@ impl<'src> Analyzer<'src> {
         let then_result_span = node.then_block.result_span();
         let then_block = self.visit_block(node.then_block);
 
-        // specifies whether the `if` and `else` branches have a type mismatch
-        let mut mismatched_types = false;
-
-        // specifies whether at least one of the branches returns `{unknown}`
-        let mut has_unknown_branch = false;
-
         // analyze else_block if it exists
-        let else_block = match node.else_block {
+        let (else_block, result_type) = match node.else_block {
             Some(else_block) => {
                 let else_result_span = else_block.result_span();
                 let else_block = self.visit_block(else_block);
 
-                // set `true` if one of the branches has the `{unknown}` type
-                has_unknown_branch = then_block.result_type == Type::Unknown
-                    || else_block.result_type == Type::Unknown;
-
                 // check type equality of the `then` and `else` branches
-                // if at least one of the branches results in `{unknown}`, don't cause another error
-                if then_block.result_type != else_block.result_type && !has_unknown_branch {
-                    mismatched_types = true;
-                    self.error(
-                        ErrorKind::Type,
-                        format!(
-                            "mismatched types: expected `{}`, found `{}`",
-                            then_block.result_type, else_block.result_type
-                        ),
-                        vec![
-                            "results of the `if` and `else` branches must coerce to the same type".to_string()
-                        ],
-                        else_result_span,
-                    );
-                    self.hint("expected due to this", then_result_span);
+                let result_type = match (then_block.result_type, else_block.result_type) {
+                    (Type::Unknown, _) | (_, Type::Unknown) => Type::Unknown,
+                    (Type::Unit | Type::Never, Type::Unit | Type::Never) => Type::Unit,
+                    (then_type, else_type) if then_type == else_type => then_type,
+                    _ => {
+                        self.error(
+                            ErrorKind::Type,
+                            format!(
+                                "mismatched types: expected `{}`, found `{}`",
+                                then_block.result_type, else_block.result_type
+                            ),
+                            vec!["the `if` and `else` branches result in the same type".into()],
+                            else_result_span,
+                        );
+                        self.hint("expected due to this", then_result_span);
+                        Type::Unknown
+                    }
                 };
-                Some(else_block)
+
+                (Some(else_block), result_type)
             }
             None => {
-                if !matches!(then_block.result_type, Type::Unit | Type::Unknown) {
-                    mismatched_types = true;
+                let result_type = if !matches!(
+                    then_block.result_type,
+                    Type::Unit | Type::Never | Type::Unknown
+                ) {
                     self.error(
                         ErrorKind::Type,
                         format!(
                             "mismatched types: missing else branch with `{}` result type",
                             then_block.result_type
                         ),
-                        vec![format!("the `if` branch results in `{}`, therefore an else branch was expected", then_block.result_type)],
+                        vec![format!("the `if` branch results in `{}`, therefore an else branch was expected", then_block.result_type).into()],
                         node.span,
-                    )
-                }
-                None
-            }
-        };
+                    );
+                    Type::Unknown
+                } else {
+                    then_block.result_type
+                };
 
-        // if the branches have a type mismatch or the expr has an unknown type,
-        // set it's `result_type` to `{unknown}` as well
-        let result_type = match (mismatched_types, has_unknown_branch) {
-            (true, _) | (_, true) => Type::Unknown,
-            (false, false) => then_block.result_type,
+                (None, result_type)
+            }
         };
 
         let constant = cond.constant()
             && then_block.constant
             && else_block.as_ref().map_or(false, |block| block.constant);
-
-        dbg!(mismatched_types, has_unknown_branch);
 
         AnalyzedExpression::If(
             AnalyzedIfExpr {
@@ -851,7 +823,8 @@ impl<'src> Analyzer<'src> {
                     vec![format!(
                         "it can be declared like this: `fn {}(...) {{ ... }}`",
                         node.func.inner
-                    )],
+                    )
+                    .into()],
                     node.func.span,
                 );
                 None

@@ -6,7 +6,7 @@ use rush_parser::{Error, Span};
 pub struct Diagnostic {
     pub level: DiagnosticLevel,
     pub message: Cow<'static, str>,
-    pub notes: Vec<String>,
+    pub notes: Vec<Cow<'static, str>>,
     pub span: Span,
 }
 
@@ -25,7 +25,7 @@ impl Diagnostic {
     pub fn new(
         level: DiagnosticLevel,
         message: impl Into<Cow<'static, str>>,
-        notes: Vec<String>,
+        notes: Vec<Cow<'static, str>>,
         span: Span,
     ) -> Self {
         Self {
@@ -37,27 +37,27 @@ impl Diagnostic {
     }
 
     pub fn display(&self, source_code: &str, filename: &str) -> String {
-        let lines = source_code.split('\n').collect::<Vec<&str>>();
+        let lines: Vec<_> = source_code.split('\n').collect();
 
         let (raw_marker, raw_marker_single, color) = match self.level {
-            DiagnosticLevel::Hint => ("~", "^", 5),
-            DiagnosticLevel::Info => ("~", "^", 6),
-            DiagnosticLevel::Warning => ("~", "^", 3),
-            DiagnosticLevel::Error(_) => ("^", "^", 1),
+            DiagnosticLevel::Hint => ("~", "^", 5),     // magenta
+            DiagnosticLevel::Info => ("~", "^", 4),     // blue
+            DiagnosticLevel::Warning => ("~", "^", 3),  // yellow
+            DiagnosticLevel::Error(_) => ("^", "^", 1), // red
         };
 
-        let notes = self
+        let notes: String = self
             .notes
             .iter()
-            .map(|note| format!("\x1b[1;34mnote:\x1b[0m {note}"))
-            .collect::<Vec<String>>()
-            .join("\n");
+            .map(|note| format!("\n \x1b[1;34mnote:\x1b[0m {note}"))
+            .collect();
 
         // take special action if the source code is empty or there is no useful span
         if source_code.is_empty() || self.span == Span::default() {
             return format!(
-                "\x1b[1;3{}m{}\x1b[39m in {}\x1b[0m\n{}\n{}",
-                color, self.level, filename, self.message, notes
+                " \x1b[1;3{color}m{lvl}\x1b[39m in {filename}\x1b[0m \n{msg}{notes}",
+                lvl = self.level,
+                msg = self.message,
             );
         }
 
@@ -65,7 +65,7 @@ impl Diagnostic {
             true => format!(
                 "\n \x1b[90m{: >3} | \x1b[0m{}",
                 self.span.start.line - 1,
-                lines[self.span.start.line - 2]
+                lines[self.span.start.line - 2],
             ),
             false => String::new(),
         };
@@ -111,26 +111,16 @@ impl Diagnostic {
         };
 
         let marker = format!(
-            "{}\x1b[1;3{}m{}\x1b[0m",
-            " ".repeat(self.span.start.column + 6),
-            color,
-            markers
+            "{space}\x1b[1;3{color}m{markers}\x1b[0m",
+            space = " ".repeat(self.span.start.column + 6),
         );
 
         format!(
-            "\x1b[1;3{}m{}\x1b[39m at {}:{}:{}\x1b[0m\n{}\n{}\n{}{}\n\n\x1b[1;3{}m{}\x1b[0m\n{}",
-            color,
-            self.level,
-            filename,
-            self.span.start.line,
-            self.span.start.column,
-            line1,
-            line2,
-            marker,
-            line3,
-            color,
-            self.message,
-            notes,
+            " \x1b[1;3{color}m{lvl}\x1b[39m at {filename}:{line}:{col}\x1b[0m\n{line1}\n{line2}\n{marker}{line3}\n\n \x1b[1;3{color}m{msg}\x1b[0m{notes}",
+            lvl = self.level,
+            line = self.span.start.line,
+            col = self.span.start.column,
+            msg = self.message,
         )
     }
 }
@@ -145,16 +135,10 @@ pub enum DiagnosticLevel {
 
 impl Display for DiagnosticLevel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Self::Hint => "Hint".to_string(),
-                Self::Info => "Info".to_string(),
-                Self::Warning => "Warning".to_string(),
-                Self::Error(kind) => format!("{kind}"),
-            }
-        )
+        match self {
+            Self::Hint | Self::Info | Self::Warning => write!(f, "{self:?}"),
+            Self::Error(kind) => write!(f, "{kind}"),
+        }
     }
 }
 

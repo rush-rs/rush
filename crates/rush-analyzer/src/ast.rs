@@ -33,7 +33,7 @@ impl AnalyzedStatement<'_> {
     pub fn result_type(&self) -> Type {
         match self {
             Self::Let(_) => Type::Unit,
-            Self::Return(_) => Type::Unit,
+            Self::Return(_) => Type::Never,
             Self::Expr(expr) => expr.result_type(),
         }
     }
