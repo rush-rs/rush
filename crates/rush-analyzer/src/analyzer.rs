@@ -218,7 +218,7 @@ impl<'src> Analyzer<'src> {
         match node {
             Statement::Let(node) => self.visit_let_stmt(node),
             Statement::Return(node) => self.visit_return_stmt(node),
-            Statement::Expr(node) => self.visit_expr_stmt(node),
+            Statement::Expr(node) => AnalysedStatement::Expr(self.visit_expression(node.expr)),
         }
     }
 
@@ -305,11 +305,97 @@ impl<'src> Analyzer<'src> {
         AnalysedStatement::Return(expr)
     }
 
-    fn visit_expr_stmt(&mut self, node: ExprStmt<'src>) -> AnalysedStatement<'src> {
-        todo!("@RubixDev will implement from here")
+    fn visit_expression(&mut self, node: Expression<'src>) -> AnalysedExpression<'src> {
+        match node {
+            Expression::Block(node) => AnalysedExpression::Block(self.visit_block(*node).into()),
+            Expression::If(node) => AnalysedExpression::If(self.visit_if_expression(*node).into()),
+            Expression::Int(node) => todo!(),
+            Expression::Float(node) => todo!(),
+            Expression::Bool(node) => todo!(),
+            Expression::Ident(node) => todo!(),
+            Expression::Prefix(node) => todo!(),
+            Expression::Infix(node) => todo!(),
+            Expression::Assign(node) => todo!(),
+            Expression::Call(node) => todo!(),
+            Expression::Cast(node) => todo!(),
+            Expression::Grouped(node) => todo!(),
+        }
     }
 
-    fn visit_expression(&mut self, node: Expression<'src>) -> AnalysedExpression<'src> {
-        todo!("@RubixDev will implement from here")
+    fn visit_if_expression(&mut self, node: IfExpr<'src>) -> AnalysedIfExpr<'src> {
+        let cond_span = node.cond.span();
+        let cond = self.visit_expression(node.cond);
+
+        // check that the type of the cond_expr is bool
+        if cond.result_type() != Type::Bool {
+            self.error(
+                ErrorKind::Type,
+                format!(
+                    "expected value of type bool, found `{}`",
+                    cond.result_type()
+                ),
+                cond_span,
+            )
+        } else {
+            // check that the condition is non-static
+            if cond.constant() {
+                self.warn(
+                    "redundant if statement: condition is static".to_string(),
+                    cond_span,
+                )
+            }
+        }
+
+        // analyze then-block
+        let then_span = node
+            .then_block
+            .stmts
+            .last()
+            .map_or(node.then_block.span, |stmt| stmt.span());
+        let then_block = self.visit_block(node.then_block);
+
+        // analyze else-block if it exists
+        let else_block = if let Some(else_node) = node.else_block {
+            let else_span = else_node
+                .stmts
+                .last()
+                .map_or(else_node.span, |stmt| stmt.span());
+
+            let else_block = self.visit_block(else_node);
+
+            if then_block.result_type != else_block.result_type {
+                self.error(
+                    ErrorKind::Type,
+                    format!(
+                        "mismatched types: expected `{}`, found `{}`",
+                        then_block.result_type, else_block.result_type
+                    ),
+                    else_span,
+                );
+                self.hint("expected due to this".to_string(), then_span);
+            };
+            Some(else_block)
+        } else {
+            if then_block.result_type != Type::Unit {
+                self.error(
+                    ErrorKind::Type,
+                    format!(
+                        "mismatched types: missing else branch with `{}` result type",
+                        then_block.result_type
+                    ),
+                    node.span,
+                )
+            }
+            None
+        };
+
+        AnalysedIfExpr {
+            // if the node has no else-block, the type cannot be known
+            result_type: then_block.result_type,
+            constant: false,
+            cond,
+            then_block,
+            else_block,
+        }
     }
 }
