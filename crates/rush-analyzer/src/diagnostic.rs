@@ -39,11 +39,11 @@ impl Diagnostic {
     pub fn display(&self, source_code: &str, filename: &str) -> String {
         let lines = source_code.split('\n').collect::<Vec<&str>>();
 
-        let (raw_marker, color) = match self.level {
-            DiagnosticLevel::Hint => ("~", 5),
-            DiagnosticLevel::Info => ("~", 6),
-            DiagnosticLevel::Warning => ("~", 3),
-            DiagnosticLevel::Error(_) => ("^", 1),
+        let (raw_marker, raw_marker_single, color) = match self.level {
+            DiagnosticLevel::Hint => ("~", "^", 5),
+            DiagnosticLevel::Info => ("~", "^", 6),
+            DiagnosticLevel::Warning => ("~", "^", 3),
+            DiagnosticLevel::Error(_) => ("^", "^", 1),
         };
 
         let notes = self
@@ -52,7 +52,6 @@ impl Diagnostic {
             .map(|note| format!("\x1b[1;34mnote:\x1b[0m {note}"))
             .collect::<Vec<String>>()
             .join("\n");
-
 
         // take special action if the source code is empty
         if source_code.is_empty() {
@@ -86,9 +85,12 @@ impl Diagnostic {
             false => String::new(),
         };
 
-        let markers = match self.span.start.line == self.span.end.line {
-            true => raw_marker.repeat(self.span.end.column - self.span.start.column),
-            false => raw_marker.to_string(),
+        let markers = match (
+            self.span.start.line == self.span.end.line,
+            self.span.start.column + 1 == self.span.end.column,
+        ) {
+            (true, false) => raw_marker.repeat(self.span.end.column - self.span.start.column),
+            (_, _) => raw_marker_single.to_string(),
         };
 
         let marker = format!(
