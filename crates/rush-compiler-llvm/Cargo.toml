@@ -1,0 +1,11 @@
+[package]
+name = "rush-compiler-llvm"
+version = "0.1.0"
+authors.workspace = true
+edition = "2021"
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+"rush-analyzer" = { path = "../rush-analyzer/", version = "0.1.0" }
+inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master", features = ["llvm14-0"] }
