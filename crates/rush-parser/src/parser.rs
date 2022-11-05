@@ -136,7 +136,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
                 self.next()?;
                 self.expect_recoverable(TokenKind::RParen, "missing closing parenthesis")?;
                 return Ok(Spanned {
-                    span: start_loc.until(self.curr_tok.span.end),
+                    span: start_loc.until(self.prev_tok.span.end),
                     inner: Type::Unit,
                 });
             }
