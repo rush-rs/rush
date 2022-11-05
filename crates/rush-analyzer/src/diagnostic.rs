@@ -11,12 +11,6 @@ pub struct Diagnostic {
 
 impl From<Error> for Diagnostic {
     fn from(err: Error) -> Self {
-        Self::from(&err)
-    }
-}
-
-impl From<&Error> for Diagnostic {
-    fn from(err: &Error) -> Self {
         Self::new(
             DiagnosticLevel::Error(ErrorKind::Syntax),
             err.message,
