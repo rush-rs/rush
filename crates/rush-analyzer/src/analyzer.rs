@@ -14,6 +14,7 @@ pub struct Analyzer<'src> {
 pub struct Function<'src> {
     pub params: Vec<(Spanned<&'src str>, Spanned<Type>)>,
     pub return_type: Spanned<Type>,
+    pub used: bool,
 }
 
 #[derive(Debug)]
@@ -36,27 +37,28 @@ impl<'src> Analyzer<'src> {
         Self::default()
     }
 
-    /// Adds a new diagnostic with the hint level
+    /// Adds a new diagnostic with the `Hint` level
     fn hint(&mut self, message: String, span: Span) {
         self.diagnostics
             .push(Diagnostic::new(DiagnosticLevel::Hint, message, span))
     }
-    /// Adds a new diagnostic with the info level
+    /// Adds a new diagnostic with the `Info` level
     fn info(&mut self, message: String, span: Span) {
         self.diagnostics
             .push(Diagnostic::new(DiagnosticLevel::Info, message, span))
     }
-    /// Adds a new diagnostic with the warning level
+    /// Adds a new diagnostic with the `Warning` level
     fn warn(&mut self, message: String, span: Span) {
         self.diagnostics
             .push(Diagnostic::new(DiagnosticLevel::Warning, message, span))
     }
-    /// Adds a new diagnostic with the error level using the specified error kind
+    /// Adds a new diagnostic with the `Error` level using the specified error kind
     fn error(&mut self, kind: ErrorKind, message: String, span: Span) {
         self.diagnostics
             .push(Diagnostic::new(DiagnosticLevel::Error(kind), message, span))
     }
 
+    /// Analyzes a parsed AST and returns an analyzed AST whilst emmitting diagnostics
     pub fn analyze(mut self, program: Program<'src>) -> AnalysedProgram<'src> {
         program
             .functions
@@ -74,7 +76,7 @@ impl<'src> Analyzer<'src> {
             .take()
             .expect("drop_scope should only be called from a scope");
 
-        // analyze its values
+        // analyze its values for their use
         for (name, var) in scope.vars {
             if var.used {
                 continue;
@@ -96,11 +98,12 @@ impl<'src> Analyzer<'src> {
             );
         }
 
-        let mut vars = HashMap::new();
+        let mut scope_vars = HashMap::new();
 
         // check the function parameters
         let mut params = vec![];
         let mut param_names = HashSet::new();
+
         for (ident, type_) in node.params {
             // check for duplicate function parameters
             if !param_names.insert(ident.inner) {
@@ -110,7 +113,7 @@ impl<'src> Analyzer<'src> {
                     ident.span,
                 );
             }
-            vars.insert(
+            scope_vars.insert(
                 ident.inner,
                 Variable {
                     type_: type_.inner,
@@ -126,7 +129,7 @@ impl<'src> Analyzer<'src> {
         // set scope to new blank scope
         self.scope = Some(Scope {
             fn_name: node.name.inner,
-            vars,
+            vars: scope_vars,
         });
 
         // check that the block returns a legal type
@@ -162,6 +165,7 @@ impl<'src> Analyzer<'src> {
             Function {
                 params,
                 return_type: node.return_type.clone(),
+                used: false,
             },
         );
 
