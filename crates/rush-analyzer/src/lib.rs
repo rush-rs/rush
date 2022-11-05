@@ -24,18 +24,32 @@ pub fn analyze(text: &str) -> Result<(AnalyzedProgram, Vec<Diagnostic>), Vec<Dia
             .map(Diagnostic::from)
             .chain(iter::once(critical.into()))
             .collect()),
-        (Ok(ast), 0) => {
+        (Ok(ast), _) => {
             let analyzer = Analyzer::new();
-            let (analyzed_ast, diagnostics) = analyzer.analyze(ast)?;
 
-            match diagnostics
+            // saves potential issues of the parser as diagnostics
+            let mut parser_diagnostics: Vec<Diagnostic> =
+                errs.into_iter().map(Diagnostic::from).collect();
+
+            let (analyzed_ast, mut analyzer_diagnostics) = match analyzer.analyze(ast) {
+                Ok(res) => res,
+                Err(mut analyzer_diagnostics) => {
+                    parser_diagnostics.append(&mut analyzer_diagnostics);
+                    return Err(parser_diagnostics);
+                }
+            };
+
+            // append the analyzer diagnostics to the parser errors
+            parser_diagnostics.append(&mut analyzer_diagnostics);
+
+            // return the `Err(_)` variant if the diagnostics contain at least 1 error
+            match parser_diagnostics
                 .iter()
                 .any(|diagnostic| matches!(diagnostic.level, DiagnosticLevel::Error(_)))
             {
-                true => Err(diagnostics),
-                false => Ok((analyzed_ast, diagnostics)),
+                true => Err(parser_diagnostics),
+                false => Ok((analyzed_ast, parser_diagnostics)),
             }
         }
-        (Ok(_), _) => Err(errs.into_iter().map(Diagnostic::from).collect()),
     }
 }
