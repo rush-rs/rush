@@ -41,24 +41,38 @@ impl<'src> Analyzer<'src> {
     }
 
     /// Adds a new diagnostic with the `Hint` level
-    fn hint(&mut self, message: impl Into<Cow<'static, str>>, span: Span) {
+    fn hint(&mut self, message: impl Into<Cow<'static, str>>, hints: Vec<String>, span: Span) {
         self.diagnostics
-            .push(Diagnostic::new(DiagnosticLevel::Hint, message, span))
+            .push(Diagnostic::new(DiagnosticLevel::Hint, message, hints, span))
     }
     /// Adds a new diagnostic with the `Info` level
-    fn info(&mut self, message: impl Into<Cow<'static, str>>, span: Span) {
+    fn info(&mut self, message: impl Into<Cow<'static, str>>, hints: Vec<String>, span: Span) {
         self.diagnostics
-            .push(Diagnostic::new(DiagnosticLevel::Info, message, span))
+            .push(Diagnostic::new(DiagnosticLevel::Info, message, hints, span))
     }
     /// Adds a new diagnostic with the `Warning` level
-    fn warn(&mut self, message: impl Into<Cow<'static, str>>, span: Span) {
-        self.diagnostics
-            .push(Diagnostic::new(DiagnosticLevel::Warning, message, span))
+    fn warn(&mut self, message: impl Into<Cow<'static, str>>, hints: Vec<String>, span: Span) {
+        self.diagnostics.push(Diagnostic::new(
+            DiagnosticLevel::Warning,
+            message,
+            hints,
+            span,
+        ))
     }
     /// Adds a new diagnostic with the `Error` level using the specified error kind
-    fn error(&mut self, kind: ErrorKind, message: impl Into<Cow<'static, str>>, span: Span) {
-        self.diagnostics
-            .push(Diagnostic::new(DiagnosticLevel::Error(kind), message, span))
+    fn error(
+        &mut self,
+        kind: ErrorKind,
+        message: impl Into<Cow<'static, str>>,
+        hints: Vec<String>,
+        span: Span,
+    ) {
+        self.diagnostics.push(Diagnostic::new(
+            DiagnosticLevel::Error(kind),
+            message,
+            hints,
+            span,
+        ))
     }
 
     /// Analyzes a parsed AST and returns an analyzed AST whilst emmitting diagnostics
@@ -83,6 +97,10 @@ impl<'src> Analyzer<'src> {
                 self.error(
                     ErrorKind::Semantic,
                     "missing `main` function",
+                    vec![
+                        "the `main` function can be implemented like this:\n\n  fn main() {\n    ...\n  }"
+                            .to_string(),
+                    ],
                     program.span,
                 );
                 Err(self.diagnostics)
@@ -102,7 +120,13 @@ impl<'src> Analyzer<'src> {
         // analyze its values for their use
         for (name, var) in scope.vars {
             if !var.used {
-                self.warn(format!("unused variable `{}`", name), var.span);
+                self.warn(
+                    format!("unused variable `{}`", name),
+                    vec![format!(
+                        "remove the variable or call it `_{name}` to hide this warning"
+                    )],
+                    var.span,
+                );
             }
         }
     }
@@ -130,6 +154,7 @@ impl<'src> Analyzer<'src> {
             self.error(
                 ErrorKind::Semantic,
                 "duplicate function definition",
+                vec![],
                 node.name.span,
             );
         }
@@ -143,7 +168,12 @@ impl<'src> Analyzer<'src> {
         for (ident, type_) in node.params {
             // check for duplicate function parameters
             if !param_names.insert(ident.inner) {
-                self.error(ErrorKind::Semantic, "duplicate parameter name", ident.span);
+                self.error(
+                    ErrorKind::Semantic,
+                    "duplicate parameter name",
+                    vec![],
+                    ident.span,
+                );
             }
             scope_vars.insert(
                 ident.inner,
@@ -174,9 +204,14 @@ impl<'src> Analyzer<'src> {
                     "mismatched types: expected `{}`, found `{}`",
                     node.return_type.inner, block.result_type,
                 ),
+                vec![],
                 block_result_span,
             );
-            self.hint("function return type defined here", node.return_type.span);
+            self.hint(
+                "function return type defined here",
+                vec![],
+                node.return_type.span,
+            );
         }
 
         let params_without_spans = params
@@ -209,11 +244,16 @@ impl<'src> Analyzer<'src> {
         let mut stmts = vec![];
 
         let mut is_unreachable = false;
+        let mut caused_unreachable_span = Span::default();
         let mut warned_unreachable = false;
 
         for statement in node.stmts {
             if is_unreachable && !warned_unreachable {
-                self.warn("unreachable statement", statement.span());
+                self.warn(
+                    "unreachable statement",
+                    vec!["there is a statement with the `!` type above this line".to_string()],
+                    statement.span(),
+                );
                 warned_unreachable = true;
             }
             let statement = self.visit_statement(statement);
@@ -225,7 +265,11 @@ impl<'src> Analyzer<'src> {
 
         // possibly mark trailing expression as unreachable
         if let (Some(expr), true, false) = (&node.expr, is_unreachable, warned_unreachable) {
-            self.warn("unreachable expression", expr.span());
+            self.warn(
+                "unreachable expression",
+                vec!["there is a statement with the `!` type above this line".to_string()],
+                expr.span(),
+            );
         }
 
         // analyze expression
@@ -267,9 +311,14 @@ impl<'src> Analyzer<'src> {
                         declared.inner,
                         expr.result_type(),
                     ),
+                    vec![format!(
+                        "you could change this statement to look like this: `let {}:{} = ...`",
+                        node.name.inner,
+                        expr.result_type()
+                    )],
                     expr_span,
                 );
-                self.hint("expected due to this", declared.span);
+                self.hint("expected due to this", vec![], declared.span);
             }
         }
 
@@ -285,9 +334,17 @@ impl<'src> Analyzer<'src> {
         ) {
             // a previous variable is shadowed by this declaration, analyze its use
             if !old.used {
-                self.warn(format!("unused variable `{}`", node.name.inner), old.span);
+                self.warn(
+                    format!("unused variable `{}`", node.name.inner),
+                    vec![format!(
+                        "remove the variable or call it `_{}` to hide this warning",
+                        node.name.inner
+                    )],
+                    old.span,
+                );
                 self.hint(
                     format!("variable `{}` shadowed here", node.name.inner),
+                    vec![],
                     node.name.span,
                 );
             }
@@ -322,9 +379,14 @@ impl<'src> Analyzer<'src> {
                     "mismatched types: expected `{}`, found `{}`",
                     curr_fn.return_type.inner, return_type
                 ),
+                vec![format!(
+                    "you can change the function return type like this: `fn {} (...) -> {} {{ ...",
+                    self.scope().fn_name,
+                    curr_fn.return_type.inner,
+                )],
                 node.span,
             );
-            self.hint("function return type defined here", fn_type_span)
+            self.hint("function return type defined here", vec![], fn_type_span)
         }
 
         AnalyzedStatement::Return(expr)
@@ -359,12 +421,17 @@ impl<'src> Analyzer<'src> {
                     "expected value of type bool, found `{}`",
                     cond.result_type()
                 ),
+                vec!["a if condition must be a bool value: `if true { ... }`".to_string()],
                 cond_span,
             )
         } else {
             // check that the condition is non-constant
             if cond.constant() {
-                self.warn("redundant if expression: condition is constant", cond_span)
+                self.warn(
+                    "redundant if expression: condition is constant",
+                    vec!["the condition always evaluates to either `true` or `false`".to_string()],
+                    cond_span,
+                )
             }
         }
 
@@ -388,9 +455,13 @@ impl<'src> Analyzer<'src> {
                             "mismatched types: expected `{}`, found `{}`",
                             then_block.result_type, else_block.result_type
                         ),
+                        vec![
+                            "the `if` and `else` branches must result in the same type"
+                                .to_string(),
+                        ],
                         else_result_span,
                     );
-                    self.hint("expected due to this", then_result_span);
+                    self.hint("expected due to this", vec![], then_result_span);
                 };
                 Some(else_block)
             }
@@ -403,6 +474,7 @@ impl<'src> Analyzer<'src> {
                             "mismatched types: missing else branch with `{}` result type",
                             then_block.result_type
                         ),
+                        vec![format!("the `if` branch results in `{}`, therefore an else branch was expected", then_block.result_type)],
                         node.span,
                     )
                 }

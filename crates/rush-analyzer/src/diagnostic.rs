@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, fmt::Display};
 
 use rush_parser::{Error, Span};
 
@@ -6,6 +6,7 @@ use rush_parser::{Error, Span};
 pub struct Diagnostic {
     pub level: DiagnosticLevel,
     pub message: Cow<'static, str>,
+    pub hints: Vec<String>,
     pub span: Span,
 }
 
@@ -44,11 +45,26 @@ pub enum ErrorKind {
     Semantic,
 }
 
+impl Display for ErrorKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Syntax => "SyntaxError",
+                Self::Type => "TypeError",
+                Self::Semantic => "SemanticError",
+            }
+        )
+    }
+}
+
 impl ErrorKind {
     pub fn into_diagnostic(self, message: impl Into<Cow<'static, str>>, span: Span) -> Diagnostic {
         Diagnostic {
             level: DiagnosticLevel::Error(self),
             message: message.into(),
+            hints: vec![],
             span,
         }
     }
