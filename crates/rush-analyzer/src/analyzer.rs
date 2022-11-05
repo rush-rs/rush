@@ -62,15 +62,32 @@ impl<'src> Analyzer<'src> {
     }
 
     /// Analyzes a parsed AST and returns an analyzed AST whilst emmitting diagnostics
-    pub fn analyze(mut self, program: Program<'src>) -> (AnalyzedProgram<'src>, Vec<Diagnostic>) {
-        (
-            program
-                .functions
-                .into_iter()
-                .map(|func| self.visit_function_declaration(func))
-                .collect(),
-            self.diagnostics,
-        )
+    pub fn analyze(
+        mut self,
+        program: Program<'src>,
+    ) -> Result<(AnalyzedProgram<'src>, Vec<Diagnostic>), Vec<Diagnostic>> {
+        let mut functions = vec![];
+        let mut main_fn = None;
+
+        for func in program.functions {
+            let func = self.visit_function_declaration(func);
+            match func.name {
+                "main" => main_fn = Some(func),
+                _ => functions.push(func),
+            }
+        }
+
+        match main_fn {
+            Some(main_fn) => Ok((AnalyzedProgram { functions, main_fn }, self.diagnostics)),
+            None => {
+                self.error(
+                    ErrorKind::Semantic,
+                    "missing `main` function",
+                    program.span,
+                );
+                Err(self.diagnostics)
+            }
+        }
     }
 
     /// Removes the current scope of the function and checks whether the

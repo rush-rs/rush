@@ -26,7 +26,7 @@ pub fn analyze(text: &str) -> Result<(AnalyzedProgram, Vec<Diagnostic>), Vec<Dia
             .collect()),
         (Ok(ast), 0) => {
             let analyzer = Analyzer::new();
-            let (analyzed_ast, diagnostics) = analyzer.analyze(ast);
+            let (analyzed_ast, diagnostics) = analyzer.analyze(ast)?;
 
             match diagnostics
                 .iter()

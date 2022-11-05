@@ -1,6 +1,9 @@
 use rush_parser::ast::{AssignOp, InfixOp, PrefixOp, Type};
 
-pub type AnalyzedProgram<'src> = Vec<AnalyzedFunctionDefinition<'src>>;
+pub struct AnalyzedProgram<'src> {
+    pub functions: Vec<AnalyzedFunctionDefinition<'src>>,
+    pub main_fn: AnalyzedFunctionDefinition<'src>,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnalyzedFunctionDefinition<'src> {
