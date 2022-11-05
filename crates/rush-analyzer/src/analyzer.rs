@@ -10,6 +10,7 @@ use crate::{ast::*, Diagnostic, DiagnosticLevel, ErrorKind};
 #[derive(Default)]
 pub struct Analyzer<'src> {
     pub functions: HashMap<&'src str, Function<'src>>,
+    pub main_fn: Option<AnalyzedBlock<'src>>,
     scope: Option<Scope<'src>>,
     pub diagnostics: Vec<Diagnostic>,
 }
@@ -170,33 +171,71 @@ impl<'src> Analyzer<'src> {
             );
         }
 
+        // check if the function is the main function
+        let is_main_fn = node.name.inner == "main";
+
+        if is_main_fn {
+            // the main function must have no parameters
+            if !node.params.is_empty() {
+                self.error(
+                    ErrorKind::Semantic,
+                    format!(
+                        "the `main` function has no parameters, however {} {} defined",
+                        if node.params.len() == 1 {
+                            "is"
+                        } else {
+                            "where"
+                        },
+                        node.params.len()
+                    ),
+                    vec!["remove the parameters: `fn main() { ... }`".to_string()],
+                    node.span,
+                )
+            }
+            // the main function must return `()`
+            if node.return_type.inner != Type::Unit {
+                self.error(
+                    ErrorKind::Semantic,
+                    format!(
+                        "the `main` function's return type must be `()` but is declared as `{}`",
+                        node.return_type.inner
+                    ),
+                    vec!["remove the return type: `fn main() { ... }`".to_string()],
+                    node.return_type.span,
+                )
+            }
+        }
+
         let mut scope_vars = HashMap::new();
 
         // check the function parameters
         let mut params = vec![];
         let mut param_names = HashSet::new();
 
-        for (ident, type_) in node.params {
-            // check for duplicate function parameters
-            if !param_names.insert(ident.inner) {
-                self.error(
-                    ErrorKind::Semantic,
-                    "duplicate parameter name",
-                    vec![],
-                    ident.span,
+        // only analyze parameters if this is not the main function
+        if !is_main_fn {
+            for (ident, type_) in node.params {
+                // check for duplicate function parameters
+                if !param_names.insert(ident.inner) {
+                    self.error(
+                        ErrorKind::Semantic,
+                        "duplicate parameter name",
+                        vec![],
+                        ident.span,
+                    );
+                }
+                scope_vars.insert(
+                    ident.inner,
+                    Variable {
+                        type_: type_.inner,
+                        span: ident.span,
+                        used: false,
+                        // TODO: maybe allow `mut` params
+                        mutable: false,
+                    },
                 );
+                params.push((ident, type_));
             }
-            scope_vars.insert(
-                ident.inner,
-                Variable {
-                    type_: type_.inner,
-                    span: ident.span,
-                    used: false,
-                    // TODO: maybe allow `mut` params
-                    mutable: false,
-                },
-            );
-            params.push((ident, type_));
         }
 
         // set scope to new blank scope
@@ -226,6 +265,9 @@ impl<'src> Analyzer<'src> {
             .map(|(ident, type_)| (ident.inner, type_.inner))
             .collect();
 
+        // drop the scope when finished (also checks variables)
+        self.drop_scope();
+
         // add the function to the analyzer's function list
         self.functions.insert(
             node.name.inner,
@@ -235,9 +277,6 @@ impl<'src> Analyzer<'src> {
                 used: false,
             },
         );
-
-        // drop the scope when finished (also checks variables)
-        self.drop_scope();
 
         AnalyzedFunctionDefinition {
             name: node.name.inner,
