@@ -134,7 +134,8 @@ impl<'src> Analyzer<'src> {
 
         // analyze its values for their use
         for (name, var) in scope.vars {
-            if !var.used {
+            // allow unused values if they start with `_`
+            if !name.starts_with('_') && !var.used {
                 self.warn(
                     format!("unused variable `{}`", name),
                     vec![format!(
@@ -195,11 +196,7 @@ impl<'src> Analyzer<'src> {
                     format!(
                         "the `main` function must have 0 parameters, however {} {} defined",
                         node.params.len(),
-                        if node.params.len() == 1 {
-                            "is"
-                        } else {
-                            "are"
-                        },
+                        if node.params.len() == 1 { "is" } else { "are" },
                     ),
                     vec!["remove the parameters: `fn main() { ... }`".to_string()],
                     node.params
@@ -318,7 +315,6 @@ impl<'src> Analyzer<'src> {
         let mut stmts = vec![];
 
         let mut is_unreachable = false;
-        let mut caused_unreachable_span = Span::default();
         let mut warned_unreachable = false;
 
         for statement in node.stmts {
@@ -386,7 +382,7 @@ impl<'src> Analyzer<'src> {
                         expr.result_type(),
                     ),
                     vec![format!(
-                        "you could change this statement to look like this: `let {}:{} = ...`",
+                        "you could change this statement to look like this: `let {}: {} = ...`",
                         node.name.inner,
                         expr.result_type()
                     )],
