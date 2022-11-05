@@ -62,12 +62,15 @@ impl<'src> Analyzer<'src> {
     }
 
     /// Analyzes a parsed AST and returns an analyzed AST whilst emmitting diagnostics
-    pub fn analyze(mut self, program: Program<'src>) -> AnalyzedProgram<'src> {
-        program
-            .functions
-            .into_iter()
-            .map(|func| self.visit_function_declaration(func))
-            .collect()
+    pub fn analyze(mut self, program: Program<'src>) -> (AnalyzedProgram<'src>, Vec<Diagnostic>) {
+        (
+            program
+                .functions
+                .into_iter()
+                .map(|func| self.visit_function_declaration(func))
+                .collect(),
+            self.diagnostics,
+        )
     }
 
     /// Removes the current scope of the function and checks whether the
