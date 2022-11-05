@@ -7,7 +7,7 @@ use rush_parser::{ast::*, Span};
 
 use crate::{ast::*, Diagnostic, DiagnosticLevel, ErrorKind};
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct Analyzer<'src> {
     pub functions: HashMap<&'src str, Function<'src>>,
     pub has_main_fn: bool,
@@ -15,6 +15,7 @@ pub struct Analyzer<'src> {
     pub diagnostics: Vec<Diagnostic>,
 }
 
+#[derive(Debug)]
 pub struct Function<'src> {
     pub ident: Spanned<&'src str>,
     pub params: Vec<(Spanned<&'src str>, Spanned<Type>)>,
@@ -278,9 +279,19 @@ impl<'src> Analyzer<'src> {
                 );
                 params.push((ident, type_));
             }
+            // add the function to the analyzer's function list
+            self.functions.insert(
+                node.name.inner,
+                Function {
+                    params: params.clone(),
+                    return_type: node.return_type.clone(),
+                    used: false,
+                    ident: node.name.clone(),
+                },
+            );
         }
 
-        // set scope to new blank scope
+        // set the scope to a new blank scope
         self.scope = Some(Scope {
             fn_name: node.name.inner,
             vars: scope_vars,
@@ -309,19 +320,6 @@ impl<'src> Analyzer<'src> {
 
         // drop the scope when finished (also checks variables)
         self.drop_scope();
-
-        // add the function to the analyzer's function list if it is not the main function
-        if !is_main_fn {
-            self.functions.insert(
-                node.name.inner,
-                Function {
-                    params,
-                    return_type: node.return_type.clone(),
-                    used: false,
-                    ident: node.name.clone(),
-                },
-            );
-        };
 
         AnalyzedFunctionDefinition {
             name: node.name.inner,
