@@ -62,7 +62,7 @@ impl<'src> Analyzer<'src> {
     }
 
     /// Analyzes a parsed AST and returns an analyzed AST whilst emmitting diagnostics
-    pub fn analyze(mut self, program: Program<'src>) -> AnalysedProgram<'src> {
+    pub fn analyze(mut self, program: Program<'src>) -> AnalyzedProgram<'src> {
         program
             .functions
             .into_iter()
@@ -95,7 +95,7 @@ impl<'src> Analyzer<'src> {
     }
 
     /// Unwrap the current scope mutably
-    fn scope_mut(&mut self) -> &Scope<'src> {
+    fn scope_mut(&mut self) -> &mut Scope<'src> {
         self.scope
             .as_mut()
             .expect("statements only exist in function bodies")
@@ -104,7 +104,7 @@ impl<'src> Analyzer<'src> {
     fn visit_function_declaration(
         &mut self,
         node: FunctionDefinition<'src>,
-    ) -> AnalysedFunctionDefinition<'src> {
+    ) -> AnalyzedFunctionDefinition<'src> {
         // check for duplicate function names
         if self.functions.contains_key(node.name.inner) {
             self.error(
@@ -177,7 +177,7 @@ impl<'src> Analyzer<'src> {
         // drop the scope when finished (also checks variables)
         self.drop_scope();
 
-        AnalysedFunctionDefinition {
+        AnalyzedFunctionDefinition {
             name: node.name.inner,
             params: params_without_spans,
             return_type: node.return_type.inner,
@@ -185,7 +185,7 @@ impl<'src> Analyzer<'src> {
         }
     }
 
-    fn visit_block(&mut self, node: Block<'src>) -> AnalysedBlock<'src> {
+    fn visit_block(&mut self, node: Block<'src>) -> AnalyzedBlock<'src> {
         let mut stmts = vec![];
 
         let mut is_unreachable = false;
@@ -214,7 +214,7 @@ impl<'src> Analyzer<'src> {
         let result_type = expr.as_ref().map_or(Type::Unit, |expr| expr.result_type());
         let constant = expr.as_ref().map_or(false, |expr| expr.constant()) && stmts.is_empty();
 
-        AnalysedBlock {
+        AnalyzedBlock {
             result_type,
             constant,
             stmts,
@@ -222,15 +222,15 @@ impl<'src> Analyzer<'src> {
         }
     }
 
-    fn visit_statement(&mut self, node: Statement<'src>) -> AnalysedStatement<'src> {
+    fn visit_statement(&mut self, node: Statement<'src>) -> AnalyzedStatement<'src> {
         match node {
             Statement::Let(node) => self.visit_let_stmt(node),
             Statement::Return(node) => self.visit_return_stmt(node),
-            Statement::Expr(node) => AnalysedStatement::Expr(self.visit_expression(node.expr)),
+            Statement::Expr(node) => AnalyzedStatement::Expr(self.visit_expression(node.expr)),
         }
     }
 
-    fn visit_let_stmt(&mut self, node: LetStmt<'src>) -> AnalysedStatement<'src> {
+    fn visit_let_stmt(&mut self, node: LetStmt<'src>) -> AnalyzedStatement<'src> {
         // save the expression's span for later use
         let expr_span = node.expr.span();
 
@@ -273,14 +273,14 @@ impl<'src> Analyzer<'src> {
             }
         }
 
-        AnalysedStatement::Let(AnalysedLetStmt {
+        AnalyzedStatement::Let(AnalyzedLetStmt {
             mutable: node.mutable,
             name: node.name.inner,
             expr,
         })
     }
 
-    fn visit_return_stmt(&mut self, node: ReturnStmt<'src>) -> AnalysedStatement<'src> {
+    fn visit_return_stmt(&mut self, node: ReturnStmt<'src>) -> AnalyzedStatement<'src> {
         // if there is an expression, visit it
         let expr = node.expr.map(|expr| self.visit_expression(expr));
 
@@ -307,12 +307,12 @@ impl<'src> Analyzer<'src> {
             self.hint("function return type defined here", fn_type_span)
         }
 
-        AnalysedStatement::Return(expr)
+        AnalyzedStatement::Return(expr)
     }
 
-    fn visit_expression(&mut self, node: Expression<'src>) -> AnalysedExpression<'src> {
+    fn visit_expression(&mut self, node: Expression<'src>) -> AnalyzedExpression<'src> {
         match node {
-            Expression::Block(node) => AnalysedExpression::Block(self.visit_block(*node).into()),
+            Expression::Block(node) => AnalyzedExpression::Block(self.visit_block(*node).into()),
             Expression::If(node) => self.visit_if_expression(*node),
             Expression::Int(node) => todo!(),
             Expression::Float(node) => todo!(),
@@ -327,7 +327,7 @@ impl<'src> Analyzer<'src> {
         }
     }
 
-    fn visit_if_expression(&mut self, node: IfExpr<'src>) -> AnalysedExpression<'src> {
+    fn visit_if_expression(&mut self, node: IfExpr<'src>) -> AnalyzedExpression<'src> {
         let cond_span = node.cond.span();
         let cond = self.visit_expression(node.cond);
 
@@ -398,8 +398,8 @@ impl<'src> Analyzer<'src> {
             && then_block.constant
             && else_block.as_ref().map_or(false, |block| block.constant);
 
-        AnalysedExpression::If(
-            AnalysedIfExpr {
+        AnalyzedExpression::If(
+            AnalyzedIfExpr {
                 result_type,
                 constant,
                 cond,

@@ -1,31 +1,31 @@
 use rush_parser::ast::{AssignOp, InfixOp, PrefixOp, Type};
 
-pub type AnalysedProgram<'src> = Vec<AnalysedFunctionDefinition<'src>>;
+pub type AnalyzedProgram<'src> = Vec<AnalyzedFunctionDefinition<'src>>;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct AnalysedFunctionDefinition<'src> {
+pub struct AnalyzedFunctionDefinition<'src> {
     pub name: &'src str,
     pub params: Vec<(&'src str, Type)>,
     pub return_type: Type,
-    pub block: AnalysedBlock<'src>,
+    pub block: AnalyzedBlock<'src>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct AnalysedBlock<'src> {
+pub struct AnalyzedBlock<'src> {
     pub result_type: Type,
     pub constant: bool,
-    pub stmts: Vec<AnalysedStatement<'src>>,
-    pub expr: Option<AnalysedExpression<'src>>,
+    pub stmts: Vec<AnalyzedStatement<'src>>,
+    pub expr: Option<AnalyzedExpression<'src>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum AnalysedStatement<'src> {
-    Let(AnalysedLetStmt<'src>),
-    Return(AnalysedReturnStmt<'src>),
-    Expr(AnalysedExpression<'src>),
+pub enum AnalyzedStatement<'src> {
+    Let(AnalyzedLetStmt<'src>),
+    Return(AnalyzedReturnStmt<'src>),
+    Expr(AnalyzedExpression<'src>),
 }
 
-impl AnalysedStatement<'_> {
+impl AnalyzedStatement<'_> {
     pub fn result_type(&self) -> Type {
         match self {
             Self::Let(_) => Type::Unit,
@@ -44,31 +44,31 @@ impl AnalysedStatement<'_> {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct AnalysedLetStmt<'src> {
+pub struct AnalyzedLetStmt<'src> {
     pub mutable: bool,
     pub name: &'src str,
-    pub expr: AnalysedExpression<'src>,
+    pub expr: AnalyzedExpression<'src>,
 }
 
-pub type AnalysedReturnStmt<'src> = Option<AnalysedExpression<'src>>;
+pub type AnalyzedReturnStmt<'src> = Option<AnalyzedExpression<'src>>;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum AnalysedExpression<'src> {
-    Block(Box<AnalysedBlock<'src>>),
-    If(Box<AnalysedIfExpr<'src>>),
+pub enum AnalyzedExpression<'src> {
+    Block(Box<AnalyzedBlock<'src>>),
+    If(Box<AnalyzedIfExpr<'src>>),
     Int(i64),
     Float(f64),
     Bool(bool),
     Ident(IdentExpr<'src>),
-    Prefix(Box<AnalysedPrefixExpr<'src>>),
-    Infix(Box<AnalysedInfixExpr<'src>>),
-    Assign(Box<AnalysedAssignExpr<'src>>),
-    Call(Box<AnalysedCallExpr<'src>>),
-    Cast(Box<AnalysedCastExpr<'src>>),
-    Grouped(Box<AnalysedExpression<'src>>),
+    Prefix(Box<AnalyzedPrefixExpr<'src>>),
+    Infix(Box<AnalyzedInfixExpr<'src>>),
+    Assign(Box<AnalyzedAssignExpr<'src>>),
+    Call(Box<AnalyzedCallExpr<'src>>),
+    Cast(Box<AnalyzedCastExpr<'src>>),
+    Grouped(Box<AnalyzedExpression<'src>>),
 }
 
-impl AnalysedExpression<'_> {
+impl AnalyzedExpression<'_> {
     pub fn result_type(&self) -> Type {
         match self {
             Self::Block(expr) => expr.result_type,
@@ -105,12 +105,12 @@ impl AnalysedExpression<'_> {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct AnalysedIfExpr<'src> {
+pub struct AnalyzedIfExpr<'src> {
     pub result_type: Type,
     pub constant: bool,
-    pub cond: AnalysedExpression<'src>,
-    pub then_block: AnalysedBlock<'src>,
-    pub else_block: Option<AnalysedBlock<'src>>,
+    pub cond: AnalyzedExpression<'src>,
+    pub then_block: AnalyzedBlock<'src>,
+    pub else_block: Option<AnalyzedBlock<'src>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -120,43 +120,43 @@ pub struct IdentExpr<'src> {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct AnalysedPrefixExpr<'src> {
+pub struct AnalyzedPrefixExpr<'src> {
     pub result_type: Type,
     pub constant: bool,
     pub op: PrefixOp,
-    pub expr: AnalysedExpression<'src>,
+    pub expr: AnalyzedExpression<'src>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct AnalysedInfixExpr<'src> {
+pub struct AnalyzedInfixExpr<'src> {
     pub result_type: Type,
     pub constant: bool,
-    pub lhs: AnalysedExpression<'src>,
+    pub lhs: AnalyzedExpression<'src>,
     pub op: InfixOp,
-    pub rhs: AnalysedExpression<'src>,
+    pub rhs: AnalyzedExpression<'src>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct AnalysedAssignExpr<'src> {
+pub struct AnalyzedAssignExpr<'src> {
     pub result_type: Type,
     pub constant: bool,
     pub assignee: &'src str,
     pub op: AssignOp,
-    pub expr: AnalysedExpression<'src>,
+    pub expr: AnalyzedExpression<'src>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct AnalysedCallExpr<'src> {
+pub struct AnalyzedCallExpr<'src> {
     pub result_type: Type,
     pub constant: bool,
-    pub expr: AnalysedExpression<'src>,
-    pub args: Vec<AnalysedExpression<'src>>,
+    pub expr: AnalyzedExpression<'src>,
+    pub args: Vec<AnalyzedExpression<'src>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct AnalysedCastExpr<'src> {
+pub struct AnalyzedCastExpr<'src> {
     pub result_type: Type,
     pub constant: bool,
-    pub expr: AnalysedExpression<'src>,
+    pub expr: AnalyzedExpression<'src>,
     pub type_: Type,
 }
