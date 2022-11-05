@@ -297,10 +297,11 @@ impl<'src> Analyzer<'src> {
             vars: scope_vars,
         });
 
-        // check that the block returns a legal type
+        // check that the block results in a legal type
         let block_result_span = node.block.result_span();
         let block = self.visit_block(node.block);
-        if block.result_type != node.return_type.inner {
+        // if the block results in `{unknown}`, no not cause another error
+        if block.result_type != node.return_type.inner && block.result_type != Type::Unknown {
             self.error(
                 ErrorKind::Type,
                 format!(
@@ -390,8 +391,9 @@ impl<'src> Analyzer<'src> {
         let expr = self.visit_expression(node.expr);
 
         // check if the optional type conflicts with the rhs
+        // if the type of the rhs is unknown, do not return an error
         if let Some(declared) = &node.type_ {
-            if declared.inner != expr.result_type() {
+            if declared.inner != expr.result_type() && expr.result_type() != Type::Unknown {
                 self.error(
                     ErrorKind::Type,
                     format!(
@@ -457,7 +459,8 @@ impl<'src> Analyzer<'src> {
             .expect("a scope's function always exists");
 
         // test if the return type is legal in the current function
-        if curr_fn.return_type.inner != return_type {
+        // if the return type is `{unknown}`, do not return another error
+        if curr_fn.return_type.inner != return_type && return_type != Type::Unknown {
             let fn_type_span = curr_fn.return_type.span;
 
             self.error(
@@ -503,7 +506,7 @@ impl<'src> Analyzer<'src> {
         let cond = self.visit_expression(node.cond);
 
         // check that the type of the cond is bool
-        if cond.result_type() != Type::Bool {
+        if !matches!(cond.result_type(), Type::Bool | Type::Unknown) {
             self.error(
                 ErrorKind::Type,
                 format!(
@@ -528,7 +531,11 @@ impl<'src> Analyzer<'src> {
         let then_result_span = node.then_block.result_span();
         let then_block = self.visit_block(node.then_block);
 
+        // specifies whether the `if` and `else` branches have a type mismatch
         let mut mismatched_types = false;
+
+        // specifies whether at least one of the branches returns `{unknown}`
+        let mut has_unknown_branch = false;
 
         // analyze else_block if it exists
         let else_block = match node.else_block {
@@ -536,7 +543,13 @@ impl<'src> Analyzer<'src> {
                 let else_result_span = else_block.result_span();
                 let else_block = self.visit_block(else_block);
 
-                if then_block.result_type != else_block.result_type {
+                // set `true` if one of the branches has the `{unknown}` type
+                has_unknown_branch = then_block.result_type == Type::Unknown
+                    || else_block.result_type == Type::Unknown;
+
+                // check type equality of the `then` and `else` branches
+                // if at least one of the branches results in `{unknown}`, don't cause another error
+                if then_block.result_type != else_block.result_type && !has_unknown_branch {
                     mismatched_types = true;
                     self.error(
                         ErrorKind::Type,
@@ -554,7 +567,7 @@ impl<'src> Analyzer<'src> {
                 Some(else_block)
             }
             None => {
-                if then_block.result_type != Type::Unit {
+                if !matches!(then_block.result_type, Type::Unit | Type::Unknown) {
                     mismatched_types = true;
                     self.error(
                         ErrorKind::Type,
@@ -570,13 +583,18 @@ impl<'src> Analyzer<'src> {
             }
         };
 
-        let result_type = match mismatched_types {
-            true => Type::Unknown,
-            false => then_block.result_type,
+        // if the branches have a type mismatch or the expr has an unknown type,
+        // set it's `result_type` to `{unknown}` as well
+        let result_type = match (mismatched_types, has_unknown_branch) {
+            (true, _) | (_, true) => Type::Unknown,
+            (false, false) => then_block.result_type,
         };
+
         let constant = cond.constant()
             && then_block.constant
             && else_block.as_ref().map_or(false, |block| block.constant);
+
+        dbg!(mismatched_types, has_unknown_branch);
 
         AnalyzedExpression::If(
             AnalyzedIfExpr {
