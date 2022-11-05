@@ -523,6 +523,20 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         start_loc: Location,
         expr: Expression<'src>,
     ) -> Result<Expression<'src>> {
+        let func = match expr {
+            Expression::Ident(func) => func,
+            _ => {
+                self.errors.push(Error::new(
+                    "only identifiers can be called".to_string(),
+                    self.curr_tok.span,
+                ));
+                Spanned {
+                    span: Span::default(),
+                    inner: "",
+                }
+            }
+        };
+
         // skip opening parenthesis
         self.next()?;
 
@@ -544,7 +558,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         Ok(Expression::Call(
             CallExpr {
                 span: start_loc.until(self.prev_tok.span.end),
-                expr,
+                func,
                 args,
             }
             .into(),

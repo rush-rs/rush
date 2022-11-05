@@ -32,8 +32,8 @@ ExprWithoutBlock = int
                  | '(' , Expression , ')' ;
 PrefixExpr       = PREFIX_OPERATOR , Expression ;
 InfixExpr        = Expression , INFIX_OPERATOR , Expression ;
-AssignExpr       = Expression , ASSIGN_OPERATOR , Expression ;
-CallExpr         = Expression , '(' , [ ArgumentList ] , ')' ;
+AssignExpr       = ident , ASSIGN_OPERATOR , Expression ;
+CallExpr         = ident , '(' , [ ArgumentList ] , ')' ;
 ArgumentList     = Expression , { ',' , Expression } , [ ',' ] ;
 CastExpr         = Expression , 'as' , Type ;
 

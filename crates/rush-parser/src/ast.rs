@@ -312,7 +312,7 @@ impl Display for AssignOp {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CallExpr<'src> {
     pub span: Span,
-    pub expr: Expression<'src>,
+    pub func: Spanned<&'src str>,
     pub args: Vec<Expression<'src>>,
 }
 

@@ -101,7 +101,7 @@ impl AnalyzedExpression<'_> {
             Self::Prefix(expr) => expr.constant,
             Self::Infix(expr) => expr.constant,
             Self::Assign(_) => false,
-            Self::Call(expr) => expr.constant,
+            Self::Call(_) => false,
             Self::Cast(expr) => expr.constant,
             Self::Grouped(expr) => expr.constant(),
         }
@@ -121,13 +121,6 @@ pub struct AnalyzedIfExpr<'src> {
 pub struct AnalyzedIdentExpr<'src> {
     pub result_type: Type,
     pub ident: &'src str,
-    pub kind: AnalyzedIdentKind,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AnalyzedIdentKind {
-    Variable,
-    Function,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -158,8 +151,7 @@ pub struct AnalyzedAssignExpr<'src> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnalyzedCallExpr<'src> {
     pub result_type: Type,
-    pub constant: bool,
-    pub expr: AnalyzedExpression<'src>,
+    pub func: &'src str,
     pub args: Vec<AnalyzedExpression<'src>>,
 }
 

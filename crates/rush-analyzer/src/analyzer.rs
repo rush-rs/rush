@@ -609,32 +609,25 @@ impl<'src> Analyzer<'src> {
     }
 
     fn visit_ident_expr(&mut self, node: Spanned<&'src str>) -> AnalyzedExpression<'src> {
-        let (result_type, kind) = match self.scope_mut().vars.get_mut(node.inner) {
+        let result_type = match self.scope_mut().vars.get_mut(node.inner) {
             Some(var) => {
                 var.used = true;
-                (var.type_, AnalyzedIdentKind::Variable)
+                var.type_
             }
-            None => match self.functions.get_mut(node.inner) {
-                Some(func) => {
-                    func.used = true;
-                    (func.return_type.inner, AnalyzedIdentKind::Function)
-                }
-                None => {
-                    self.error(
-                        ErrorKind::Reference,
-                        format!("use of undeclared name `{}`", node.inner),
-                        vec![],
-                        node.span,
-                    );
-                    (Type::Unknown, AnalyzedIdentKind::Variable)
-                }
-            },
+            None => {
+                self.error(
+                    ErrorKind::Reference,
+                    format!("use of undeclared variable `{}`", node.inner),
+                    vec![],
+                    node.span,
+                );
+                Type::Unknown
+            }
         };
 
         AnalyzedExpression::Ident(AnalyzedIdentExpr {
             result_type,
             ident: node.inner,
-            kind,
         })
     }
 
@@ -841,10 +834,130 @@ impl<'src> Analyzer<'src> {
     }
 
     fn visit_call_expr(&mut self, node: CallExpr<'src>) -> AnalyzedExpression<'src> {
-        todo!()
+        let func = match self.functions.get_mut(node.func.inner) {
+            Some(func) => {
+                func.used = true;
+                Some((
+                    func.ident.clone(),
+                    func.return_type.inner,
+                    func.params.clone(),
+                ))
+            }
+            // TODO: builtin functions
+            None => {
+                self.error(
+                    ErrorKind::Reference,
+                    format!("use of undeclared function `{}`", node.func.inner),
+                    vec![format!(
+                        "it can be declared like this: `fn {}(...) {{ ... }}`",
+                        node.func.inner
+                    )],
+                    node.func.span,
+                );
+                None
+            }
+        };
+        let (result_type, args) = match func {
+            Some((func_ident, func_type, func_params)) => {
+                if node.args.len() != func_params.len() {
+                    self.error(
+                        ErrorKind::Reference,
+                        format!(
+                            "function `{}` takes {} arguments, however {} were supplied",
+                            node.func.inner,
+                            func_params.len(),
+                            node.args.len()
+                        ),
+                        vec![],
+                        node.span,
+                    );
+                    self.hint(
+                        format!(
+                            "function `{}` defined here with {} parameters",
+                            node.func.inner,
+                            func_params.len()
+                        ),
+                        // TODO: use span of params including parens
+                        func_ident.span,
+                    );
+                    (func_type, vec![])
+                } else {
+                    let mut result_type = func_type;
+                    let args = node
+                        .args
+                        .into_iter()
+                        .zip(func_params)
+                        .map(|(arg, param)| {
+                            let arg_span = arg.span();
+                            let arg = self.visit_expression(arg);
+
+                            match (arg.result_type(), param.1.inner) {
+                                // TODO: parser soft error for undefined types
+                                (Type::Unknown, _) | (_, Type::Unknown) => {}
+                                (Type::Never, _) => result_type = Type::Never,
+                                (arg_type, param_type) if arg_type != param_type => {
+                                    self.error(
+                                        ErrorKind::Type,
+                                        format!("mismatched types: expected `{param_type}`, found `{arg_type}`"),
+                                        vec![],
+                                        arg_span,
+                                    )
+                                }
+                                _ => {}
+                            }
+
+                            arg
+                        })
+                        .collect();
+                    (result_type, args)
+                }
+            }
+            None => (Type::Unknown, vec![]),
+        };
+
+        AnalyzedExpression::Call(
+            AnalyzedCallExpr {
+                result_type,
+                func: node.func.inner,
+                args,
+            }
+            .into(),
+        )
     }
 
     fn visit_cast_expr(&mut self, node: CastExpr<'src>) -> AnalyzedExpression<'src> {
-        todo!()
+        let expr = self.visit_expression(node.expr);
+
+        let result_type = match (expr.result_type(), node.type_.inner) {
+            (Type::Unknown, _) => Type::Unknown,
+            (Type::Never, _) => Type::Never,
+            (
+                Type::Int | Type::Float | Type::Bool | Type::Char,
+                Type::Int | Type::Float | Type::Bool | Type::Char,
+            ) => node.type_.inner,
+            _ => {
+                self.error(
+                    ErrorKind::Type,
+                    format!(
+                        "invalid cast: cannot cast type `{}` to `{}",
+                        expr.result_type(),
+                        node.type_.inner
+                    ),
+                    vec![],
+                    node.span,
+                );
+                Type::Unknown
+            }
+        };
+
+        AnalyzedExpression::Cast(
+            AnalyzedCastExpr {
+                result_type,
+                constant: expr.constant(),
+                expr,
+                type_: node.type_.inner,
+            }
+            .into(),
+        )
     }
 }
