@@ -2,7 +2,10 @@ mod analyzer;
 mod ast;
 mod diagnostic;
 
+use std::iter;
+
 pub use analyzer::*;
+use ast::AnalyzedProgram;
 pub use diagnostic::*;
 use rush_parser::{Lexer, Parser};
 
