@@ -10,7 +10,7 @@ use crate::{ast::*, Diagnostic, DiagnosticLevel, ErrorKind};
 #[derive(Default)]
 pub struct Analyzer<'src> {
     pub functions: HashMap<&'src str, Function<'src>>,
-    pub main_fn: Option<AnalyzedBlock<'src>>,
+    pub has_main_fn: bool,
     scope: Option<Scope<'src>>,
     pub diagnostics: Vec<Diagnostic>,
 }
@@ -98,7 +98,10 @@ impl<'src> Analyzer<'src> {
         for func in program.functions {
             let func = self.visit_function_declaration(func);
             match func.name {
-                "main" => main_fn = Some(func),
+                "main" => {
+                    main_fn = Some(func.block);
+                    self.has_main_fn = true
+                }
                 _ => functions.push(func),
             }
         }
@@ -175,21 +178,44 @@ impl<'src> Analyzer<'src> {
         let is_main_fn = node.name.inner == "main";
 
         if is_main_fn {
+            // check if the main function was already defined
+            if self.has_main_fn {
+                self.error(
+                    ErrorKind::Semantic,
+                    "duplicate `main` function definition",
+                    vec!["a rush program always contains exactly 1 `main` function".to_string()],
+                    node.name.span,
+                );
+            }
+
             // the main function must have no parameters
             if !node.params.is_empty() {
                 self.error(
                     ErrorKind::Semantic,
                     format!(
-                        "the `main` function has no parameters, however {} {} defined",
+                        "the `main` function must have 0 parameters, however {} {} defined",
+                        node.params.len(),
                         if node.params.len() == 1 {
                             "is"
                         } else {
-                            "where"
+                            "are"
                         },
-                        node.params.len()
                     ),
                     vec!["remove the parameters: `fn main() { ... }`".to_string()],
-                    node.span,
+                    node.params
+                        .first()
+                        .expect("this error is created by a parameter")
+                        .0
+                        .span
+                        .start
+                        .until(
+                            node.params
+                                .last()
+                                .expect("if there is a first parameter, there is a last")
+                                .1
+                                .span
+                                .end,
+                        ),
                 )
             }
             // the main function must return `()`
@@ -268,15 +294,17 @@ impl<'src> Analyzer<'src> {
         // drop the scope when finished (also checks variables)
         self.drop_scope();
 
-        // add the function to the analyzer's function list
-        self.functions.insert(
-            node.name.inner,
-            Function {
-                params,
-                return_type: node.return_type.clone(),
-                used: false,
-            },
-        );
+        // add the function to the analyzer's function list if it is not the main function
+        if !is_main_fn {
+            self.functions.insert(
+                node.name.inner,
+                Function {
+                    params,
+                    return_type: node.return_type.clone(),
+                    used: false,
+                },
+            );
+        };
 
         AnalyzedFunctionDefinition {
             name: node.name.inner,
