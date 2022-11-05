@@ -61,6 +61,16 @@ pub struct Block<'src> {
     pub expr: Option<Expression<'src>>,
 }
 
+impl Block<'_> {
+    /// Returns the span responsible for the block's result type
+    pub fn result_span(&self) -> Span {
+        self.expr.as_ref().map_or_else(
+            || self.stmts.last().map_or(self.span, |stmt| stmt.span()),
+            |expr| expr.span(),
+        )
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Statement<'src> {
     Let(LetStmt<'src>),

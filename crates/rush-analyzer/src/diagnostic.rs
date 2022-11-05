@@ -1,9 +1,11 @@
+use std::borrow::Cow;
+
 use rush_parser::{Error, Span};
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Diagnostic {
     pub level: DiagnosticLevel,
-    pub message: String,
+    pub message: Cow<'static, str>,
     pub span: Span,
 }
 
@@ -18,10 +20,10 @@ impl From<Error> for Diagnostic {
 }
 
 impl Diagnostic {
-    pub fn new(level: DiagnosticLevel, message: String, span: Span) -> Self {
+    pub fn new(level: DiagnosticLevel, message: impl Into<Cow<'static, str>>, span: Span) -> Self {
         Self {
             level,
-            message,
+            message: message.into(),
             span,
         }
     }
@@ -43,10 +45,10 @@ pub enum ErrorKind {
 }
 
 impl ErrorKind {
-    pub fn into_diagnostic(self, message: String, span: Span) -> Diagnostic {
+    pub fn into_diagnostic(self, message: impl Into<Cow<'static, str>>, span: Span) -> Diagnostic {
         Diagnostic {
             level: DiagnosticLevel::Error(self),
-            message,
+            message: message.into(),
             span,
         }
     }

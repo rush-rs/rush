@@ -1,4 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    borrow::Cow,
+    collections::{HashMap, HashSet},
+};
 
 use rush_parser::{ast::*, Span};
 
@@ -38,22 +41,22 @@ impl<'src> Analyzer<'src> {
     }
 
     /// Adds a new diagnostic with the `Hint` level
-    fn hint(&mut self, message: String, span: Span) {
+    fn hint(&mut self, message: impl Into<Cow<'static, str>>, span: Span) {
         self.diagnostics
             .push(Diagnostic::new(DiagnosticLevel::Hint, message, span))
     }
     /// Adds a new diagnostic with the `Info` level
-    fn info(&mut self, message: String, span: Span) {
+    fn info(&mut self, message: impl Into<Cow<'static, str>>, span: Span) {
         self.diagnostics
             .push(Diagnostic::new(DiagnosticLevel::Info, message, span))
     }
     /// Adds a new diagnostic with the `Warning` level
-    fn warn(&mut self, message: String, span: Span) {
+    fn warn(&mut self, message: impl Into<Cow<'static, str>>, span: Span) {
         self.diagnostics
             .push(Diagnostic::new(DiagnosticLevel::Warning, message, span))
     }
     /// Adds a new diagnostic with the `Error` level using the specified error kind
-    fn error(&mut self, kind: ErrorKind, message: String, span: Span) {
+    fn error(&mut self, kind: ErrorKind, message: impl Into<Cow<'static, str>>, span: Span) {
         self.diagnostics
             .push(Diagnostic::new(DiagnosticLevel::Error(kind), message, span))
     }
@@ -78,11 +81,24 @@ impl<'src> Analyzer<'src> {
 
         // analyze its values for their use
         for (name, var) in scope.vars {
-            if var.used {
-                continue;
+            if !var.used {
+                self.warn(format!("unused variable `{}`", name), var.span);
             }
-            self.warn(format!("unused variable `{}`", name), var.span);
         }
+    }
+
+    /// Unwrap the current scope
+    fn scope(&self) -> &Scope<'src> {
+        self.scope
+            .as_ref()
+            .expect("statements only exist in function bodies")
+    }
+
+    /// Unwrap the current scope mutably
+    fn scope_mut(&mut self) -> &Scope<'src> {
+        self.scope
+            .as_mut()
+            .expect("statements only exist in function bodies")
     }
 
     fn visit_function_declaration(
@@ -93,7 +109,7 @@ impl<'src> Analyzer<'src> {
         if self.functions.contains_key(node.name.inner) {
             self.error(
                 ErrorKind::Semantic,
-                "duplicate function definition".to_string(),
+                "duplicate function definition",
                 node.name.span,
             );
         }
@@ -107,11 +123,7 @@ impl<'src> Analyzer<'src> {
         for (ident, type_) in node.params {
             // check for duplicate function parameters
             if !param_names.insert(ident.inner) {
-                self.error(
-                    ErrorKind::Semantic,
-                    "duplicate parameter name".to_string(),
-                    ident.span,
-                );
+                self.error(ErrorKind::Semantic, "duplicate parameter name", ident.span);
             }
             scope_vars.insert(
                 ident.inner,
@@ -133,11 +145,7 @@ impl<'src> Analyzer<'src> {
         });
 
         // check that the block returns a legal type
-        let block_result_span = node
-            .block
-            .stmts
-            .last()
-            .map_or(node.block.span, |stmt| stmt.span());
+        let block_result_span = node.block.result_span();
         let block = self.visit_block(node.block);
         if block.result_type != node.return_type.inner {
             self.error(
@@ -148,10 +156,7 @@ impl<'src> Analyzer<'src> {
                 ),
                 block_result_span,
             );
-            self.hint(
-                "function return value defined here".to_string(),
-                node.return_type.span,
-            );
+            self.hint("function return type defined here", node.return_type.span);
         }
 
         let params_without_spans = params
@@ -182,11 +187,14 @@ impl<'src> Analyzer<'src> {
 
     fn visit_block(&mut self, node: Block<'src>) -> AnalysedBlock<'src> {
         let mut stmts = vec![];
+
         let mut is_unreachable = false;
+        let mut warned_unreachable = false;
 
         for statement in node.stmts {
-            if is_unreachable {
-                self.warn("unreachable statement".to_string(), statement.span());
+            if is_unreachable && !warned_unreachable {
+                self.warn("unreachable statement", statement.span());
+                warned_unreachable = true;
             }
             let statement = self.visit_statement(statement);
             if statement.result_type() == Type::Never {
@@ -196,8 +204,8 @@ impl<'src> Analyzer<'src> {
         }
 
         // possibly mark trailing expression as unreachable
-        if let (Some(expr), true) = (&node.expr, is_unreachable) {
-            self.warn("unreachable expression".to_string(), expr.span());
+        if let (Some(expr), true, false) = (&node.expr, is_unreachable, warned_unreachable) {
+            self.warn("unreachable expression", expr.span());
         }
 
         // analyze expression
@@ -230,7 +238,7 @@ impl<'src> Analyzer<'src> {
         let expr = self.visit_expression(node.expr);
 
         // check if the optional type conflicts with the rhs
-        if let Some(declared) = node.type_ {
+        if let Some(declared) = &node.type_ {
             if declared.inner != expr.result_type() {
                 self.error(
                     ErrorKind::Type,
@@ -241,15 +249,15 @@ impl<'src> Analyzer<'src> {
                     ),
                     expr_span,
                 );
-                self.hint("expected due to this".to_string(), declared.span);
+                self.hint("expected due to this", declared.span);
             }
         }
 
         // insert and do additional checks if variable is shadowed
-        if let Some(old) = self.scope.as_mut().unwrap().vars.insert(
+        if let Some(old) = self.scope_mut().vars.insert(
             node.name.inner,
             Variable {
-                type_: expr.result_type(),
+                type_: node.type_.map_or(expr.result_type(), |type_| type_.inner),
                 span: node.name.span,
                 used: false,
                 mutable: node.mutable,
@@ -276,13 +284,13 @@ impl<'src> Analyzer<'src> {
         // if there is an expression, visit it
         let expr = node.expr.map(|expr| self.visit_expression(expr));
 
-        // create the return value based on the expr (Unit as fallback)
+        // get the return type based on the expr (Unit as fallback)
         let return_type = expr.as_ref().map_or(Type::Unit, |expr| expr.result_type());
 
         let curr_fn = self
             .functions
-            .get(self.scope.as_ref().unwrap().fn_name)
-            .unwrap();
+            .get(self.scope().fn_name)
+            .expect("a scope's function always exists");
 
         // test if the return type is legal in the current function
         if curr_fn.return_type.inner != return_type {
@@ -296,10 +304,7 @@ impl<'src> Analyzer<'src> {
                 ),
                 node.span,
             );
-            self.hint(
-                "function return value defined here".to_string(),
-                fn_type_span,
-            )
+            self.hint("function return type defined here", fn_type_span)
         }
 
         AnalysedStatement::Return(expr)
@@ -308,7 +313,7 @@ impl<'src> Analyzer<'src> {
     fn visit_expression(&mut self, node: Expression<'src>) -> AnalysedExpression<'src> {
         match node {
             Expression::Block(node) => AnalysedExpression::Block(self.visit_block(*node).into()),
-            Expression::If(node) => AnalysedExpression::If(self.visit_if_expression(*node).into()),
+            Expression::If(node) => self.visit_if_expression(*node),
             Expression::Int(node) => todo!(),
             Expression::Float(node) => todo!(),
             Expression::Bool(node) => todo!(),
@@ -322,11 +327,11 @@ impl<'src> Analyzer<'src> {
         }
     }
 
-    fn visit_if_expression(&mut self, node: IfExpr<'src>) -> AnalysedIfExpr<'src> {
+    fn visit_if_expression(&mut self, node: IfExpr<'src>) -> AnalysedExpression<'src> {
         let cond_span = node.cond.span();
         let cond = self.visit_expression(node.cond);
 
-        // check that the type of the cond_expr is bool
+        // check that the type of the cond is bool
         if cond.result_type() != Type::Bool {
             self.error(
                 ErrorKind::Type,
@@ -337,65 +342,71 @@ impl<'src> Analyzer<'src> {
                 cond_span,
             )
         } else {
-            // check that the condition is non-static
+            // check that the condition is non-constant
             if cond.constant() {
-                self.warn(
-                    "redundant if statement: condition is static".to_string(),
-                    cond_span,
-                )
+                self.warn("redundant if expression: condition is constant", cond_span)
             }
         }
 
-        // analyze then-block
-        let then_span = node
-            .then_block
-            .stmts
-            .last()
-            .map_or(node.then_block.span, |stmt| stmt.span());
+        // analyze then_block
+        let then_result_span = node.then_block.result_span();
         let then_block = self.visit_block(node.then_block);
 
-        // analyze else-block if it exists
-        let else_block = if let Some(else_node) = node.else_block {
-            let else_span = else_node
-                .stmts
-                .last()
-                .map_or(else_node.span, |stmt| stmt.span());
+        let mut mismatched_types = false;
 
-            let else_block = self.visit_block(else_node);
+        // analyze else_block if it exists
+        let else_block = match node.else_block {
+            Some(else_block) => {
+                let else_result_span = else_block.result_span();
+                let else_block = self.visit_block(else_block);
 
-            if then_block.result_type != else_block.result_type {
-                self.error(
-                    ErrorKind::Type,
-                    format!(
-                        "mismatched types: expected `{}`, found `{}`",
-                        then_block.result_type, else_block.result_type
-                    ),
-                    else_span,
-                );
-                self.hint("expected due to this".to_string(), then_span);
-            };
-            Some(else_block)
-        } else {
-            if then_block.result_type != Type::Unit {
-                self.error(
-                    ErrorKind::Type,
-                    format!(
-                        "mismatched types: missing else branch with `{}` result type",
-                        then_block.result_type
-                    ),
-                    node.span,
-                )
+                if then_block.result_type != else_block.result_type {
+                    mismatched_types = true;
+                    self.error(
+                        ErrorKind::Type,
+                        format!(
+                            "mismatched types: expected `{}`, found `{}`",
+                            then_block.result_type, else_block.result_type
+                        ),
+                        else_result_span,
+                    );
+                    self.hint("expected due to this", then_result_span);
+                };
+                Some(else_block)
             }
-            None
+            None => {
+                if then_block.result_type != Type::Unit {
+                    mismatched_types = true;
+                    self.error(
+                        ErrorKind::Type,
+                        format!(
+                            "mismatched types: missing else branch with `{}` result type",
+                            then_block.result_type
+                        ),
+                        node.span,
+                    )
+                }
+                None
+            }
         };
 
-        AnalysedIfExpr {
-            // if the node has no else-block, the type cannot be known
-            result_type: then_block.result_type,
-            constant: false,
-            cond,
-            then_block,
-            else_block,
-        }
+        let result_type = match mismatched_types {
+            true => Type::Unknown,
+            false => then_block.result_type,
+        };
+        let constant = cond.constant()
+            && then_block.constant
+            && else_block.as_ref().map_or(false, |block| block.constant);
+
+        AnalysedExpression::If(
+            AnalysedIfExpr {
+                result_type,
+                constant,
+                cond,
+                then_block,
+                else_block,
+            }
+            .into(),
+        )
     }
 }
