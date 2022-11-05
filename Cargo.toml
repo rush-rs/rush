@@ -2,6 +2,7 @@
 members = [
     "crates/rush-parser",
     "crates/rush-analyzer",
+    "crates/rush-ls"
 ]
 package.authors = ["RubixDev", "MikMuellerDev"]
 package.edition = "2021"
