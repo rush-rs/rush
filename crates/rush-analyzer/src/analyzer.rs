@@ -18,7 +18,7 @@ pub struct Analyzer<'src> {
 pub struct Function<'src> {
     pub ident: Spanned<&'src str>,
     pub params: Spanned<Vec<(Spanned<&'src str>, Spanned<Type>)>>,
-    pub return_type: Spanned<Type>,
+    pub return_type: Spanned<Option<Type>>,
     pub used: bool,
 }
 
@@ -53,13 +53,14 @@ impl<'src> Analyzer<'src> {
     }
 
     /// Adds a new diagnostic with the `Info` level
-    fn info(&mut self, message: impl Into<Cow<'static, str>>, span: Span) {
-        self.diagnostics.push(Diagnostic::new(
-            DiagnosticLevel::Info,
-            message,
-            vec![],
-            span,
-        ))
+    fn info(
+        &mut self,
+        message: impl Into<Cow<'static, str>>,
+        notes: Vec<Cow<'static, str>>,
+        span: Span,
+    ) {
+        self.diagnostics
+            .push(Diagnostic::new(DiagnosticLevel::Info, message, notes, span))
     }
 
     /// Adds a new diagnostic with the `Warning` level
@@ -102,7 +103,7 @@ impl<'src> Analyzer<'src> {
         let mut main_fn = None;
 
         for func in program.functions {
-            let func = self.visit_function_declaration(func);
+            let func = self.visit_function_definition(func);
             match func.name {
                 "main" => {
                     main_fn = Some(func.block);
@@ -186,7 +187,7 @@ impl<'src> Analyzer<'src> {
             .expect("statements and expressions only exist in function bodies")
     }
 
-    fn visit_function_declaration(
+    fn visit_function_definition(
         &mut self,
         node: FunctionDefinition<'src>,
     ) -> AnalyzedFunctionDefinition<'src> {
@@ -223,17 +224,35 @@ impl<'src> Analyzer<'src> {
             }
 
             // the main function must return `()`
-            if node.return_type.inner != Type::Unit {
-                self.error(
-                    ErrorKind::Semantic,
-                    format!(
-                        "the `main` function's return type must be `()`, but is declared as `{}`",
-                        node.return_type.inner
-                    ),
-                    vec!["remove the return type: `fn main() { ... }`".into()],
-                    node.return_type.span,
-                )
+            if let Some(return_type) = node.return_type.inner {
+                if return_type != Type::Unit {
+                    self.error(
+                        ErrorKind::Semantic,
+                        format!(
+                            "the `main` function's return type must be `()`, but is declared as `{}`",
+                            return_type,
+                        ),
+                        vec!["remove the return type: `fn main() { ... }`".into()],
+                        node.return_type.span,
+                    )
+                }
             }
+        }
+
+        // info for explicit unit return type
+        if node.return_type.inner == Some(Type::Unit) {
+            self.info(
+                "unneccessary explicit unit return type",
+                vec![
+                    "functions implicitly return `()` by default".into(),
+                    format!(
+                        "remove the explicit type: `fn {}(...) {{ ... }}`",
+                        node.name.inner,
+                    )
+                    .into(),
+                ],
+                node.return_type.span,
+            );
         }
 
         let mut scope_vars = HashMap::new();
@@ -293,17 +312,33 @@ impl<'src> Analyzer<'src> {
         let block = self.visit_block(node.block);
 
         // check that the block results in the expected type
-        if block.result_type != node.return_type.inner && block.result_type != Type::Unknown {
+        if block.result_type != node.return_type.inner.unwrap_or(Type::Unit)
+            && block.result_type != Type::Unknown
+        {
             self.error(
                 ErrorKind::Type,
                 format!(
                     "mismatched types: expected `{}`, found `{}`",
-                    node.return_type.inner, block.result_type,
+                    node.return_type.inner.unwrap_or(Type::Unit),
+                    block.result_type,
                 ),
-                vec![],
+                match node.return_type.inner.is_some() {
+                    true => vec![],
+                    false => vec![format!(
+                        "specify a function return type like this: `fn {}(...) -> {} {{ ... }}`",
+                        node.name.inner, block.result_type,
+                    )
+                    .into()],
+                },
                 block_result_span,
             );
-            self.hint("function return type defined here", node.return_type.span);
+            self.hint(
+                match node.return_type.inner.is_some() {
+                    true => "function return type defined here",
+                    false => "no explicit return type specified",
+                },
+                node.return_type.span,
+            );
         }
 
         let params_without_spans = params
@@ -317,7 +352,7 @@ impl<'src> Analyzer<'src> {
         AnalyzedFunctionDefinition {
             name: node.name.inner,
             params: params_without_spans,
-            return_type: node.return_type.inner,
+            return_type: node.return_type.inner.unwrap_or(Type::Unit),
             block,
         }
     }
@@ -440,19 +475,29 @@ impl<'src> Analyzer<'src> {
             .expect("a scope's function always exists");
 
         // test if the return type is correct
-        if curr_fn.return_type.inner != return_type && return_type != Type::Unknown {
+        if curr_fn.return_type.inner.unwrap_or(Type::Unit) != return_type
+            && return_type != Type::Unknown
+        {
             let fn_type_span = curr_fn.return_type.span;
+            let fn_type_explicit = curr_fn.return_type.inner.is_some();
 
             self.error(
                 ErrorKind::Type,
                 format!(
                     "mismatched types: expected `{}`, found `{}`",
-                    curr_fn.return_type.inner, return_type
+                    curr_fn.return_type.inner.unwrap_or(Type::Unit),
+                    return_type
                 ),
                 vec![],
                 node.span,
             );
-            self.hint("function return type defined here", fn_type_span)
+            self.hint(
+                match fn_type_explicit {
+                    true => "function return type defined here",
+                    false => "no explicit return type specified",
+                },
+                fn_type_span,
+            );
         }
 
         AnalyzedStatement::Return(expr)
@@ -804,7 +849,10 @@ impl<'src> Analyzer<'src> {
         let func = match self.functions.get_mut(node.func.inner) {
             Some(func) => {
                 func.used = true;
-                Some((func.return_type.inner, func.params.clone()))
+                Some((
+                    func.return_type.inner.unwrap_or(Type::Unit),
+                    func.params.clone(),
+                ))
             }
             // TODO: builtin functions
             None => {

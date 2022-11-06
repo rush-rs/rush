@@ -50,7 +50,7 @@ pub struct FunctionDefinition<'src> {
     pub span: Span,
     pub name: Spanned<&'src str>,
     pub params: Spanned<Vec<(Spanned<&'src str>, Spanned<Type>)>>,
-    pub return_type: Spanned<Type>,
+    pub return_type: Spanned<Option<Type>>,
     pub block: Block<'src>,
 }
 

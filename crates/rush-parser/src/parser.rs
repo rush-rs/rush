@@ -187,11 +187,15 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         let return_type = match self.curr_tok.kind {
             TokenKind::Arrow => {
                 self.next()?;
-                self.type_()?
+                let type_ = self.type_()?;
+                Spanned {
+                    span: type_.span,
+                    inner: Some(type_.inner),
+                }
             }
             _ => Spanned {
                 span: r_paren.start.until(self.curr_tok.span.end),
-                inner: Type::Unit,
+                inner: None,
             },
         };
 
@@ -1093,7 +1097,7 @@ mod tests {
                     (FunctionDefinition @ 0..30,
                         name: ("main", @ 3..7),
                         params @ 7..9: [],
-                        return_type: (Type::Unit, @ 8..11),
+                        return_type: (None, @ 8..11),
                         block: (Block @ 10..30,
                             stmts: [
                                 (LetStmt @ 12..25,
@@ -1137,7 +1141,7 @@ mod tests {
                         params @ 6..29: [
                             (("left", @ 7..11), (Type::Int, @ 13..16)),
                             (("right", @ 18..23), (Type::Int, @ 25..28))],
-                        return_type: (Type::Int, @ 33..36),
+                        return_type: (Some(Type::Int), @ 33..36),
                         block: (Block @ 37..61,
                             stmts: [
                                 (ReturnStmt @ 39..59, (Some(InfixExpr @ 46..58,
@@ -1169,14 +1173,14 @@ mod tests {
                     (FunctionDefinition @ 0..9,
                         name: ("a", @ 3..4),
                         params @ 4..6: [],
-                        return_type: (Type::Unit, @ 5..8),
+                        return_type: (None, @ 5..8),
                         block: (Block @ 7..9,
                             stmts: [],
                             expr: (None))),
                     (FunctionDefinition @ 10..19,
                         name: ("b", @ 13..14),
                         params @ 14..16: [],
-                        return_type: (Type::Unit, @ 15..18),
+                        return_type: (None, @ 15..18),
                         block: (Block @ 17..19,
                             stmts: [],
                             expr: (None)))])
