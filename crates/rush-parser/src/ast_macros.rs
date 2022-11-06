@@ -128,12 +128,12 @@ macro_rules! tree {
     };
     ((
         CallExpr @ $start:literal .. $end:literal,
-        expr: $expr:tt,
+        func: $func:tt,
         args: [$($arg:tt),* $(,)?] $(,)?
     )) => {
         Expression::Call(CallExpr {
             span: span!($start..$end),
-            expr: tree!($expr),
+            func: tree!($func),
             args: vec![$(tree!($arg)),*],
         }.into())
     };

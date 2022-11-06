@@ -439,8 +439,8 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         // skip the operator token
         self.next()?;
 
-        // PrefixExpr precedence is 29, higher than all InfixExpr precedences
-        let expr = self.expression(29)?;
+        // PrefixExpr precedence is 27, higher than all InfixExpr precedences except CallExpr
+        let expr = self.expression(27)?;
         Ok(PrefixExpr {
             span: start_loc.until(self.prev_tok.span.end),
             op,
@@ -608,8 +608,9 @@ mod tests {
     ) -> Result<()> {
         let mut parser = Parser::new(tokens.into_iter());
         parser.next()?;
-        assert_eq!(dbg!(parser.expression(0)?), dbg!(tree));
+        let expr = parser.expression(0)?;
         assert!(dbg!(parser.errors).is_empty());
+        assert_eq!(dbg!(expr), dbg!(tree));
         Ok(())
     }
 
@@ -621,8 +622,9 @@ mod tests {
     ) -> Result<()> {
         let mut parser = Parser::new(tokens.into_iter());
         parser.next()?;
-        assert_eq!(dbg!(parser.statement()?), Either::Left(dbg!(tree)));
+        let stmt = parser.statement()?;
         assert!(dbg!(parser.errors).is_empty());
+        assert_eq!(dbg!(stmt), Either::Left(dbg!(tree)));
         Ok(())
     }
 
@@ -634,8 +636,8 @@ mod tests {
     ) -> Result<()> {
         let parser = Parser::new(tokens.into_iter());
         let (res, errors) = parser.parse();
-        assert_eq!(dbg!(res?), dbg!(tree));
         assert!(dbg!(errors).is_empty());
+        assert_eq!(dbg!(res?), dbg!(tree));
         Ok(())
     }
 
@@ -828,6 +830,28 @@ mod tests {
                                     (ExprStmt @ 26..28, (Int 1, @ 26..27))],
                                 expr: (None)),
                             else_block: (None))))))
+            },
+        )?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn prefix_expressions() -> Result<()> {
+        // !func()
+        expr_test(
+            tokens![
+                Not @ 0..1,
+                Ident("func") @ 1..5,
+                LParen @ 5..6,
+                RParen @ 6..7,
+            ],
+            tree! {
+                (PrefixExpr @ 0..7,
+                    op: PrefixOp::Not,
+                    expr: (CallExpr @ 1..7,
+                        func: ("func", @ 1..5),
+                        args: []))
             },
         )?;
 
