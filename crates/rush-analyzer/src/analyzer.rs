@@ -698,11 +698,15 @@ impl<'src> Analyzer<'src> {
         right_type: Type,
         op: InfixOp,
         span: Span,
+        override_result_type: Option<Type>,
     ) -> Type {
         match (left_type, right_type) {
             (Type::Unknown, _) | (_, Type::Unknown) => Type::Unknown,
             (Type::Never, _) | (_, Type::Never) => Type::Never,
-            (left, right) if left == right && types.contains(&left) => left,
+            (left, right) if left == right && types.contains(&left) => match override_result_type {
+                Some(type_) => type_,
+                None => left,
+            },
             (left, right) if left != right => {
                 self.error(
                     ErrorKind::Type,
@@ -730,19 +734,20 @@ impl<'src> Analyzer<'src> {
         let lhs = self.visit_expression(node.lhs);
         let rhs = self.visit_expression(node.rhs);
 
-        let expected_types = match node.op {
-            InfixOp::Plus
-            | InfixOp::Minus
-            | InfixOp::Mul
-            | InfixOp::Div
-            | InfixOp::Lt
-            | InfixOp::Gt
-            | InfixOp::Lte
-            | InfixOp::Gte => &[Type::Int, Type::Float][..],
-            InfixOp::Rem | InfixOp::Pow | InfixOp::Shl | InfixOp::Shr => &[Type::Int],
-            InfixOp::Eq | InfixOp::Neq => &[Type::Int, Type::Float, Type::Bool, Type::Char],
-            InfixOp::BitOr | InfixOp::BitAnd | InfixOp::BitXor => &[Type::Int, Type::Bool],
-            InfixOp::And | InfixOp::Or => &[Type::Bool],
+        let (expected_types, override_type): (&[Type], _) = match node.op {
+            InfixOp::Plus | InfixOp::Minus | InfixOp::Mul | InfixOp::Div => {
+                (&[Type::Int, Type::Float], None)
+            }
+            InfixOp::Lt | InfixOp::Gt | InfixOp::Lte | InfixOp::Gte => {
+                (&[Type::Int, Type::Float], Some(Type::Bool))
+            }
+            InfixOp::Rem | InfixOp::Pow | InfixOp::Shl | InfixOp::Shr => (&[Type::Int], None),
+            InfixOp::Eq | InfixOp::Neq => (
+                &[Type::Int, Type::Float, Type::Bool, Type::Char],
+                Some(Type::Bool),
+            ),
+            InfixOp::BitOr | InfixOp::BitAnd | InfixOp::BitXor => (&[Type::Int, Type::Bool], None),
+            InfixOp::And | InfixOp::Or => (&[Type::Bool], None),
         };
         let result_type = self.infix_test_types(
             expected_types,
@@ -750,6 +755,7 @@ impl<'src> Analyzer<'src> {
             rhs.result_type(),
             node.op,
             node.span,
+            override_type,
         );
 
         AnalyzedExpression::Infix(
