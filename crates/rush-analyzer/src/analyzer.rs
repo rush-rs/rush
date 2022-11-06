@@ -929,7 +929,21 @@ impl<'src> Analyzer<'src> {
                     (result_type, args)
                 }
             }
-            None => (Type::Unknown, vec![]),
+            None => {
+                let mut result_type = Type::Unknown;
+                let args = node
+                    .args
+                    .into_iter()
+                    .map(|arg| {
+                        let arg = self.visit_expression(arg);
+                        if arg.result_type() == Type::Never {
+                            result_type = Type::Never;
+                        }
+                        arg
+                    })
+                    .collect();
+                (result_type, args)
+            }
         };
 
         AnalyzedExpression::Call(
