@@ -80,9 +80,9 @@ impl Backend {
                     None,
                     Some("rush-analyzer".to_string()),
                     format!(
-                        "{}: {}",
+                        "{}{}",
                         if let DiagnosticLevel::Error(kind) = &diagnostic.level {
-                            kind.to_string()
+                            format!("{}: ", kind)
                         } else {
                             "".to_string()
                         },
