@@ -4,7 +4,7 @@ fn main() {
     let mut answer: int = 42; // int (i64)
     let pi: float = 3.14159265358979323846264338327950; // float (f64)
     let is_good: bool = false; // bool
-    let char_ = 'a'; // ASCII char (u8)
+    let _char = 'a'; // ASCII char (u8)
 
     // Re-assignments
     answer += 3;
@@ -30,9 +30,9 @@ fn main() {
     (1 + 2) * 3 / 4 % 5 ** 6 - 7; // arithmetic operators
     1 >> 2 << 3 | 4 & 5 ^ 6; // bitwise operators
     true || false && true; // logical operators
-    1 < 2 <= 3 > 0 >= -1, 1 == 1, 1 != 2; // relational operators
+    1 < 2 <= 3 > 0 >= -1; 1 == 1; 1 != 2; // relational operators
 
-    let float_ = if answer > pi || is_good {
+    let _float = if answer > pi || is_good {
         answer;
     } else if pi > answer {
         pi;
@@ -43,12 +43,13 @@ fn main() {
     exit(1); // -> ! // exit(code: int) -> (), uses WASI proc_exit(i32)
 }
 
-fn add(left: int, right: int) -> int {
+fn _add(left: int, right: int) -> int {
     left + right
 }
 
 ////////////// PART TWO //////////////
 
+/*
 fn main() {
     let name = "rush";
     let array: [int; 3] = [1, 2, 3];
@@ -64,3 +65,4 @@ fn main() {
     //     print(char_);
     // }
 }
+*/
