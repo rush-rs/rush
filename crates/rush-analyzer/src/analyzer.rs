@@ -93,7 +93,7 @@ impl<'src> Analyzer<'src> {
         ))
     }
 
-    /// Analyzes a parsed AST and returns an analyzed AST whilst emmitting diagnostics
+    /// Analyzes a parsed AST and returns an analyzed AST whilst emitting diagnostics
     pub fn analyze(
         mut self,
         program: Program<'src>,
