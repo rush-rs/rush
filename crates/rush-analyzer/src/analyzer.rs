@@ -17,7 +17,7 @@ pub struct Analyzer<'src> {
 #[derive(Debug)]
 pub struct Function<'src> {
     pub ident: Spanned<&'src str>,
-    pub params: Vec<(Spanned<&'src str>, Spanned<Type>)>,
+    pub params: Spanned<Vec<(Spanned<&'src str>, Spanned<Type>)>>,
     pub return_type: Spanned<Type>,
     pub used: bool,
 }
@@ -204,30 +204,21 @@ impl<'src> Analyzer<'src> {
         let is_main_fn = node.name.inner == "main";
 
         if is_main_fn {
-            // the main function must have no parameters
-            if !node.params.is_empty() {
+            // the main function must have 0 parameters
+            if !node.params.inner.is_empty() {
                 self.error(
                     ErrorKind::Semantic,
                     format!(
                         "the `main` function must have 0 parameters, however {} {} defined",
-                        node.params.len(),
-                        if node.params.len() == 1 { "is" } else { "are" },
+                        node.params.inner.len(),
+                        if node.params.inner.len() == 1 {
+                            "is"
+                        } else {
+                            "are"
+                        },
                     ),
                     vec!["remove the parameters: `fn main() { ... }`".into()],
-                    node.params
-                        .first()
-                        .expect("this error is created by a parameter")
-                        .0
-                        .span
-                        .start
-                        .until(
-                            node.params
-                                .last()
-                                .expect("when there is a first parameter, there is a last")
-                                .1
-                                .span
-                                .end,
-                        ),
+                    node.params.span,
                 )
             }
 
@@ -253,7 +244,7 @@ impl<'src> Analyzer<'src> {
 
         // only analyze parameters if this is not the main function
         if !is_main_fn {
-            for (ident, type_) in node.params {
+            for (ident, type_) in node.params.inner {
                 // check for duplicate function parameters
                 if !param_names.insert(ident.inner) {
                     self.error(
@@ -281,7 +272,10 @@ impl<'src> Analyzer<'src> {
         self.functions.insert(
             node.name.inner,
             Function {
-                params: params.clone(),
+                params: Spanned {
+                    span: node.params.span,
+                    inner: params.clone(),
+                },
                 return_type: node.return_type.clone(),
                 used: false,
                 ident: node.name.clone(),
@@ -810,11 +804,7 @@ impl<'src> Analyzer<'src> {
         let func = match self.functions.get_mut(node.func.inner) {
             Some(func) => {
                 func.used = true;
-                Some((
-                    func.ident.clone(),
-                    func.return_type.inner,
-                    func.params.clone(),
-                ))
+                Some((func.return_type.inner, func.params.clone()))
             }
             // TODO: builtin functions
             None => {
@@ -832,14 +822,14 @@ impl<'src> Analyzer<'src> {
             }
         };
         let (result_type, args) = match func {
-            Some((func_ident, func_type, func_params)) => {
-                if node.args.len() != func_params.len() {
+            Some((func_type, func_params)) => {
+                if node.args.len() != func_params.inner.len() {
                     self.error(
                         ErrorKind::Reference,
                         format!(
                             "function `{}` takes {} arguments, however {} were supplied",
                             node.func.inner,
-                            func_params.len(),
+                            func_params.inner.len(),
                             node.args.len()
                         ),
                         vec![],
@@ -849,10 +839,9 @@ impl<'src> Analyzer<'src> {
                         format!(
                             "function `{}` defined here with {} parameters",
                             node.func.inner,
-                            func_params.len()
+                            func_params.inner.len()
                         ),
-                        // TODO: use span of params including parens
-                        func_ident.span,
+                        func_params.span,
                     );
                     (func_type, vec![])
                 } else {
@@ -860,7 +849,7 @@ impl<'src> Analyzer<'src> {
                     let args = node
                         .args
                         .into_iter()
-                        .zip(func_params)
+                        .zip(func_params.inner)
                         .map(|(arg, param)| {
                             let arg_span = arg.span();
                             let arg = self.visit_expression(arg);

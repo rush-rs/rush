@@ -49,7 +49,7 @@ pub struct Program<'src> {
 pub struct FunctionDefinition<'src> {
     pub span: Span,
     pub name: Spanned<&'src str>,
-    pub params: Vec<(Spanned<&'src str>, Spanned<Type>)>,
+    pub params: Spanned<Vec<(Spanned<&'src str>, Spanned<Type>)>>,
     pub return_type: Spanned<Type>,
     pub block: Block<'src>,
 }

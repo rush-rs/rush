@@ -92,14 +92,17 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
     }
 
     // expects curr_tok to be the specified token kind and adds a soft error otherwise
-    fn expect_recoverable(&mut self, kind: TokenKind, message: impl Into<String>) -> Result<()> {
-        if self.curr_tok.kind != kind {
+    fn expect_recoverable(&mut self, kind: TokenKind, message: impl Into<String>) -> Result<Span> {
+        let start_loc = self.curr_tok.span.start;
+        let end_loc = if self.curr_tok.kind != kind {
             self.errors
                 .push(Error::new(message.into(), self.curr_tok.span));
+            self.curr_tok.span.start
         } else {
             self.next()?;
-        }
-        Ok(())
+            self.prev_tok.span.end
+        };
+        Ok(start_loc.until(end_loc))
     }
 
     //////////////////////////
@@ -159,6 +162,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
 
         self.expect(TokenKind::Fn)?;
         let name = self.expect_ident()?;
+        let l_paren = self.curr_tok.span;
         self.expect(TokenKind::LParen)?;
 
         let mut params = vec![];
@@ -173,8 +177,12 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             }
         }
 
-        let rparen_loc = self.curr_tok.span.start;
-        self.expect_recoverable(TokenKind::RParen, "missing closing parenthesis")?;
+        let r_paren = self.expect_recoverable(TokenKind::RParen, "missing closing parenthesis")?;
+
+        let params = Spanned {
+            span: l_paren.start.until(r_paren.end),
+            inner: params,
+        };
 
         let return_type = match self.curr_tok.kind {
             TokenKind::Arrow => {
@@ -182,7 +190,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
                 self.type_()?
             }
             _ => Spanned {
-                span: rparen_loc.until(self.curr_tok.span.end),
+                span: r_paren.start.until(self.curr_tok.span.end),
                 inner: Type::Unit,
             },
         };
@@ -1084,7 +1092,7 @@ mod tests {
                 (Program @ 0..30, [
                     (FunctionDefinition @ 0..30,
                         name: ("main", @ 3..7),
-                        params: [],
+                        params @ 7..9: [],
                         return_type: (Type::Unit, @ 8..11),
                         block: (Block @ 10..30,
                             stmts: [
@@ -1126,7 +1134,7 @@ mod tests {
                 (Program @ 0..61, [
                     (FunctionDefinition @ 0..61,
                         name: ("add", @ 3..6),
-                        params: [
+                        params @ 6..29: [
                             (("left", @ 7..11), (Type::Int, @ 13..16)),
                             (("right", @ 18..23), (Type::Int, @ 25..28))],
                         return_type: (Type::Int, @ 33..36),
@@ -1160,14 +1168,14 @@ mod tests {
                 (Program @ 0..19, [
                     (FunctionDefinition @ 0..9,
                         name: ("a", @ 3..4),
-                        params: [],
+                        params @ 4..6: [],
                         return_type: (Type::Unit, @ 5..8),
                         block: (Block @ 7..9,
                             stmts: [],
                             expr: (None))),
                     (FunctionDefinition @ 10..19,
                         name: ("b", @ 13..14),
-                        params: [],
+                        params @ 14..16: [],
                         return_type: (Type::Unit, @ 15..18),
                         block: (Block @ 17..19,
                             stmts: [],
