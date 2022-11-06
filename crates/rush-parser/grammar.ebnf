@@ -23,6 +23,7 @@ IfExpr           = 'if' , Expression , Block , [ 'else' , ( IfExpr
 ExprWithoutBlock = int
                  | float
                  | bool
+                 | char
                  | ident
                  | PrefixExpr
                  | InfixExpr

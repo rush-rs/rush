@@ -328,6 +328,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             TokenKind::Float(num) => Expression::Float(self.atom(num)?),
             TokenKind::True => Expression::Bool(self.atom(true)?),
             TokenKind::False => Expression::Bool(self.atom(false)?),
+            TokenKind::Char(char) => Expression::Char(self.atom(char)?),
             TokenKind::Ident(ident) => Expression::Ident(self.atom(ident)?),
             TokenKind::Not => Expression::Prefix(self.prefix_expr(PrefixOp::Not)?.into()),
             TokenKind::Minus => Expression::Prefix(self.prefix_expr(PrefixOp::Neg)?.into()),
