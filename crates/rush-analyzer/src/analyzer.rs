@@ -471,6 +471,7 @@ impl<'src> Analyzer<'src> {
             Expression::Int(node) => AnalyzedExpression::Int(node.inner),
             Expression::Float(node) => AnalyzedExpression::Float(node.inner),
             Expression::Bool(node) => AnalyzedExpression::Bool(node.inner),
+            Expression::Char(node) => AnalyzedExpression::Char(node.inner),
             Expression::Ident(node) => self.visit_ident_expr(node),
             Expression::Prefix(node) => self.visit_prefix_expr(*node),
             Expression::Infix(node) => self.visit_infix_expr(*node),
