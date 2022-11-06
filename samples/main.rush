@@ -30,7 +30,7 @@ fn main() {
     (1 + 2) * 3 / 4 % 5 ** 6 - 7; // arithmetic operators
     1 >> 2 << 3 | 4 & 5 ^ 6; // bitwise operators
     true || false && true; // logical operators
-    1 < 2 <= 3 > 0 >= -1, 1 == 1, 1 != 2; // relational operators
+    1 < 2 <= 3 > 0 >= -1; 1 == 1; 1 != 2; // relational operators
 
     let float_ = if answer > pi || is_good {
         answer;
@@ -49,6 +49,7 @@ fn add(left: int, right: int) -> int {
 
 ////////////// PART TWO //////////////
 
+/*
 fn main() {
     let name = "rush";
     let array: [int; 3] = [1, 2, 3];
@@ -64,3 +65,4 @@ fn main() {
     //     print(char_);
     // }
 }
+*/
