@@ -360,24 +360,29 @@ impl<'src> Analyzer<'src> {
     fn visit_block(&mut self, node: Block<'src>) -> AnalyzedBlock<'src> {
         let mut stmts = vec![];
 
-        let mut is_unreachable = false;
+        let mut never_type_span = None;
         let mut warned_unreachable = false;
 
         for stmt in node.stmts {
-            if is_unreachable && !warned_unreachable {
-                self.warn("unreachable statement", vec![], stmt.span());
-                warned_unreachable = true;
+            if let Some(span) = never_type_span {
+                if !warned_unreachable {
+                    self.warn("unreachable statement", vec![], stmt.span());
+                    self.hint("any code following this statement is unreachable", span);
+                    warned_unreachable = true;
+                }
             }
+            let stmt_span = stmt.span();
             let stmt = self.visit_statement(stmt);
             if stmt.result_type() == Type::Never {
-                is_unreachable = true;
+                never_type_span = Some(stmt_span);
             }
             stmts.push(stmt);
         }
 
         // possibly mark trailing expression as unreachable
-        if let (Some(expr), true, false) = (&node.expr, is_unreachable, warned_unreachable) {
+        if let (Some(expr), Some(span), false) = (&node.expr, never_type_span, warned_unreachable) {
             self.warn("unreachable expression", vec![], expr.span());
+            self.hint("any code following this statement is unreachable", span);
         }
 
         // analyze the expression
@@ -645,6 +650,7 @@ impl<'src> Analyzer<'src> {
     }
 
     fn visit_prefix_expr(&mut self, node: PrefixExpr<'src>) -> AnalyzedExpression<'src> {
+        let expr_span = node.expr.span();
         let expr = self.visit_expression(node.expr);
 
         let result_type = match node.op {
@@ -652,6 +658,14 @@ impl<'src> Analyzer<'src> {
                 match expr.result_type() {
                     Type::Bool => Type::Bool,
                     Type::Unknown => Type::Unknown,
+                    Type::Never => {
+                        self.warn("unreachable expression", vec![], node.span);
+                        self.hint(
+                            "any code following this expression is unreachable",
+                            expr_span,
+                        );
+                        Type::Never
+                    }
                     _ => {
                         self.error(
                             ErrorKind::Type,
@@ -702,6 +716,7 @@ impl<'src> Analyzer<'src> {
     ) -> Type {
         match (left_type, right_type) {
             (Type::Unknown, _) | (_, Type::Unknown) => Type::Unknown,
+            // TODO: warn unreachable expression
             (Type::Never, _) | (_, Type::Never) => Type::Never,
             (left, right) if left == right && types.contains(&left) => match override_result_type {
                 Some(type_) => type_,
@@ -809,6 +824,7 @@ impl<'src> Analyzer<'src> {
         let expr = self.visit_expression(node.expr);
         let result_type = match (node.op, var_type, expr.result_type()) {
             (_, Type::Unknown, _) | (_, _, Type::Unknown) => Type::Unknown,
+            // TODO: warn unreachable expression
             (_, Type::Never, _) | (_, _, Type::Never) => Type::Never,
             (_, left, right) if left != right => {
                 self.error(
@@ -911,6 +927,7 @@ impl<'src> Analyzer<'src> {
 
                             match (arg.result_type(), param.1.inner) {
                                 (Type::Unknown, _) | (_, Type::Unknown) => {}
+                                // TODO: warn unreachable expression
                                 (Type::Never, _) => result_type = Type::Never,
                                 (arg_type, param_type) if arg_type != param_type => {
                                     self.error(
@@ -961,6 +978,7 @@ impl<'src> Analyzer<'src> {
 
         let result_type = match (expr.result_type(), node.type_.inner) {
             (Type::Unknown, _) => Type::Unknown,
+            // TODO warn unreachable expression
             (Type::Never, _) => Type::Never,
             (
                 Type::Int | Type::Float | Type::Bool | Type::Char,
