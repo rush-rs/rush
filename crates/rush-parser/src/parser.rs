@@ -200,8 +200,22 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
 
     fn parameter(&mut self) -> Result<(Spanned<&'src str>, Spanned<Type>)> {
         let name = self.expect_ident()?;
-        self.expect(TokenKind::Colon)?;
-        let type_ = self.type_()?;
+        let type_ = match self.curr_tok.kind {
+            TokenKind::Comma | TokenKind::RParen => {
+                self.errors.push(Error::new(
+                    format!("missing type for parameter `{}`", name.inner),
+                    name.span,
+                ));
+                Spanned {
+                    span: Span::default(),
+                    inner: Type::Unknown,
+                }
+            }
+            _ => {
+                self.expect(TokenKind::Colon)?;
+                self.type_()?
+            }
+        };
         Ok((name, type_))
     }
 

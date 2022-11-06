@@ -866,7 +866,6 @@ impl<'src> Analyzer<'src> {
                             let arg = self.visit_expression(arg);
 
                             match (arg.result_type(), param.1.inner) {
-                                // TODO: parser soft error for undefined types
                                 (Type::Unknown, _) | (_, Type::Unknown) => {}
                                 (Type::Never, _) => result_type = Type::Never,
                                 (arg_type, param_type) if arg_type != param_type => {
