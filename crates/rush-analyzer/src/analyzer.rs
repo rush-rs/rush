@@ -554,13 +554,14 @@ impl<'src> Analyzer<'src> {
         let then_block = self.visit_block(node.then_block);
 
         // analyze else_block if it exists
-        let (else_block, result_type) = match node.else_block {
+        let result_type;
+        let else_block = match node.else_block {
             Some(else_block) => {
                 let else_result_span = else_block.result_span();
                 let else_block = self.visit_block(else_block);
 
                 // check type equality of the `then` and `else` branches
-                let result_type = match (then_block.result_type, else_block.result_type) {
+                result_type = match (then_block.result_type, else_block.result_type) {
                     (Type::Unknown, _) | (_, Type::Unknown) => Type::Unknown,
                     (Type::Unit | Type::Never, Type::Unit | Type::Never) => Type::Unit,
                     (then_type, else_type) if then_type == else_type => then_type,
@@ -579,10 +580,10 @@ impl<'src> Analyzer<'src> {
                     }
                 };
 
-                (Some(else_block), result_type)
+                Some(else_block)
             }
             None => {
-                let result_type = if !matches!(
+                result_type = if !matches!(
                     then_block.result_type,
                     Type::Unit | Type::Never | Type::Unknown
                 ) {
@@ -600,7 +601,7 @@ impl<'src> Analyzer<'src> {
                     then_block.result_type
                 };
 
-                (None, result_type)
+                None
             }
         };
 
