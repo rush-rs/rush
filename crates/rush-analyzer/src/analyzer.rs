@@ -187,6 +187,14 @@ impl<'src> Analyzer<'src> {
             .expect("statements and expressions only exist in function bodies")
     }
 
+    fn warn_unreachable_expr(&mut self, unreachable_span: Span, causing_span: Span) {
+        self.warn("unreachable expression", vec![], unreachable_span);
+        self.hint(
+            "any code following this expression is unreachable",
+            causing_span,
+        );
+    }
+
     fn visit_function_definition(
         &mut self,
         node: FunctionDefinition<'src>,
@@ -659,11 +667,7 @@ impl<'src> Analyzer<'src> {
                     Type::Bool => Type::Bool,
                     Type::Unknown => Type::Unknown,
                     Type::Never => {
-                        self.warn("unreachable expression", vec![], node.span);
-                        self.hint(
-                            "any code following this expression is unreachable",
-                            expr_span,
-                        );
+                        self.warn_unreachable_expr(node.span, expr_span);
                         Type::Never
                     }
                     _ => {
@@ -708,16 +712,22 @@ impl<'src> Analyzer<'src> {
     fn infix_test_types(
         &mut self,
         types: &[Type],
-        left_type: Type,
-        right_type: Type,
+        (left_type, right_type): (Type, Type),
         op: InfixOp,
         span: Span,
         override_result_type: Option<Type>,
+        (lhs_span, rhs_span): (Span, Span),
     ) -> Type {
         match (left_type, right_type) {
             (Type::Unknown, _) | (_, Type::Unknown) => Type::Unknown,
-            // TODO: warn unreachable expression
-            (Type::Never, _) | (_, Type::Never) => Type::Never,
+            (Type::Never, _) => {
+                self.warn_unreachable_expr(span, lhs_span);
+                Type::Never
+            }
+            (_, Type::Never) => {
+                self.warn_unreachable_expr(span, rhs_span);
+                Type::Never
+            }
             (left, right) if left == right && types.contains(&left) => match override_result_type {
                 Some(type_) => type_,
                 None => left,
@@ -746,6 +756,8 @@ impl<'src> Analyzer<'src> {
     }
 
     fn visit_infix_expr(&mut self, node: InfixExpr<'src>) -> AnalyzedExpression<'src> {
+        let lhs_span = node.lhs.span();
+        let rhs_span = node.rhs.span();
         let lhs = self.visit_expression(node.lhs);
         let rhs = self.visit_expression(node.rhs);
 
@@ -766,11 +778,11 @@ impl<'src> Analyzer<'src> {
         };
         let result_type = self.infix_test_types(
             expected_types,
-            lhs.result_type(),
-            rhs.result_type(),
+            (lhs.result_type(), rhs.result_type()),
             node.op,
             node.span,
             override_type,
+            (lhs_span, rhs_span),
         );
 
         AnalyzedExpression::Infix(
@@ -824,8 +836,10 @@ impl<'src> Analyzer<'src> {
         let expr = self.visit_expression(node.expr);
         let result_type = match (node.op, var_type, expr.result_type()) {
             (_, Type::Unknown, _) | (_, _, Type::Unknown) => Type::Unknown,
-            // TODO: warn unreachable expression
-            (_, Type::Never, _) | (_, _, Type::Never) => Type::Never,
+            (_, _, Type::Never) => {
+                self.warn_unreachable_expr(node.span, expr_span);
+                Type::Never
+            }
             (_, left, right) if left != right => {
                 self.error(
                     ErrorKind::Type,
@@ -927,8 +941,10 @@ impl<'src> Analyzer<'src> {
 
                             match (arg.result_type(), param.1.inner) {
                                 (Type::Unknown, _) | (_, Type::Unknown) => {}
-                                // TODO: warn unreachable expression
-                                (Type::Never, _) => result_type = Type::Never,
+                                (Type::Never, _) => {
+                                    self.warn_unreachable_expr(node.span, arg_span);
+                                    result_type = Type::Never;
+                                }
                                 (arg_type, param_type) if arg_type != param_type => {
                                     self.error(
                                         ErrorKind::Type,
@@ -974,12 +990,15 @@ impl<'src> Analyzer<'src> {
     }
 
     fn visit_cast_expr(&mut self, node: CastExpr<'src>) -> AnalyzedExpression<'src> {
+        let expr_span = node.expr.span();
         let expr = self.visit_expression(node.expr);
 
         let result_type = match (expr.result_type(), node.type_.inner) {
             (Type::Unknown, _) => Type::Unknown,
-            // TODO warn unreachable expression
-            (Type::Never, _) => Type::Never,
+            (Type::Never, _) => {
+                self.warn_unreachable_expr(node.span, expr_span);
+                Type::Never
+            }
             (
                 Type::Int | Type::Float | Type::Bool | Type::Char,
                 Type::Int | Type::Float | Type::Bool | Type::Char,
