@@ -1,3 +1,6 @@
+#[macro_use]
+mod macros;
+
 mod analyzer;
 mod ast;
 mod diagnostic;

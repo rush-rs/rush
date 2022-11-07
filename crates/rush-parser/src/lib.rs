@@ -1,4 +1,4 @@
-#[cfg(test)]
+#[macro_export]
 macro_rules! span {
     ($start:literal .. $end:literal) => {
         $crate::Location {
@@ -16,9 +16,8 @@ macro_rules! span {
     };
 }
 
-#[cfg(test)]
 #[macro_use]
-mod ast_macros;
+mod macros;
 
 pub mod ast;
 mod error;

@@ -1,3 +1,4 @@
+#[macro_export]
 macro_rules! tree {
     ((None)) => { None };
     ((Some($($node:tt)*))) => { Some(tree!(($($node)*))) };
@@ -82,6 +83,7 @@ macro_rules! tree {
     ((Int $($rest:tt)*)) => { Expression::Int(tree!(($($rest)*))) };
     ((Float $($rest:tt)*)) => { Expression::Float(tree!(($($rest)*))) };
     ((Bool $($rest:tt)*)) => { Expression::Bool(tree!(($($rest)*))) };
+    ((Char $($rest:tt)*)) => { Expression::Char(tree!(($($rest)*))) };
     ((Ident $($rest:tt)*)) => { Expression::Ident(tree!(($($rest)*))) };
     ((Grouped @ $start:literal .. $end:literal, $expr:tt)) => {
         Expression::Grouped(Spanned {
@@ -157,6 +159,7 @@ macro_rules! tree {
     };
 }
 
+#[macro_export]
 macro_rules! tokens {
     ($($kind:ident $(($($tt:tt)*))? @ $start:literal .. $end:literal),* $(,)?) => {
         [$(TokenKind::$kind $(($($tt)*))? .spanned(span!($start..$end))),*]

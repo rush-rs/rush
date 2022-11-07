@@ -397,7 +397,7 @@ impl<'src> Analyzer<'src> {
         let expr = node.expr.map(|expr| self.visit_expression(expr));
 
         let result_type = expr.as_ref().map_or(Type::Unit, |expr| expr.result_type());
-        let constant = expr.as_ref().map_or(false, |expr| expr.constant()) && stmts.is_empty();
+        let constant = expr.as_ref().map_or(true, |expr| expr.constant()) && stmts.is_empty();
 
         AnalyzedBlock {
             result_type,
@@ -469,7 +469,6 @@ impl<'src> Analyzer<'src> {
         }
 
         AnalyzedStatement::Let(AnalyzedLetStmt {
-            mutable: node.mutable,
             name: node.name.inner,
             expr,
         })
@@ -1027,5 +1026,74 @@ impl<'src> Analyzer<'src> {
             }
             .into(),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use rush_parser::{span, tree};
+
+    fn program_test(parsed_tree: Program, analyzed_tree: AnalyzedProgram) -> Result<(), Vec<Diagnostic>> {
+        let (tree, diagnostics) = dbg!(Analyzer::new().analyze(parsed_tree))?;
+        assert!(!diagnostics.iter().any(|diag| matches!(diag.level, DiagnosticLevel::Error(_))));
+        assert_eq!(tree, analyzed_tree);
+        Ok(())
+    }
+
+    #[test]
+    fn programs() -> Result<(), Vec<Diagnostic>> {
+        // fn add(left: int, right: int) -> int { return left + right; } fn main() {}
+        program_test(
+            tree! {
+                (Program @ 0..61, [
+                    (FunctionDefinition @ 0..61,
+                        name: ("add", @ 3..6),
+                        params @ 6..29: [
+                            (("left", @ 7..11), (Type::Int, @ 13..16)),
+                            (("right", @ 18..23), (Type::Int, @ 25..28))],
+                        return_type: (Some(Type::Int), @ 33..36),
+                        block: (Block @ 37..61,
+                            stmts: [
+                                (ReturnStmt @ 39..59, (Some(InfixExpr @ 46..58,
+                                    lhs: (Ident "left", @ 46..50),
+                                    op: InfixOp::Plus,
+                                    rhs: (Ident "right", @ 53..58))))],
+                            expr: (None))),
+                    (FunctionDefinition @ 62..74,
+                        name: ("main", @ 65..69),
+                        params @ 69..71: [],
+                        return_type: (None, @ 70..73),
+                        block: (Block @ 72..74,
+                            stmts: [],
+                            expr: (None)))])
+            },
+            analyzed_tree! {
+                (Program,
+                    functions: [
+                        (FunctionDefinition,
+                            name: "add",
+                            params: [
+                                ("left", Type::Int),
+                                ("right", Type::Int)],
+                            return_type: Type::Int,
+                            block: (Block -> Type::Unit,
+                                constant: false,
+                                stmts: [
+                                    (ReturnStmt, (Some(InfixExpr -> Type::Int,
+                                        constant: false,
+                                        lhs: (Ident -> Type::Int, "left"),
+                                        op: InfixOp::Plus,
+                                        rhs: (Ident -> Type::Int, "right"))))],
+                                expr: (None)))],
+                    main_fn: (Block -> Type::Unit,
+                        constant: true,
+                        stmts: [],
+                        expr: (None)))
+            },
+        )?;
+
+        Ok(())
     }
 }

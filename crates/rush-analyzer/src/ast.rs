@@ -49,7 +49,6 @@ impl AnalyzedStatement<'_> {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnalyzedLetStmt<'src> {
-    pub mutable: bool,
     pub name: &'src str,
     pub expr: AnalyzedExpression<'src>,
 }
