@@ -333,7 +333,8 @@ impl<'src> Analyzer<'src> {
 
         // check that the block results in the expected type
         if block.result_type != node.return_type.inner.unwrap_or(Type::Unit)
-            && block.result_type != Type::Unknown
+            // unknown and never types are tolerated
+            && !matches!(block.result_type, Type::Unknown | Type::Never)
         {
             self.error(
                 ErrorKind::Type,
@@ -409,7 +410,11 @@ impl<'src> Analyzer<'src> {
         // analyze the expression
         let expr = node.expr.map(|expr| self.visit_expression(expr));
 
-        let result_type = expr.as_ref().map_or(Type::Unit, |expr| expr.result_type());
+        // result type is `!` when any statement had type `!`, otherwise the type of the expr
+        let result_type = match never_type_span {
+            Some(_) => Type::Never,
+            None => expr.as_ref().map_or(Type::Unit, |expr| expr.result_type()),
+        };
         let constant = expr.as_ref().map_or(true, |expr| expr.constant()) && stmts.is_empty();
 
         AnalyzedBlock {
@@ -587,9 +592,15 @@ impl<'src> Analyzer<'src> {
 
                 // check type equality of the `then` and `else` branches
                 result_type = match (then_block.result_type, else_block.result_type) {
+                    // unknown when any branch is unknown
                     (Type::Unknown, _) | (_, Type::Unknown) => Type::Unknown,
+                    // never when both branches are never
+                    (Type::Never, Type::Never) => Type::Never,
+                    // unit when both branches are either unit or never
                     (Type::Unit | Type::Never, Type::Unit | Type::Never) => Type::Unit,
+                    // the then_type when both branches have the same type
                     (then_type, else_type) if then_type == else_type => then_type,
+                    // unknown and error otherwise
                     _ => {
                         self.error(
                             ErrorKind::Type,
@@ -608,22 +619,21 @@ impl<'src> Analyzer<'src> {
                 Some(else_block)
             }
             None => {
-                result_type = if !matches!(
-                    then_block.result_type,
-                    Type::Unit | Type::Never | Type::Unknown
-                ) {
-                    self.error(
-                        ErrorKind::Type,
-                        format!(
-                            "mismatched types: missing else branch with `{}` result type",
-                            then_block.result_type
-                        ),
-                        vec![format!("the `if` branch results in `{}`, therefore an else branch was expected", then_block.result_type).into()],
-                        node.span,
-                    );
-                    Type::Unknown
-                } else {
-                    then_block.result_type
+                result_type = match then_block.result_type {
+                    Type::Unknown => Type::Unknown,
+                    Type::Unit | Type::Never => Type::Unit,
+                    _ => {
+                        self.error(
+                            ErrorKind::Type,
+                            format!(
+                                "mismatched types: missing else branch with `{}` result type",
+                                then_block.result_type
+                            ),
+                            vec![format!("the `if` branch results in `{}`, therefore an else branch was expected", then_block.result_type).into()],
+                            node.span,
+                        );
+                        Type::Unknown
+                    }
                 };
 
                 None
@@ -1097,7 +1107,7 @@ mod tests {
                                 ("left", Type::Int),
                                 ("right", Type::Int)],
                             return_type: Type::Int,
-                            block: (Block -> Type::Unit,
+                            block: (Block -> Type::Never,
                                 constant: false,
                                 stmts: [
                                     (ReturnStmt, (Some(InfixExpr -> Type::Int,
