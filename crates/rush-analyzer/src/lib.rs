@@ -10,6 +10,8 @@ use std::iter;
 pub use analyzer::*;
 use ast::AnalyzedProgram;
 pub use diagnostic::*;
+
+pub use rush_parser::ast::Type;
 use rush_parser::{Lexer, Parser};
 
 /// Analyzes rush source code and returns an analyzed (annotated) AST.
