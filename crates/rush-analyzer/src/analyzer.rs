@@ -221,8 +221,15 @@ impl<'src> Analyzer<'src> {
             .expect("statements and expressions only exist in function bodies")
     }
 
-    fn warn_unreachable_expr(&mut self, unreachable_span: Span, causing_span: Span) {
-        self.warn("unreachable expression", vec![], unreachable_span);
+    fn warn_unreachable(&mut self, unreachable_span: Span, causing_span: Span, expr: bool) {
+        self.warn(
+            match expr {
+                true => "unreachable expression",
+                false => "unreachable statement",
+            },
+            vec![],
+            unreachable_span,
+        );
         self.hint(
             "any code following this expression is unreachable",
             causing_span,
@@ -516,10 +523,19 @@ impl<'src> Analyzer<'src> {
 
     fn visit_return_stmt(&mut self, node: ReturnStmt<'src>) -> AnalyzedStatement<'src> {
         // if there is an expression, visit it
+        let expr_span = node.expr.as_ref().map(|expr| expr.span());
         let expr = node.expr.map(|expr| self.visit_expression(expr));
 
         // get the return type based on the expr (Unit as fallback)
         let return_type = expr.as_ref().map_or(Type::Unit, |expr| expr.result_type());
+
+        if return_type == Type::Never {
+            self.warn_unreachable(
+                node.span,
+                expr_span.expect("the never type was caused by an expression"),
+                false,
+            );
+        }
 
         let curr_fn = self
             .functions
@@ -528,7 +544,8 @@ impl<'src> Analyzer<'src> {
 
         // test if the return type is correct
         if curr_fn.return_type.inner.unwrap_or(Type::Unit) != return_type
-            && return_type != Type::Unknown
+            // unknown and never types are tolerated
+            && !matches!(return_type, Type::Unknown | Type::Never)
         {
             let fn_type_span = curr_fn.return_type.span;
             let fn_type_explicit = curr_fn.return_type.inner.is_some();
@@ -711,7 +728,7 @@ impl<'src> Analyzer<'src> {
                     Type::Bool => Type::Bool,
                     Type::Unknown => Type::Unknown,
                     Type::Never => {
-                        self.warn_unreachable_expr(node.span, expr_span);
+                        self.warn_unreachable(node.span, expr_span, true);
                         Type::Never
                     }
                     _ => {
@@ -765,11 +782,11 @@ impl<'src> Analyzer<'src> {
         match (left_type, right_type) {
             (Type::Unknown, _) | (_, Type::Unknown) => Type::Unknown,
             (Type::Never, _) => {
-                self.warn_unreachable_expr(span, lhs_span);
+                self.warn_unreachable(span, lhs_span, true);
                 Type::Never
             }
             (_, Type::Never) => {
-                self.warn_unreachable_expr(span, rhs_span);
+                self.warn_unreachable(span, rhs_span, true);
                 Type::Never
             }
             (left, right) if left == right && types.contains(&left) => match override_result_type {
@@ -881,7 +898,7 @@ impl<'src> Analyzer<'src> {
         let result_type = match (node.op, var_type, expr.result_type()) {
             (_, Type::Unknown, _) | (_, _, Type::Unknown) => Type::Unknown,
             (_, _, Type::Never) => {
-                self.warn_unreachable_expr(node.span, expr_span);
+                self.warn_unreachable(node.span, expr_span, true);
                 Type::Never
             }
             (_, left, right) if left != right => {
@@ -1065,7 +1082,7 @@ impl<'src> Analyzer<'src> {
         match (arg.result_type(), param_type) {
             (Type::Unknown, _) | (_, Type::Unknown) => {}
             (Type::Never, _) => {
-                self.warn_unreachable_expr(call_span, arg_span);
+                self.warn_unreachable(call_span, arg_span, true);
                 *result_type = Type::Never;
             }
             (arg_type, param_type) if arg_type != param_type => self.error(
@@ -1087,7 +1104,7 @@ impl<'src> Analyzer<'src> {
         let result_type = match (expr.result_type(), node.type_.inner) {
             (Type::Unknown, _) => Type::Unknown,
             (Type::Never, _) => {
-                self.warn_unreachable_expr(node.span, expr_span);
+                self.warn_unreachable(node.span, expr_span, true);
                 Type::Never
             }
             (
