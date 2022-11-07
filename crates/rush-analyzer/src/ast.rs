@@ -8,6 +8,7 @@ pub struct AnalyzedProgram<'src> {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnalyzedFunctionDefinition<'src> {
+    pub used: bool,
     pub name: &'src str,
     pub params: Vec<(&'src str, Type)>,
     pub return_type: Type,

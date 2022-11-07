@@ -115,19 +115,31 @@ impl<'src> Analyzer<'src> {
         // check if there are any unused functions
         let unused_funcs: Vec<_> = self
             .functions
-            .iter()
-            .filter(|(ident, func)| **ident != "main" && !ident.starts_with('_') && !func.used)
-            .map(|(ident, func)| (*ident, func.ident.span))
+            .values()
+            .filter(|func| {
+                func.ident.inner != "main" && !func.ident.inner.starts_with('_') && !func.used
+            })
+            .map(|func| {
+                // set used = false in tree
+                functions
+                    .iter_mut()
+                    .find(|func_def| func_def.name == func.ident.inner)
+                    .expect("every unused function is defined")
+                    .used = false;
+
+                func.ident.clone()
+            })
             .collect();
 
-        for (name, ident_span) in unused_funcs {
+        for ident in unused_funcs {
             self.warn(
-                format!("function `{}` is never called", name),
+                format!("function `{}` is never called", ident.inner),
                 vec![format!(
-                    "if this is intentional, change the name to `_{name}` to hide this warning"
+                    "if this is intentional, change the name to `_{}` to hide this warning",
+                    ident.inner,
                 )
                 .into()],
-                ident_span,
+                ident.span,
             )
         }
 
@@ -358,6 +370,7 @@ impl<'src> Analyzer<'src> {
         self.drop_scope();
 
         AnalyzedFunctionDefinition {
+            used: true, // is modified in Self::analyze()
             name: node.name.inner,
             params: params_without_spans,
             return_type: node.return_type.inner.unwrap_or(Type::Unit),
@@ -1035,9 +1048,14 @@ mod tests {
 
     use rush_parser::{span, tree};
 
-    fn program_test(parsed_tree: Program, analyzed_tree: AnalyzedProgram) -> Result<(), Vec<Diagnostic>> {
+    fn program_test(
+        parsed_tree: Program,
+        analyzed_tree: AnalyzedProgram,
+    ) -> Result<(), Vec<Diagnostic>> {
         let (tree, diagnostics) = dbg!(Analyzer::new().analyze(parsed_tree))?;
-        assert!(!diagnostics.iter().any(|diag| matches!(diag.level, DiagnosticLevel::Error(_))));
+        assert!(!diagnostics
+            .iter()
+            .any(|diag| matches!(diag.level, DiagnosticLevel::Error(_))));
         assert_eq!(tree, analyzed_tree);
         Ok(())
     }
@@ -1073,6 +1091,7 @@ mod tests {
                 (Program,
                     functions: [
                         (FunctionDefinition,
+                            used: false,
                             name: "add",
                             params: [
                                 ("left", Type::Int),
