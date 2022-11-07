@@ -49,7 +49,7 @@ impl Diagnostic {
         let notes: String = self
             .notes
             .iter()
-            .map(|note| format!("\n \x1b[1;34mnote:\x1b[0m {note}"))
+            .map(|note| format!("\n \x1b[1;36mnote:\x1b[0m {note}"))
             .collect();
 
         // take special action if the source code is empty or there is no useful span
