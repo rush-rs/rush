@@ -10,6 +10,7 @@ use crate::{ast::*, Diagnostic, DiagnosticLevel, ErrorKind};
 #[derive(Default, Debug)]
 pub struct Analyzer<'src> {
     pub functions: HashMap<&'src str, Function<'src>>,
+    builtin_functions: HashMap<&'static str, BuiltinFunction>,
     scope: Option<Scope<'src>>,
     pub diagnostics: Vec<Diagnostic>,
 }
@@ -20,6 +21,21 @@ pub struct Function<'src> {
     pub params: Spanned<Vec<(Spanned<&'src str>, Spanned<Type>)>>,
     pub return_type: Spanned<Option<Type>>,
     pub used: bool,
+}
+
+#[derive(Debug, Clone)]
+struct BuiltinFunction {
+    param_types: Vec<Type>,
+    return_type: Type,
+}
+
+impl BuiltinFunction {
+    fn new(param_types: Vec<Type>, return_type: Type) -> Self {
+        Self {
+            param_types,
+            return_type,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -39,7 +55,13 @@ pub struct Variable {
 impl<'src> Analyzer<'src> {
     /// Creates a new [`Analyzer`].
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            builtin_functions: HashMap::from([(
+                "exit",
+                BuiltinFunction::new(vec![Type::Int], Type::Never),
+            )]),
+            ..Default::default()
+        }
     }
 
     /// Adds a new diagnostic with the `Hint` level
@@ -905,16 +927,55 @@ impl<'src> Analyzer<'src> {
     }
 
     fn visit_call_expr(&mut self, node: CallExpr<'src>) -> AnalyzedExpression<'src> {
-        let func = match self.functions.get_mut(node.func.inner) {
-            Some(func) => {
+        let func = match (
+            self.functions.get_mut(node.func.inner),
+            self.builtin_functions.get(node.func.inner),
+        ) {
+            (Some(func), _) => {
                 func.used = true;
                 Some((
                     func.return_type.inner.unwrap_or(Type::Unit),
                     func.params.clone(),
                 ))
             }
-            // TODO: builtin functions
-            None => {
+            (_, Some(builtin)) => {
+                let builtin = builtin.clone();
+                let (result_type, args) = if node.args.len() != builtin.param_types.len() {
+                    self.error(
+                        ErrorKind::Reference,
+                        format!(
+                            "function `{}` takes {} arguments, however {} were supplied",
+                            node.func.inner,
+                            builtin.param_types.len(),
+                            node.args.len()
+                        ),
+                        vec![],
+                        node.span,
+                    );
+                    (builtin.return_type, vec![])
+                } else {
+                    let mut result_type = builtin.return_type;
+                    let args = node
+                        .args
+                        .into_iter()
+                        .zip(builtin.param_types)
+                        .map(|(arg, param_type)| {
+                            self.visit_arg(arg, param_type, node.span, &mut result_type)
+                        })
+                        .collect();
+                    (result_type, args)
+                };
+
+                return AnalyzedExpression::Call(
+                    AnalyzedCallExpr {
+                        result_type,
+                        func: node.func.inner,
+                        args,
+                    }
+                    .into(),
+                );
+            }
+            (None, None) => {
                 self.error(
                     ErrorKind::Reference,
                     format!("use of undeclared function `{}`", node.func.inner),
@@ -958,27 +1019,7 @@ impl<'src> Analyzer<'src> {
                         .into_iter()
                         .zip(func_params.inner)
                         .map(|(arg, param)| {
-                            let arg_span = arg.span();
-                            let arg = self.visit_expression(arg);
-
-                            match (arg.result_type(), param.1.inner) {
-                                (Type::Unknown, _) | (_, Type::Unknown) => {}
-                                (Type::Never, _) => {
-                                    self.warn_unreachable_expr(node.span, arg_span);
-                                    result_type = Type::Never;
-                                }
-                                (arg_type, param_type) if arg_type != param_type => {
-                                    self.error(
-                                        ErrorKind::Type,
-                                        format!("mismatched types: expected `{param_type}`, found `{arg_type}`"),
-                                        vec![],
-                                        arg_span,
-                                    )
-                                }
-                                _ => {}
-                            }
-
-                            arg
+                            self.visit_arg(arg, param.1.inner, node.span, &mut result_type)
                         })
                         .collect();
                     (result_type, args)
@@ -1009,6 +1050,34 @@ impl<'src> Analyzer<'src> {
             }
             .into(),
         )
+    }
+
+    fn visit_arg(
+        &mut self,
+        arg: Expression<'src>,
+        param_type: Type,
+        call_span: Span,
+        result_type: &mut Type,
+    ) -> AnalyzedExpression<'src> {
+        let arg_span = arg.span();
+        let arg = self.visit_expression(arg);
+
+        match (arg.result_type(), param_type) {
+            (Type::Unknown, _) | (_, Type::Unknown) => {}
+            (Type::Never, _) => {
+                self.warn_unreachable_expr(call_span, arg_span);
+                *result_type = Type::Never;
+            }
+            (arg_type, param_type) if arg_type != param_type => self.error(
+                ErrorKind::Type,
+                format!("mismatched types: expected `{param_type}`, found `{arg_type}`"),
+                vec![],
+                arg_span,
+            ),
+            _ => {}
+        }
+
+        arg
     }
 
     fn visit_cast_expr(&mut self, node: CastExpr<'src>) -> AnalyzedExpression<'src> {
