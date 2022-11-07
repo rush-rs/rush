@@ -250,7 +250,7 @@ impl<'src> Analyzer<'src> {
         // info for explicit unit return type
         if node.return_type.inner == Some(Type::Unit) {
             self.info(
-                "unneccessary explicit unit return type",
+                "unnecessary explicit unit return type",
                 vec![
                     "functions implicitly return `()` by default".into(),
                     format!(
