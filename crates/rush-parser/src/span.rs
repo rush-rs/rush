@@ -1,4 +1,6 @@
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+use std::fmt::Debug;
+
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
 pub struct Span {
     pub start: Location,
     pub end: Location,
@@ -7,6 +9,19 @@ pub struct Span {
 impl Span {
     pub fn new(start: Location, end: Location) -> Self {
         Self { start, end }
+    }
+}
+
+impl Debug for Span {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match f.alternate() {
+            true => write!(
+                f,
+                "{}:{}..{}:{}",
+                self.start.line, self.start.column, self.end.line, self.end.column
+            ),
+            false => write!(f, "{}..{}", self.start.byte_idx, self.end.byte_idx),
+        }
     }
 }
 
