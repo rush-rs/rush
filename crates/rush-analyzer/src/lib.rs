@@ -2,7 +2,7 @@
 mod macros;
 
 mod analyzer;
-mod ast;
+pub mod ast;
 mod diagnostic;
 
 use std::iter;
