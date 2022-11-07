@@ -1,3 +1,6 @@
+// TODO: go over these points
+// - add helper function for getting the current function 
+
 use std::collections::HashMap;
 
 use crate::error::Result;
