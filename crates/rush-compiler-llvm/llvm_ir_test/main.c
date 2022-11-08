@@ -1,5 +1,7 @@
 #include <stdlib.h>
+#include <math.h>
 
-int main() {
-    exit(1);
+int main()
+{
+    exit(pow(2.0, 2.0));
 }

@@ -1,7 +1,7 @@
 // TODO: go over these points
 // - add helper function for getting the current function
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::error::Result;
 use inkwell::{
@@ -10,13 +10,13 @@ use inkwell::{
     module::{Linkage, Module},
     targets::TargetTriple,
     types::BasicMetadataTypeEnum,
-    values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum},
+    values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum, FloatValue},
 };
 use rush_analyzer::{
     ast::{
-        AnalyzedBlock, AnalyzedCallExpr, AnalyzedExpression, AnalyzedFunctionDefinition,
-        AnalyzedInfixExpr, AnalyzedLetStmt, AnalyzedPrefixExpr, AnalyzedProgram,
-        AnalyzedReturnStmt, AnalyzedStatement,
+        AnalyzedBlock, AnalyzedCallExpr, AnalyzedCastExpr, AnalyzedExpression,
+        AnalyzedFunctionDefinition, AnalyzedInfixExpr, AnalyzedLetStmt, AnalyzedPrefixExpr,
+        AnalyzedProgram, AnalyzedReturnStmt, AnalyzedStatement,
     },
     InfixOp, PrefixOp, Type,
 };
@@ -28,13 +28,16 @@ pub struct Compiler<'ctx> {
 
     // contains information about the current function
     curr_fn: Option<Function<'ctx>>,
+
+    // contains all builtin functions already declared in the IR
+    declared_builtins: HashSet<&'ctx str>,
 }
 
 #[derive(Debug)]
 struct Function<'ctx> {
     // saves the declared variables of the function
     // TODO: remove the need for String allocation
-    vars: HashMap<String, BasicValueEnum<'ctx>>,
+    vars: HashMap<String, Option<BasicValueEnum<'ctx>>>,
     // specifies whether the function has already returned
     has_returned: bool,
 }
@@ -51,6 +54,7 @@ impl<'ctx> Compiler<'ctx> {
             module,
             builder: context.create_builder(),
             curr_fn: None,
+            declared_builtins: HashSet::new(),
         }
     }
 
@@ -113,19 +117,25 @@ impl<'ctx> Compiler<'ctx> {
         });
 
         // create the function's parameters
-        let params = node
+        let params: Vec<BasicMetadataTypeEnum> = node
             .params
             .iter()
-            .map(|param| match param.1 {
-                Type::Int => BasicMetadataTypeEnum::IntType(self.context.i64_type()),
-                Type::Float => BasicMetadataTypeEnum::FloatType(self.context.f64_type()),
-                Type::Bool => BasicMetadataTypeEnum::IntType(self.context.bool_type()),
-                Type::Char => BasicMetadataTypeEnum::IntType(self.context.i8_type()),
-                Type::Unit | Type::Never | Type::Unknown => {
-                    unreachable!("the analyzer disallows these types to be used as parameters")
-                }
+            .filter_map(|param| {
+                Some(match param.1 {
+                    Type::Int => BasicMetadataTypeEnum::IntType(self.context.i64_type()),
+                    Type::Float => BasicMetadataTypeEnum::FloatType(self.context.f64_type()),
+                    Type::Bool => BasicMetadataTypeEnum::IntType(self.context.bool_type()),
+                    Type::Char => BasicMetadataTypeEnum::IntType(self.context.i8_type()),
+                    Type::Unit => {
+                        self.curr_fn_mut().vars.insert(param.0.to_string(), None);
+                        return None;
+                    }
+                    Type::Never | Type::Unknown => {
+                        unreachable!("the analyzer disallows these types to be used as parameters")
+                    }
+                })
             })
-            .collect::<Vec<BasicMetadataTypeEnum>>();
+            .collect();
 
         // create the function's signature
         let signature = match node.return_type {
@@ -134,8 +144,9 @@ impl<'ctx> Compiler<'ctx> {
             Type::Unit => self.context.void_type().fn_type(&params, false),
             Type::Char => self.context.i8_type().fn_type(&params, false),
             Type::Bool => self.context.bool_type().fn_type(&params, false),
-            Type::Never => todo!("contemplate what to do on never type functions"),
-            Type::Unknown => unreachable!("the function's return type must be known at this point"),
+            Type::Unknown | Type::Never => {
+                unreachable!("functions do not return values of these types")
+            }
         };
 
         let function = self
@@ -146,14 +157,21 @@ impl<'ctx> Compiler<'ctx> {
         let basic_block = self.context.append_basic_block(function, "entry");
         self.builder.position_at_end(basic_block);
 
-        // bind each parameter to the original value (for later reference)
-        for (i, param) in node.params.iter().enumerate() {
+        // bind each non-unit-tye parameter to the original value (for later reference)
+        for (i, param) in node
+            .params
+            .iter()
+            .filter(|param| param.1 != Type::Unit) // filter out any values of type `()`
+            .enumerate()
+        {
             let value = function
                 .get_nth_param(i as u32)
                 .expect("this parameter exists");
 
-            // insert the parameter into the map
-            self.curr_fn_mut().vars.insert(param.0.to_string(), value);
+            // insert the parameter into the vars map
+            self.curr_fn_mut()
+                .vars
+                .insert(param.0.to_string(), Some(value));
         }
 
         // build the return value of the function's body
@@ -189,10 +207,7 @@ impl<'ctx> Compiler<'ctx> {
         // compile the value
         let value = self.compile_expression(&node.expr);
         // insert the value into the vars of the current function
-        self.curr_fn_mut().vars.insert(
-            node.name.to_string(),
-            value.expect("let bindings with `()` as rhs are forbidden"),
-        );
+        self.curr_fn_mut().vars.insert(node.name.to_string(), value);
     }
 
     fn compile_return_statement(&mut self, node: &AnalyzedReturnStmt) {
@@ -210,16 +225,16 @@ impl<'ctx> Compiler<'ctx> {
             AnalyzedExpression::Int(value) => Some(BasicValueEnum::IntValue(
                 self.context.i64_type().const_int(*value as u64, false),
             )),
-            AnalyzedExpression::Ident(name) => Some(
-                *self
-                    .curr_fn()
-                    .vars
-                    .get(name.ident)
-                    .expect("this variable was declared beforehand"),
-            ),
+            AnalyzedExpression::Ident(name) => *self
+                .curr_fn()
+                .vars
+                .get(name.ident)
+                .expect("this variable was declared beforehand"),
             AnalyzedExpression::Call(node) => self.compile_call_expression(node),
-            AnalyzedExpression::Infix(node) => self.compile_infix_expression(node),
-            AnalyzedExpression::Prefix(node) => self.compile_prefix_expression(node),
+            AnalyzedExpression::Grouped(node) => self.compile_expression(node),
+            AnalyzedExpression::Infix(node) => Some(self.compile_infix_expression(node)),
+            AnalyzedExpression::Prefix(node) => Some(self.compile_prefix_expression(node)),
+            AnalyzedExpression::Cast(node) => Some(self.compile_cast_expression(node)),
             _ => todo!("implement this expression kind: {:?}", node),
         }
     }
@@ -242,14 +257,13 @@ impl<'ctx> Compiler<'ctx> {
                 .expect("this is only called in functions"),
         };
 
-        // compile the function args
+        // compile the function args excluding any unit-type values
         let args: Vec<BasicMetadataValueEnum> = node
             .args
             .iter()
-            .map(|arg| {
+            .filter_map(|arg| {
                 self.compile_expression(arg)
-                    .expect("value of type `()` shall not be used as function parameters")
-                    .into()
+                    .map(BasicMetadataValueEnum::from)
             })
             .collect();
 
@@ -265,10 +279,7 @@ impl<'ctx> Compiler<'ctx> {
         }
     }
 
-    fn compile_infix_expression(
-        &mut self,
-        node: &AnalyzedInfixExpr,
-    ) -> Option<BasicValueEnum<'ctx>> {
+    fn compile_infix_expression(&mut self, node: &AnalyzedInfixExpr) -> BasicValueEnum<'ctx> {
         let lhs = self
             .compile_expression(&node.lhs)
             .expect("can only use infix expressions on non-unit values");
@@ -278,23 +289,94 @@ impl<'ctx> Compiler<'ctx> {
             .expect("can only use infix expressions on non-unit values");
 
         match node.result_type {
+            Type::Float => {
+                let lhs = lhs.into_float_value();
+                let rhs = rhs.into_float_value();
+                match node.op {
+                    InfixOp::Plus => self.builder.build_float_add(lhs, rhs, "f_sum"),
+                    InfixOp::Minus => self.builder.build_float_sub(lhs, rhs, "f_sum"),
+                    InfixOp::Mul => self.builder.build_float_mul(lhs, rhs, "f_prod"),
+                    InfixOp::Div => self.builder.build_float_div(lhs, rhs, "f_prod"),
+                    InfixOp::Rem => self.builder.build_float_rem(lhs, rhs, "f_rem"),
+                    InfixOp::Pow => self.pow_helper(lhs, rhs),
+                    _ => todo!("implement more operators"),
+                }
+                .as_basic_value_enum()
+            }
             Type::Int => {
                 let lhs = lhs.into_int_value();
                 let rhs = rhs.into_int_value();
-                Some(
-                    match node.op {
-                        InfixOp::Plus => self.builder.build_int_add(lhs, rhs, "sum"),
-                        InfixOp::Mul => self.builder.build_int_mul(lhs, rhs, "prod"),
-                        InfixOp::Div => self.builder.build_int_signed_div(lhs, rhs, "res"),
-                        InfixOp::Rem => self.builder.build_int_signed_rem(lhs, rhs, "rem"),
-                        InfixOp::Pow => todo!(),
-                        _ => todo!(),
+                match node.op {
+                    InfixOp::Plus => self.builder.build_int_add(lhs, rhs, "i_sum"),
+                    InfixOp::Minus => self.builder.build_int_sub(lhs, rhs, "i_sum"),
+                    InfixOp::Mul => self.builder.build_int_mul(lhs, rhs, "i_prod"),
+                    InfixOp::Div => self.builder.build_int_signed_div(lhs, rhs, "i_prod"),
+                    InfixOp::Rem => self.builder.build_int_signed_rem(lhs, rhs, "i_rem"),
+                    InfixOp::Pow => {
+                        // convert both arguments to f64
+                        let lhs_f64 = self.builder.build_signed_int_to_float(
+                            lhs,
+                            self.context.f64_type(),
+                            "pow_lhs",
+                        );
+                        let rhs_f64 = self.builder.build_signed_int_to_float(
+                            rhs,
+                            self.context.f64_type(),
+                            "pow_rhs",
+                        );
+
+                        let pow_res = self.pow_helper(lhs_f64, rhs_f64);
+
+                        // convert the result back to i64
+                        let res = self.builder.build_float_to_signed_int(
+                            pow_res,
+                            self.context.i64_type(),
+                            "pow_i64_res",
+                        );
+
+                        res
                     }
-                    .as_basic_value_enum(),
-                )
+                    _ => todo!("implement more operators"),
+                }
+                .as_basic_value_enum()
             }
-            _ => todo!(),
+            _ => todo!("implement other types"),
         }
+    }
+
+    fn pow_helper(&mut self, lhs: FloatValue<'ctx>, rhs: FloatValue<'ctx>) -> FloatValue<'ctx> {
+        // declare the pow builtin function if not already declared
+        if self.declared_builtins.insert("pow") {
+            let pow_type = self.context.f64_type().fn_type(
+                &[
+                    BasicMetadataTypeEnum::FloatType(self.context.f64_type()),
+                    BasicMetadataTypeEnum::FloatType(self.context.f64_type()),
+                ],
+                false,
+            );
+            self.module
+                .add_function("pow", pow_type, Some(Linkage::External));
+        }
+
+        // call the pow builtin function
+        let args: Vec<BasicMetadataValueEnum> = vec![
+            BasicValueEnum::FloatValue(lhs).into(),
+            BasicValueEnum::FloatValue(rhs).into(),
+        ];
+
+        let res = self
+            .builder
+            .build_call(
+                self.module
+                    .get_function("pow")
+                    .expect("pow is already declared"),
+                &args,
+                "pow",
+            )
+            .try_as_basic_value()
+            .expect_left("pow always returns a value");
+
+        res.into_float_value()
     }
 
     fn compile_prefix_expression(&mut self, node: &AnalyzedPrefixExpr) -> BasicValueEnum<'ctx> {
@@ -320,6 +402,25 @@ impl<'ctx> Compiler<'ctx> {
         }
     }
 
+    fn compile_cast_expression(&mut self, node: &AnalyzedCastExpr) -> BasicValueEnum<'ctx> {
+        let lhs = self
+            .compile_expression(&node.expr)
+            .expect("casting is only possible on non-unit values");
+
+        /*
+        match (lhs, node.type_) {
+            (BasicValueEnum::IntValue(value), Type::Int) => lhs,
+            (BasicValueEnum::IntValue(value), Type::Float) => BasicValueEnum::FloatValue(FloatValue::) self
+                .builder
+                .build_signed_int_to_float(lhs.into_int_value(), self.context.f64_type(), "ifcast"),
+            _ => todo!(""),
+        }
+        */
+        todo!()
+    }
+
+    /// Builds a return instruction if the current block has no terminater
+    /// TODO: impl block check
     fn build_return(&mut self, return_value: Option<BasicValueEnum<'ctx>>) {
         let mut curr_fn = self.curr_fn_mut();
         if !curr_fn.has_returned {
@@ -328,7 +429,7 @@ impl<'ctx> Compiler<'ctx> {
                 Some(value) => self.builder.build_return(Some(&value)),
                 None => self.builder.build_return(None),
             };
-        };
+        }
     }
 }
 
@@ -342,24 +443,13 @@ mod tests {
 
     #[test]
     fn test_main_fn() {
-        let (ast, _) = rush_analyzer::analyze(
-            "
-        fn exit_me(code: int) {
-            exit(code * 2);
-        }
-
-        fn main() {
-            exit_me(-2);
-        }
-        ",
-        )
-        .unwrap();
+        let (ast, _) = rush_analyzer::analyze(include_str!("../test.rush")).unwrap();
 
         let context = Context::create();
         let mut compiler = Compiler::new(&context, TargetMachine::get_default_triple());
 
         let out = compiler.compile(ast).unwrap();
-        fs::write("./llvm_ir_test/main.ll", &out).unwrap();
+        fs::write("./main.ll", &out).unwrap();
         println!("{out}");
     }
 }
