@@ -1,5 +1,5 @@
 // TODO: go over these points
-// - add helper function for getting the current function 
+// - add helper function for getting the current function
 
 use std::collections::HashMap;
 
@@ -10,14 +10,15 @@ use inkwell::{
     module::{Linkage, Module},
     targets::TargetTriple,
     types::BasicMetadataTypeEnum,
-    values::BasicValueEnum,
+    values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum},
 };
 use rush_analyzer::{
     ast::{
-        AnalyzedBlock, AnalyzedExpression, AnalyzedFunctionDefinition, AnalyzedLetStmt,
-        AnalyzedProgram, AnalyzedReturnStmt, AnalyzedStatement,
+        AnalyzedBlock, AnalyzedCallExpr, AnalyzedExpression, AnalyzedFunctionDefinition,
+        AnalyzedInfixExpr, AnalyzedLetStmt, AnalyzedPrefixExpr, AnalyzedProgram,
+        AnalyzedReturnStmt, AnalyzedStatement,
     },
-    Type,
+    InfixOp, PrefixOp, Type,
 };
 
 pub struct Compiler<'ctx> {
@@ -53,6 +54,18 @@ impl<'ctx> Compiler<'ctx> {
         }
     }
 
+    fn curr_fn(&self) -> &Function<'ctx> {
+        self.curr_fn
+            .as_ref()
+            .expect("this is only called from functions")
+    }
+
+    fn curr_fn_mut(&mut self) -> &mut Function<'ctx> {
+        self.curr_fn
+            .as_mut()
+            .expect("this is only called from functions")
+    }
+
     pub fn compile(&mut self, program: AnalyzedProgram) -> Result<String> {
         // compile all defined functions which are later used
         for func in program.functions.iter().filter(|func| func.used) {
@@ -63,7 +76,6 @@ impl<'ctx> Compiler<'ctx> {
         self.compile_main_fn(&program.main_fn);
 
         // return the LLVM IR
-        println!("{}", self.module.print_to_string().to_string());
         self.module.verify()?;
         Ok(self.module.print_to_string().to_string())
     }
@@ -87,8 +99,6 @@ impl<'ctx> Compiler<'ctx> {
 
         // build the function's block
         self.compile_block(node);
-
-        dbg!(&self.curr_fn);
 
         // return exit-code 0 by default
         //let success = self.context.i64_type().const_zero();
@@ -143,11 +153,7 @@ impl<'ctx> Compiler<'ctx> {
                 .expect("this parameter exists");
 
             // insert the parameter into the map
-            self.curr_fn
-                .as_mut()
-                .expect("this is only called in function bodies")
-                .vars
-                .insert(param.0.to_string(), value);
+            self.curr_fn_mut().vars.insert(param.0.to_string(), value);
         }
 
         // build the return value of the function's body
@@ -158,18 +164,15 @@ impl<'ctx> Compiler<'ctx> {
     /// Compiles a block and returns its return value
     fn compile_block(&mut self, node: &AnalyzedBlock) -> Option<BasicValueEnum<'ctx>> {
         for stmt in &node.stmts {
-            if self
-                .curr_fn
-                .as_ref()
-                .expect("this is only called from functions")
-                .has_returned
-            {
+            if self.curr_fn().has_returned {
                 break;
             }
             self.compile_statement(stmt);
         }
         // if there is an expression, return its value instead of void
-        node.expr.as_ref().map(|expr| self.compile_expression(expr))
+        node.expr
+            .as_ref()
+            .map_or_else(|| None, |expr| self.compile_expression(expr))
     }
 
     fn compile_statement(&mut self, node: &AnalyzedStatement) {
@@ -186,34 +189,139 @@ impl<'ctx> Compiler<'ctx> {
         // compile the value
         let value = self.compile_expression(&node.expr);
         // insert the value into the vars of the current function
-        self.curr_fn
-            .as_mut()
-            .expect("this is only called from functions")
-            .vars
-            .insert(node.name.to_string(), value);
+        self.curr_fn_mut().vars.insert(
+            node.name.to_string(),
+            value.expect("let bindings with `()` as rhs are forbidden"),
+        );
     }
 
     fn compile_return_statement(&mut self, node: &AnalyzedReturnStmt) {
         match node {
             Some(expr) => {
                 let value = self.compile_expression(expr);
-                self.builder.build_return(Some(&value))
+                self.build_return(value)
             }
-            None => self.builder.build_return(None),
+            None => self.build_return(None),
         };
     }
 
-    fn compile_expression(&mut self, node: &AnalyzedExpression) -> BasicValueEnum<'ctx> {
-        // TODO: implement expressions
-        BasicValueEnum::IntValue(self.context.i64_type().const_int(42, false))
+    fn compile_expression(&mut self, node: &AnalyzedExpression) -> Option<BasicValueEnum<'ctx>> {
+        match node {
+            AnalyzedExpression::Int(value) => Some(BasicValueEnum::IntValue(
+                self.context.i64_type().const_int(*value as u64, false),
+            )),
+            AnalyzedExpression::Ident(name) => Some(
+                *self
+                    .curr_fn()
+                    .vars
+                    .get(name.ident)
+                    .expect("this variable was declared beforehand"),
+            ),
+            AnalyzedExpression::Call(node) => self.compile_call_expression(node),
+            AnalyzedExpression::Infix(node) => self.compile_infix_expression(node),
+            AnalyzedExpression::Prefix(node) => self.compile_prefix_expression(node),
+            _ => todo!("implement this expression kind: {:?}", node),
+        }
+    }
+
+    fn compile_call_expression(&mut self, node: &AnalyzedCallExpr) -> Option<BasicValueEnum<'ctx>> {
+        // check that the function is not a builtin one
+        let func = match node.func {
+            "exit" => {
+                let exit_type = self.context.void_type().fn_type(
+                    &[BasicMetadataTypeEnum::IntType(self.context.i64_type())],
+                    false,
+                );
+                self.module
+                    .add_function("exit", exit_type, Some(Linkage::External))
+            }
+            // look up the function name inside the module table
+            _ => self
+                .module
+                .get_function(node.func)
+                .expect("this is only called in functions"),
+        };
+
+        // compile the function args
+        let args: Vec<BasicMetadataValueEnum> = node
+            .args
+            .iter()
+            .map(|arg| {
+                self.compile_expression(arg)
+                    .expect("value of type `()` shall not be used as function parameters")
+                    .into()
+            })
+            .collect();
+
+        let res = self
+            .builder
+            .build_call(func, &args, format!("ret_{}", node.func).as_str())
+            .try_as_basic_value();
+
+        if res.is_left() {
+            Some(res.unwrap_left())
+        } else {
+            None
+        }
+    }
+
+    fn compile_infix_expression(
+        &mut self,
+        node: &AnalyzedInfixExpr,
+    ) -> Option<BasicValueEnum<'ctx>> {
+        let lhs = self
+            .compile_expression(&node.lhs)
+            .expect("can only use infix expressions on non-unit values");
+
+        let rhs = self
+            .compile_expression(&node.rhs)
+            .expect("can only use infix expressions on non-unit values");
+
+        match node.result_type {
+            Type::Int => {
+                let lhs = lhs.into_int_value();
+                let rhs = rhs.into_int_value();
+                Some(
+                    match node.op {
+                        InfixOp::Plus => self.builder.build_int_add(lhs, rhs, "sum"),
+                        InfixOp::Mul => self.builder.build_int_mul(lhs, rhs, "prod"),
+                        InfixOp::Div => self.builder.build_int_signed_div(lhs, rhs, "res"),
+                        InfixOp::Rem => self.builder.build_int_signed_rem(lhs, rhs, "rem"),
+                        InfixOp::Pow => todo!(),
+                        _ => todo!(),
+                    }
+                    .as_basic_value_enum(),
+                )
+            }
+            _ => todo!(),
+        }
+    }
+
+    fn compile_prefix_expression(&mut self, node: &AnalyzedPrefixExpr) -> BasicValueEnum<'ctx> {
+        let base = self
+            .compile_expression(&node.expr)
+            .expect("this must return a non `()` value");
+
+        match (node.expr.result_type(), node.op) {
+            (Type::Int, PrefixOp::Neg) => self
+                .builder
+                .build_int_neg(base.into_int_value(), "neg")
+                .as_basic_value_enum(),
+            (Type::Float, PrefixOp::Neg) => self
+                .builder
+                .build_float_neg(base.into_float_value(), "neg")
+                .as_basic_value_enum(),
+            // TODO: is this the right way of negating bools?
+            (Type::Bool, PrefixOp::Not) => self
+                .builder
+                .build_int_neg(base.into_int_value(), "neg")
+                .as_basic_value_enum(),
+            _ => unreachable!("other types cannot be negated"),
+        }
     }
 
     fn build_return(&mut self, return_value: Option<BasicValueEnum<'ctx>>) {
-        let mut curr_fn = self
-            .curr_fn
-            .as_mut()
-            .expect("this is only called from functions");
-
+        let mut curr_fn = self.curr_fn_mut();
         if !curr_fn.has_returned {
             curr_fn.has_returned = true;
             match return_value {
@@ -226,19 +334,32 @@ impl<'ctx> Compiler<'ctx> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use inkwell::{context::Context, targets::TargetMachine};
 
     use crate::Compiler;
 
     #[test]
     fn test_main_fn() {
-        let (ast, _) =
-            rush_analyzer::analyze("fn aa() -> int { let a = 1; return a; } fn main() { aa(); let a = 1; }").unwrap();
+        let (ast, _) = rush_analyzer::analyze(
+            "
+        fn exit_me(code: int) {
+            exit(code * 2);
+        }
+
+        fn main() {
+            exit_me(-2);
+        }
+        ",
+        )
+        .unwrap();
 
         let context = Context::create();
         let mut compiler = Compiler::new(&context, TargetMachine::get_default_triple());
 
         let out = compiler.compile(ast).unwrap();
+        fs::write("./llvm_ir_test/main.ll", &out).unwrap();
         println!("{out}");
     }
 }
