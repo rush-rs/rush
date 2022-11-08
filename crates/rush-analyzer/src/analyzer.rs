@@ -1107,6 +1107,10 @@ impl<'src> Analyzer<'src> {
                 self.warn_unreachable(node.span, expr_span, true);
                 Type::Never
             }
+            (left, right) if left == right => {
+                self.info("unnecessary cast to same type", vec![], node.span);
+                left
+            }
             (
                 Type::Int | Type::Float | Type::Bool | Type::Char,
                 Type::Int | Type::Float | Type::Bool | Type::Char,
