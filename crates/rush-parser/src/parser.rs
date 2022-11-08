@@ -92,11 +92,15 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
     }
 
     // expects curr_tok to be the specified token kind and adds a soft error otherwise
-    fn expect_recoverable(&mut self, kind: TokenKind, message: impl Into<String>) -> Result<Span> {
+    fn expect_recoverable(
+        &mut self,
+        kind: TokenKind,
+        message: impl Into<String>,
+        span: Span,
+    ) -> Result<Span> {
         let start_loc = self.curr_tok.span.start;
         let end_loc = if self.curr_tok.kind != kind {
-            self.errors
-                .push(Error::new(message.into(), self.curr_tok.span));
+            self.errors.push(Error::new(message.into(), span));
             self.curr_tok.span.start
         } else {
             self.next()?;
@@ -137,7 +141,11 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             }
             TokenKind::LParen => {
                 self.next()?;
-                self.expect_recoverable(TokenKind::RParen, "missing closing parenthesis")?;
+                self.expect_recoverable(
+                    TokenKind::RParen,
+                    "missing closing parenthesis",
+                    self.curr_tok.span,
+                )?;
                 return Ok(Spanned {
                     span: start_loc.until(self.prev_tok.span.end),
                     inner: Type::Unit,
@@ -177,7 +185,11 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             }
         }
 
-        let r_paren = self.expect_recoverable(TokenKind::RParen, "missing closing parenthesis")?;
+        let r_paren = self.expect_recoverable(
+            TokenKind::RParen,
+            "missing closing parenthesis",
+            self.curr_tok.span,
+        )?;
 
         let params = Spanned {
             span: l_paren.start.until(r_paren.end),
@@ -248,7 +260,11 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             }
         }
 
-        self.expect_recoverable(TokenKind::RBrace, "missing closing brace")?;
+        self.expect_recoverable(
+            TokenKind::RBrace,
+            "missing closing brace",
+            self.curr_tok.span,
+        )?;
 
         Ok(Block {
             span: start_loc.until(self.prev_tok.span.end),
@@ -288,7 +304,11 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
 
         self.expect(TokenKind::Assign)?;
         let expr = self.expression(0)?;
-        self.expect_recoverable(TokenKind::Semicolon, "missing semicolon after statement")?;
+        self.expect_recoverable(
+            TokenKind::Semicolon,
+            "missing semicolon after statement",
+            start_loc.until(self.prev_tok.span.end),
+        )?;
 
         Ok(Statement::Let(LetStmt {
             span: start_loc.until(self.prev_tok.span.end),
@@ -306,11 +326,15 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         self.next()?;
 
         let expr = match self.curr_tok.kind {
-            TokenKind::Semicolon => None,
+            TokenKind::Semicolon | TokenKind::RBrace | TokenKind::Eof => None,
             _ => Some(self.expression(0)?),
         };
 
-        self.expect_recoverable(TokenKind::Semicolon, "missing semicolon after statement")?;
+        self.expect_recoverable(
+            TokenKind::Semicolon,
+            "missing semicolon after statement",
+            start_loc.until(self.prev_tok.span.end),
+        )?;
 
         Ok(Statement::Return(ReturnStmt {
             span: start_loc.until(self.prev_tok.span.end),
@@ -334,7 +358,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             (_, true) => {}
             (_, false) => self.errors.push(Error::new(
                 "missing semicolon after statement".to_string(),
-                self.curr_tok.span,
+                expr.span(),
             )),
         }
 
@@ -481,7 +505,11 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         self.next()?;
 
         let expr = self.expression(0)?;
-        self.expect_recoverable(TokenKind::RParen, "missing closing parenthesis")?;
+        self.expect_recoverable(
+            TokenKind::RParen,
+            "missing closing parenthesis",
+            self.curr_tok.span,
+        )?;
 
         Ok(Spanned {
             span: start_loc.until(self.prev_tok.span.end),
@@ -580,7 +608,11 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             }
         }
 
-        self.expect_recoverable(TokenKind::RParen, "missing closing parenthesis")?;
+        self.expect_recoverable(
+            TokenKind::RParen,
+            "missing closing parenthesis",
+            self.curr_tok.span,
+        )?;
 
         Ok(Expression::Call(
             CallExpr {
