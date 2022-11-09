@@ -10,7 +10,7 @@ use inkwell::{
     module::{Linkage, Module},
     targets::TargetTriple,
     types::BasicMetadataTypeEnum,
-    values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum, FloatValue},
+    values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum, FloatValue, PointerValue},
     FloatPredicate, IntPredicate,
 };
 use rush_analyzer::{
@@ -38,7 +38,7 @@ pub struct Compiler<'ctx> {
 struct Function<'ctx> {
     // saves the declared variables of the function
     // TODO: remove the need for String allocation
-    vars: HashMap<String, Option<BasicValueEnum<'ctx>>>,
+    vars: HashMap<String, PointerValue<'ctx>>,
     // specifies whether the function has already returned
     has_returned: bool,
 }
@@ -128,7 +128,12 @@ impl<'ctx> Compiler<'ctx> {
                     Type::Bool => BasicMetadataTypeEnum::IntType(self.context.bool_type()),
                     Type::Char => BasicMetadataTypeEnum::IntType(self.context.i8_type()),
                     Type::Unit => {
-                        self.curr_fn_mut().vars.insert(param.0.to_string(), None);
+                        // allocate a pointer for the dummy parameter
+                        let ptr = self
+                            .builder
+                            .build_alloca(self.context.i8_type(), "skipped_unit");
+                        // insert the dummy pointer into vars
+                        self.curr_fn_mut().vars.insert(param.0.to_string(), ptr);
                         return None;
                     }
                     Type::Never | Type::Unknown => {
@@ -165,6 +170,12 @@ impl<'ctx> Compiler<'ctx> {
             .filter(|param| param.1 != Type::Unit) // filter out any values of type `()`
             .enumerate()
         {
+
+            // todo: do this
+
+            // allocate a pointer for the parameters
+            let ptr = self.builder.build_alloca(ty, name)
+            
             let value = function
                 .get_nth_param(i as u32)
                 .expect("this parameter exists");
@@ -207,6 +218,12 @@ impl<'ctx> Compiler<'ctx> {
     fn compile_let_statement(&mut self, node: &AnalyzedLetStmt) {
         // compile the value
         let value = self.compile_expression(&node.expr);
+
+        // allocate a pointer to the value
+        let ptr = self
+            .builder
+            .build_alloca(self.context.i64_type(), node.name);
+
         // insert the value into the vars of the current function
         self.curr_fn_mut().vars.insert(node.name.to_string(), value);
     }
@@ -235,11 +252,13 @@ impl<'ctx> Compiler<'ctx> {
             AnalyzedExpression::Bool(value) => Some(BasicValueEnum::IntValue(
                 self.context.i8_type().const_int(u64::from(*value), false),
             )),
-            AnalyzedExpression::Ident(name) => *self
-                .curr_fn()
-                .vars
-                .get(name.ident)
-                .expect("this variable was declared beforehand"),
+            AnalyzedExpression::Ident(name) => Some(
+                self.curr_fn()
+                    .vars
+                    .get(name.ident)
+                    .expect("this variable was declared beforehand")
+                    .as_basic_value_enum(),
+            ),
             AnalyzedExpression::Call(node) => self.compile_call_expression(node),
             AnalyzedExpression::Grouped(node) => self.compile_expression(node),
             AnalyzedExpression::Block(node) => self.compile_block(node),
