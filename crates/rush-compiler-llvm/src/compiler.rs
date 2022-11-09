@@ -531,7 +531,6 @@ impl<'ctx> Compiler<'ctx> {
                 .builder
                 .build_float_neg(base.into_float_value(), "neg")
                 .as_basic_value_enum(),
-            // TODO: is this the right way of negating bools?
             (Type::Bool, PrefixOp::Not) => {
                 // convert the original type to i1
                 let value = self.builder.build_int_cast(
@@ -731,7 +730,6 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     /// Builds a return instruction if the current block has no terminator
-    /// TODO: impl block check
     fn build_return(&mut self, return_value: Option<BasicValueEnum<'ctx>>) {
         if !self.current_instruction_is_block_terminator() {
             match (return_value, self.curr_fn().name.as_str()) {
