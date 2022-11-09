@@ -1,0 +1,1312 @@
+#![allow(dead_code)]
+
+/// unreachable = 0x00
+pub const UNREACHABLE: u8 = 0x00;
+
+/// nop = 0x01
+pub const NOP: u8 = 0x01;
+
+/// block = 0x02
+pub const BLOCK: u8 = 0x02;
+
+/// loop = 0x03
+pub const LOOP: u8 = 0x03;
+
+/// if = 0x04
+pub const IF: u8 = 0x04;
+
+/// else = 0x05
+pub const ELSE: u8 = 0x05;
+
+/// end = 0x0B
+pub const END: u8 = 0x0B;
+
+/// br = 0x0C
+pub const BR: u8 = 0x0C;
+
+/// br_if = 0x0D
+pub const BR_IF: u8 = 0x0D;
+
+/// br_table = 0x0E
+pub const BR_TABLE: u8 = 0x0E;
+
+/// return = 0x0F
+pub const RETURN: u8 = 0x0F;
+
+/// call = 0x10
+pub const CALL: u8 = 0x10;
+
+/// call_indirect = 0x11
+pub const CALL_INDIRECT: u8 = 0x11;
+
+/// drop = 0x1A
+pub const DROP: u8 = 0x1A;
+
+/// select = 0x1B
+pub const SELECT: u8 = 0x1B;
+
+/// select = 0x1C
+pub const SELECT_T: u8 = 0x1C;
+
+/// local.get = 0x20
+pub const LOCAL_GET: u8 = 0x20;
+
+/// local.set = 0x21
+pub const LOCAL_SET: u8 = 0x21;
+
+/// local.tee = 0x22
+pub const LOCAL_TEE: u8 = 0x22;
+
+/// global.get = 0x23
+pub const GLOBAL_GET: u8 = 0x23;
+
+/// global.set = 0x24
+pub const GLOBAL_SET: u8 = 0x24;
+
+/// table.get = 0x25
+pub const TABLE_GET: u8 = 0x25;
+
+/// table.set = 0x26
+pub const TABLE_SET: u8 = 0x26;
+
+/// i32.load = 0x28
+pub const I32_LOAD: u8 = 0x28;
+
+/// i64.load = 0x29
+pub const I64_LOAD: u8 = 0x29;
+
+/// f32.load = 0x2A
+pub const F32_LOAD: u8 = 0x2A;
+
+/// f64.load = 0x2B
+pub const F64_LOAD: u8 = 0x2B;
+
+/// i32.load8_s = 0x2C
+pub const I32_LOAD8_S: u8 = 0x2C;
+
+/// i32.load8_u = 0x2D
+pub const I32_LOAD8_U: u8 = 0x2D;
+
+/// i32.load16_s = 0x2E
+pub const I32_LOAD16_S: u8 = 0x2E;
+
+/// i32.load16_u = 0x2F
+pub const I32_LOAD16_U: u8 = 0x2F;
+
+/// i64.load8_s = 0x30
+pub const I64_LOAD8_S: u8 = 0x30;
+
+/// i64.load8_u = 0x31
+pub const I64_LOAD8_U: u8 = 0x31;
+
+/// i64.load16_s = 0x32
+pub const I64_LOAD16_S: u8 = 0x32;
+
+/// i64.load16_u = 0x33
+pub const I64_LOAD16_U: u8 = 0x33;
+
+/// i64.load32_s = 0x34
+pub const I64_LOAD32_S: u8 = 0x34;
+
+/// i64.load32_u = 0x35
+pub const I64_LOAD32_U: u8 = 0x35;
+
+/// i32.store = 0x36
+pub const I32_STORE: u8 = 0x36;
+
+/// i64.store = 0x37
+pub const I64_STORE: u8 = 0x37;
+
+/// f32.store = 0x38
+pub const F32_STORE: u8 = 0x38;
+
+/// f64.store = 0x39
+pub const F64_STORE: u8 = 0x39;
+
+/// i32.store8 = 0x3A
+pub const I32_STORE8: u8 = 0x3A;
+
+/// i32.store16 = 0x3B
+pub const I32_STORE16: u8 = 0x3B;
+
+/// i64.store8 = 0x3C
+pub const I64_STORE8: u8 = 0x3C;
+
+/// i64.store16 = 0x3D
+pub const I64_STORE16: u8 = 0x3D;
+
+/// i64.store32 = 0x3E
+pub const I64_STORE32: u8 = 0x3E;
+
+/// memory.size = 0x3F
+pub const MEMORY_SIZE: u8 = 0x3F;
+
+/// memory.grow = 0x40
+pub const MEMORY_GROW: u8 = 0x40;
+
+/// i32.const = 0x41
+pub const I32_CONST: u8 = 0x41;
+
+/// i64.const = 0x42
+pub const I64_CONST: u8 = 0x42;
+
+/// f32.const = 0x43
+pub const F32_CONST: u8 = 0x43;
+
+/// f64.const = 0x44
+pub const F64_CONST: u8 = 0x44;
+
+/// i32.eqz = 0x45
+pub const I32_EQZ: u8 = 0x45;
+
+/// i32.eq = 0x46
+pub const I32_EQ: u8 = 0x46;
+
+/// i32.ne = 0x47
+pub const I32_NE: u8 = 0x47;
+
+/// i32.lt_s = 0x48
+pub const I32_LT_S: u8 = 0x48;
+
+/// i32.lt_u = 0x49
+pub const I32_LT_U: u8 = 0x49;
+
+/// i32.gt_s = 0x4A
+pub const I32_GT_S: u8 = 0x4A;
+
+/// i32.gt_u = 0x4B
+pub const I32_GT_U: u8 = 0x4B;
+
+/// i32.le_s = 0x4C
+pub const I32_LE_S: u8 = 0x4C;
+
+/// i32.le_u = 0x4D
+pub const I32_LE_U: u8 = 0x4D;
+
+/// i32.ge_s = 0x4E
+pub const I32_GE_S: u8 = 0x4E;
+
+/// i32.ge_u = 0x4F
+pub const I32_GE_U: u8 = 0x4F;
+
+/// i64.eqz = 0x50
+pub const I64_EQZ: u8 = 0x50;
+
+/// i64.eq = 0x51
+pub const I64_EQ: u8 = 0x51;
+
+/// i64.ne = 0x52
+pub const I64_NE: u8 = 0x52;
+
+/// i64.lt_s = 0x53
+pub const I64_LT_S: u8 = 0x53;
+
+/// i64.lt_u = 0x54
+pub const I64_LT_U: u8 = 0x54;
+
+/// i64.gt_s = 0x55
+pub const I64_GT_S: u8 = 0x55;
+
+/// i64.gt_u = 0x56
+pub const I64_GT_U: u8 = 0x56;
+
+/// i64.le_s = 0x57
+pub const I64_LE_S: u8 = 0x57;
+
+/// i64.le_u = 0x58
+pub const I64_LE_U: u8 = 0x58;
+
+/// i64.ge_s = 0x59
+pub const I64_GE_S: u8 = 0x59;
+
+/// i64.ge_u = 0x5A
+pub const I64_GE_U: u8 = 0x5A;
+
+/// f32.eq = 0x5B
+pub const F32_EQ: u8 = 0x5B;
+
+/// f32.ne = 0x5C
+pub const F32_NE: u8 = 0x5C;
+
+/// f32.lt = 0x5D
+pub const F32_LT: u8 = 0x5D;
+
+/// f32.gt = 0x5E
+pub const F32_GT: u8 = 0x5E;
+
+/// f32.le = 0x5F
+pub const F32_LE: u8 = 0x5F;
+
+/// f32.ge = 0x60
+pub const F32_GE: u8 = 0x60;
+
+/// f64.eq = 0x61
+pub const F64_EQ: u8 = 0x61;
+
+/// f64.ne = 0x62
+pub const F64_NE: u8 = 0x62;
+
+/// f64.lt = 0x63
+pub const F64_LT: u8 = 0x63;
+
+/// f64.gt = 0x64
+pub const F64_GT: u8 = 0x64;
+
+/// f64.le = 0x65
+pub const F64_LE: u8 = 0x65;
+
+/// f64.ge = 0x66
+pub const F64_GE: u8 = 0x66;
+
+/// i32.clz = 0x67
+pub const I32_CLZ: u8 = 0x67;
+
+/// i32.ctz = 0x68
+pub const I32_CTZ: u8 = 0x68;
+
+/// i32.popcnt = 0x69
+pub const I32_POPCNT: u8 = 0x69;
+
+/// i32.add = 0x6A
+pub const I32_ADD: u8 = 0x6A;
+
+/// i32.sub = 0x6B
+pub const I32_SUB: u8 = 0x6B;
+
+/// i32.mul = 0x6C
+pub const I32_MUL: u8 = 0x6C;
+
+/// i32.div_s = 0x6D
+pub const I32_DIV_S: u8 = 0x6D;
+
+/// i32.div_u = 0x6E
+pub const I32_DIV_U: u8 = 0x6E;
+
+/// i32.rem_s = 0x6F
+pub const I32_REM_S: u8 = 0x6F;
+
+/// i32.rem_u = 0x70
+pub const I32_REM_U: u8 = 0x70;
+
+/// i32.and = 0x71
+pub const I32_AND: u8 = 0x71;
+
+/// i32.or = 0x72
+pub const I32_OR: u8 = 0x72;
+
+/// i32.xor = 0x73
+pub const I32_XOR: u8 = 0x73;
+
+/// i32.shl = 0x74
+pub const I32_SHL: u8 = 0x74;
+
+/// i32.shr_s = 0x75
+pub const I32_SHR_S: u8 = 0x75;
+
+/// i32.shr_u = 0x76
+pub const I32_SHR_U: u8 = 0x76;
+
+/// i32.rotl = 0x77
+pub const I32_ROTL: u8 = 0x77;
+
+/// i32.rotr = 0x78
+pub const I32_ROTR: u8 = 0x78;
+
+/// i64.clz = 0x79
+pub const I64_CLZ: u8 = 0x79;
+
+/// i64.ctz = 0x7A
+pub const I64_CTZ: u8 = 0x7A;
+
+/// i64.popcnt = 0x7B
+pub const I64_POPCNT: u8 = 0x7B;
+
+/// i64.add = 0x7C
+pub const I64_ADD: u8 = 0x7C;
+
+/// i64.sub = 0x7D
+pub const I64_SUB: u8 = 0x7D;
+
+/// i64.mul = 0x7E
+pub const I64_MUL: u8 = 0x7E;
+
+/// i64.div_s = 0x7F
+pub const I64_DIV_S: u8 = 0x7F;
+
+/// i64.div_u = 0x80
+pub const I64_DIV_U: u8 = 0x80;
+
+/// i64.rem_s = 0x81
+pub const I64_REM_S: u8 = 0x81;
+
+/// i64.rem_u = 0x82
+pub const I64_REM_U: u8 = 0x82;
+
+/// i64.and = 0x83
+pub const I64_AND: u8 = 0x83;
+
+/// i64.or = 0x84
+pub const I64_OR: u8 = 0x84;
+
+/// i64.xor = 0x85
+pub const I64_XOR: u8 = 0x85;
+
+/// i64.shl = 0x86
+pub const I64_SHL: u8 = 0x86;
+
+/// i64.shr_s = 0x87
+pub const I64_SHR_S: u8 = 0x87;
+
+/// i64.shr_u = 0x88
+pub const I64_SHR_U: u8 = 0x88;
+
+/// i64.rotl = 0x89
+pub const I64_ROTL: u8 = 0x89;
+
+/// i64.rotr = 0x8A
+pub const I64_ROTR: u8 = 0x8A;
+
+/// f32.abs = 0x8B
+pub const F32_ABS: u8 = 0x8B;
+
+/// f32.neg = 0x8C
+pub const F32_NEG: u8 = 0x8C;
+
+/// f32.ceil = 0x8D
+pub const F32_CEIL: u8 = 0x8D;
+
+/// f32.floor = 0x8E
+pub const F32_FLOOR: u8 = 0x8E;
+
+/// f32.trunc = 0x8F
+pub const F32_TRUNC: u8 = 0x8F;
+
+/// f32.nearest = 0x90
+pub const F32_NEAREST: u8 = 0x90;
+
+/// f32.sqrt = 0x91
+pub const F32_SQRT: u8 = 0x91;
+
+/// f32.add = 0x92
+pub const F32_ADD: u8 = 0x92;
+
+/// f32.sub = 0x93
+pub const F32_SUB: u8 = 0x93;
+
+/// f32.mul = 0x94
+pub const F32_MUL: u8 = 0x94;
+
+/// f32.div = 0x95
+pub const F32_DIV: u8 = 0x95;
+
+/// f32.min = 0x96
+pub const F32_MIN: u8 = 0x96;
+
+/// f32.max = 0x97
+pub const F32_MAX: u8 = 0x97;
+
+/// f32.copysign = 0x98
+pub const F32_COPYSIGN: u8 = 0x98;
+
+/// f64.abs = 0x99
+pub const F64_ABS: u8 = 0x99;
+
+/// f64.neg = 0x9A
+pub const F64_NEG: u8 = 0x9A;
+
+/// f64.ceil = 0x9B
+pub const F64_CEIL: u8 = 0x9B;
+
+/// f64.floor = 0x9C
+pub const F64_FLOOR: u8 = 0x9C;
+
+/// f64.trunc = 0x9D
+pub const F64_TRUNC: u8 = 0x9D;
+
+/// f64.nearest = 0x9E
+pub const F64_NEAREST: u8 = 0x9E;
+
+/// f64.sqrt = 0x9F
+pub const F64_SQRT: u8 = 0x9F;
+
+/// f64.add = 0xA0
+pub const F64_ADD: u8 = 0xA0;
+
+/// f64.sub = 0xA1
+pub const F64_SUB: u8 = 0xA1;
+
+/// f64.mul = 0xA2
+pub const F64_MUL: u8 = 0xA2;
+
+/// f64.div = 0xA3
+pub const F64_DIV: u8 = 0xA3;
+
+/// f64.min = 0xA4
+pub const F64_MIN: u8 = 0xA4;
+
+/// f64.max = 0xA5
+pub const F64_MAX: u8 = 0xA5;
+
+/// f64.copysign = 0xA6
+pub const F64_COPYSIGN: u8 = 0xA6;
+
+/// i32.wrap_i64 = 0xA7
+pub const I32_WRAP_I64: u8 = 0xA7;
+
+/// i32.trunc_f32_s = 0xA8
+pub const I32_TRUNC_F32_S: u8 = 0xA8;
+
+/// i32.trunc_f32_u = 0xA9
+pub const I32_TRUNC_F32_U: u8 = 0xA9;
+
+/// i32.trunc_f64_s = 0xAA
+pub const I32_TRUNC_F64_S: u8 = 0xAA;
+
+/// i32.trunc_f64_u = 0xAB
+pub const I32_TRUNC_F64_U: u8 = 0xAB;
+
+/// i64.extend_i32_s = 0xAC
+pub const I64_EXTEND_I32_S: u8 = 0xAC;
+
+/// i64.extend_i32_u = 0xAD
+pub const I64_EXTEND_I32_U: u8 = 0xAD;
+
+/// i64.trunc_f32_s = 0xAE
+pub const I64_TRUNC_F32_S: u8 = 0xAE;
+
+/// i64.trunc_f32_u = 0xAF
+pub const I64_TRUNC_F32_U: u8 = 0xAF;
+
+/// i64.trunc_f64_s = 0xB0
+pub const I64_TRUNC_F64_S: u8 = 0xB0;
+
+/// i64.trunc_f64_u = 0xB1
+pub const I64_TRUNC_F64_U: u8 = 0xB1;
+
+/// f32.convert_i32_s = 0xB2
+pub const F32_CONVERT_I32_S: u8 = 0xB2;
+
+/// f32.convert_i32_u = 0xB3
+pub const F32_CONVERT_I32_U: u8 = 0xB3;
+
+/// f32.convert_i64_s = 0xB4
+pub const F32_CONVERT_I64_S: u8 = 0xB4;
+
+/// f32.convert_i64_u = 0xB5
+pub const F32_CONVERT_I64_U: u8 = 0xB5;
+
+/// f32.demote_f64 = 0xB6
+pub const F32_DEMOTE_F64: u8 = 0xB6;
+
+/// f64.convert_i32_s = 0xB7
+pub const F64_CONVERT_I32_S: u8 = 0xB7;
+
+/// f64.convert_i32_u = 0xB8
+pub const F64_CONVERT_I32_U: u8 = 0xB8;
+
+/// f64.convert_i64_s = 0xB9
+pub const F64_CONVERT_I64_S: u8 = 0xB9;
+
+/// f64.convert_i64_u = 0xBA
+pub const F64_CONVERT_I64_U: u8 = 0xBA;
+
+/// f64.promote_f32 = 0xBB
+pub const F64_PROMOTE_F32: u8 = 0xBB;
+
+/// i32.reinterpret_f32 = 0xBC
+pub const I32_REINTERPRET_F32: u8 = 0xBC;
+
+/// i64.reinterpret_f64 = 0xBD
+pub const I64_REINTERPRET_F64: u8 = 0xBD;
+
+/// f32.reinterpret_i32 = 0xBE
+pub const F32_REINTERPRET_I32: u8 = 0xBE;
+
+/// f64.reinterpret_i64 = 0xBF
+pub const F64_REINTERPRET_I64: u8 = 0xBF;
+
+/// i32.extend8_s = 0xC0
+pub const I32_EXTEND8_S: u8 = 0xC0;
+
+/// i32.extend16_s = 0xC1
+pub const I32_EXTEND16_S: u8 = 0xC1;
+
+/// i64.extend8_s = 0xC2
+pub const I64_EXTEND8_S: u8 = 0xC2;
+
+/// i64.extend16_s = 0xC3
+pub const I64_EXTEND16_S: u8 = 0xC3;
+
+/// i64.extend32_s = 0xC4
+pub const I64_EXTEND32_S: u8 = 0xC4;
+
+/// ref.null = 0xD0
+pub const REF_NULL: u8 = 0xD0;
+
+/// ref.is_null = 0xD1
+pub const REF_IS_NULL: u8 = 0xD1;
+
+/// ref.func = 0xD2
+pub const REF_FUNC: u8 = 0xD2;
+
+/// i32.trunc_sat_f32_s = 0xFC 0x00
+pub const I32_TRUNC_SAT_F32_S: [u8; 2] = [0xFC, 0x00];
+
+/// i32.trunc_sat_f32_u = 0xFC 0x01
+pub const I32_TRUNC_SAT_F32_U: [u8; 2] = [0xFC, 0x01];
+
+/// i32.trunc_sat_f64_s = 0xFC 0x02
+pub const I32_TRUNC_SAT_F64_S: [u8; 2] = [0xFC, 0x02];
+
+/// i32.trunc_sat_f64_u = 0xFC 0x03
+pub const I32_TRUNC_SAT_F64_U: [u8; 2] = [0xFC, 0x03];
+
+/// i64.trunc_sat_f32_s = 0xFC 0x04
+pub const I64_TRUNC_SAT_F32_S: [u8; 2] = [0xFC, 0x04];
+
+/// i64.trunc_sat_f32_u = 0xFC 0x05
+pub const I64_TRUNC_SAT_F32_U: [u8; 2] = [0xFC, 0x05];
+
+/// i64.trunc_sat_f64_s = 0xFC 0x06
+pub const I64_TRUNC_SAT_F64_S: [u8; 2] = [0xFC, 0x06];
+
+/// i64.trunc_sat_f64_u = 0xFC 0x07
+pub const I64_TRUNC_SAT_F64_U: [u8; 2] = [0xFC, 0x07];
+
+/// memory.init = 0xFC 0x08
+pub const MEMORY_INIT: [u8; 2] = [0xFC, 0x08];
+
+/// data.drop = 0xFC 0x09
+pub const DATA_DROP: [u8; 2] = [0xFC, 0x09];
+
+/// memory.copy = 0xFC 0x0A
+pub const MEMORY_COPY: [u8; 2] = [0xFC, 0x0A];
+
+/// memory.fill = 0xFC 0x0B
+pub const MEMORY_FILL: [u8; 2] = [0xFC, 0x0B];
+
+/// table.init = 0xFC 0x0C
+pub const TABLE_INIT: [u8; 2] = [0xFC, 0x0C];
+
+/// elem.drop = 0xFC 0x0D
+pub const ELEM_DROP: [u8; 2] = [0xFC, 0x0D];
+
+/// table.copy = 0xFC 0x0E
+pub const TABLE_COPY: [u8; 2] = [0xFC, 0x0E];
+
+/// table.grow = 0xFC 0x0F
+pub const TABLE_GROW: [u8; 2] = [0xFC, 0x0F];
+
+/// table.size = 0xFC 0x10
+pub const TABLE_SIZE: [u8; 2] = [0xFC, 0x10];
+
+/// table.fill = 0xFC 0x11
+pub const TABLE_FILL: [u8; 2] = [0xFC, 0x11];
+
+/// v128.load = 0xFD 0x00
+pub const V128_LOAD: [u8; 2] = [0xFD, 0x00];
+
+/// v128.load8x8_s = 0xFD 0x01
+pub const V128_LOAD8X8_S: [u8; 2] = [0xFD, 0x01];
+
+/// v128.load8x8_u = 0xFD 0x02
+pub const V128_LOAD8X8_U: [u8; 2] = [0xFD, 0x02];
+
+/// v128.load16x4_s = 0xFD 0x03
+pub const V128_LOAD16X4_S: [u8; 2] = [0xFD, 0x03];
+
+/// v128.load16x4_u = 0xFD 0x04
+pub const V128_LOAD16X4_U: [u8; 2] = [0xFD, 0x04];
+
+/// v128.load32x2_s = 0xFD 0x05
+pub const V128_LOAD32X2_S: [u8; 2] = [0xFD, 0x05];
+
+/// v128.load32x2_u = 0xFD 0x06
+pub const V128_LOAD32X2_U: [u8; 2] = [0xFD, 0x06];
+
+/// v128.load8_splat = 0xFD 0x07
+pub const V128_LOAD8_SPLAT: [u8; 2] = [0xFD, 0x07];
+
+/// v128.load16_splat = 0xFD 0x08
+pub const V128_LOAD16_SPLAT: [u8; 2] = [0xFD, 0x08];
+
+/// v128.load32_splat = 0xFD 0x09
+pub const V128_LOAD32_SPLAT: [u8; 2] = [0xFD, 0x09];
+
+/// v128.load64_splat = 0xFD 0x0A
+pub const V128_LOAD64_SPLAT: [u8; 2] = [0xFD, 0x0A];
+
+/// v128.store = 0xFD 0x0B
+pub const V128_STORE: [u8; 2] = [0xFD, 0x0B];
+
+/// v128.const = 0xFD 0x0C
+pub const V128_CONST: [u8; 2] = [0xFD, 0x0C];
+
+/// i8x16.shuffle = 0xFD 0x0D
+pub const I8X16_SHUFFLE: [u8; 2] = [0xFD, 0x0D];
+
+/// i8x16.swizzle = 0xFD 0x0E
+pub const I8X16_SWIZZLE: [u8; 2] = [0xFD, 0x0E];
+
+/// i8x16.splat = 0xFD 0x0F
+pub const I8X16_SPLAT: [u8; 2] = [0xFD, 0x0F];
+
+/// i16x8.splat = 0xFD 0x10
+pub const I16X8_SPLAT: [u8; 2] = [0xFD, 0x10];
+
+/// i32x4.splat = 0xFD 0x11
+pub const I32X4_SPLAT: [u8; 2] = [0xFD, 0x11];
+
+/// i64x2.splat = 0xFD 0x12
+pub const I64X2_SPLAT: [u8; 2] = [0xFD, 0x12];
+
+/// f32x4.splat = 0xFD 0x13
+pub const F32X4_SPLAT: [u8; 2] = [0xFD, 0x13];
+
+/// f64x2.splat = 0xFD 0x14
+pub const F64X2_SPLAT: [u8; 2] = [0xFD, 0x14];
+
+/// i8x16.extract_lane_s = 0xFD 0x15
+pub const I8X16_EXTRACT_LANE_S: [u8; 2] = [0xFD, 0x15];
+
+/// i8x16.extract_lane_u = 0xFD 0x16
+pub const I8X16_EXTRACT_LANE_U: [u8; 2] = [0xFD, 0x16];
+
+/// i8x16.replace_lane = 0xFD 0x17
+pub const I8X16_REPLACE_LANE: [u8; 2] = [0xFD, 0x17];
+
+/// i16x8.extract_lane_s = 0xFD 0x18
+pub const I16X8_EXTRACT_LANE_S: [u8; 2] = [0xFD, 0x18];
+
+/// i16x8.extract_lane_u = 0xFD 0x19
+pub const I16X8_EXTRACT_LANE_U: [u8; 2] = [0xFD, 0x19];
+
+/// i16x8.replace_lane = 0xFD 0x1A
+pub const I16X8_REPLACE_LANE: [u8; 2] = [0xFD, 0x1A];
+
+/// i32x4.extract_lane = 0xFD 0x1B
+pub const I32X4_EXTRACT_LANE: [u8; 2] = [0xFD, 0x1B];
+
+/// i32x4.replace_lane = 0xFD 0x1C
+pub const I32X4_REPLACE_LANE: [u8; 2] = [0xFD, 0x1C];
+
+/// i64x2.extract_lane = 0xFD 0x1D
+pub const I64X2_EXTRACT_LANE: [u8; 2] = [0xFD, 0x1D];
+
+/// i64x2.replace_lane = 0xFD 0x1E
+pub const I64X2_REPLACE_LANE: [u8; 2] = [0xFD, 0x1E];
+
+/// f32x4.extract_lane = 0xFD 0x1F
+pub const F32X4_EXTRACT_LANE: [u8; 2] = [0xFD, 0x1F];
+
+/// f32x4.replace_lane = 0xFD 0x20
+pub const F32X4_REPLACE_LANE: [u8; 2] = [0xFD, 0x20];
+
+/// f64x2.extract_lane = 0xFD 0x21
+pub const F64X2_EXTRACT_LANE: [u8; 2] = [0xFD, 0x21];
+
+/// f64x2.replace_lane = 0xFD 0x22
+pub const F64X2_REPLACE_LANE: [u8; 2] = [0xFD, 0x22];
+
+/// i8x16.eq = 0xFD 0x23
+pub const I8X16_EQ: [u8; 2] = [0xFD, 0x23];
+
+/// i8x16.ne = 0xFD 0x24
+pub const I8X16_NE: [u8; 2] = [0xFD, 0x24];
+
+/// i8x16.lt_s = 0xFD 0x25
+pub const I8X16_LT_S: [u8; 2] = [0xFD, 0x25];
+
+/// i8x16.lt_u = 0xFD 0x26
+pub const I8X16_LT_U: [u8; 2] = [0xFD, 0x26];
+
+/// i8x16.gt_s = 0xFD 0x27
+pub const I8X16_GT_S: [u8; 2] = [0xFD, 0x27];
+
+/// i8x16.gt_u = 0xFD 0x28
+pub const I8X16_GT_U: [u8; 2] = [0xFD, 0x28];
+
+/// i8x16.le_s = 0xFD 0x29
+pub const I8X16_LE_S: [u8; 2] = [0xFD, 0x29];
+
+/// i8x16.le_u = 0xFD 0x2A
+pub const I8X16_LE_U: [u8; 2] = [0xFD, 0x2A];
+
+/// i8x16.ge_s = 0xFD 0x2B
+pub const I8X16_GE_S: [u8; 2] = [0xFD, 0x2B];
+
+/// i8x16.ge_u = 0xFD 0x2C
+pub const I8X16_GE_U: [u8; 2] = [0xFD, 0x2C];
+
+/// i16x8.eq = 0xFD 0x2D
+pub const I16X8_EQ: [u8; 2] = [0xFD, 0x2D];
+
+/// i16x8.ne = 0xFD 0x2E
+pub const I16X8_NE: [u8; 2] = [0xFD, 0x2E];
+
+/// i16x8.lt_s = 0xFD 0x2F
+pub const I16X8_LT_S: [u8; 2] = [0xFD, 0x2F];
+
+/// i16x8.lt_u = 0xFD 0x30
+pub const I16X8_LT_U: [u8; 2] = [0xFD, 0x30];
+
+/// i16x8.gt_s = 0xFD 0x31
+pub const I16X8_GT_S: [u8; 2] = [0xFD, 0x31];
+
+/// i16x8.gt_u = 0xFD 0x32
+pub const I16X8_GT_U: [u8; 2] = [0xFD, 0x32];
+
+/// i16x8.le_s = 0xFD 0x33
+pub const I16X8_LE_S: [u8; 2] = [0xFD, 0x33];
+
+/// i16x8.le_u = 0xFD 0x34
+pub const I16X8_LE_U: [u8; 2] = [0xFD, 0x34];
+
+/// i16x8.ge_s = 0xFD 0x35
+pub const I16X8_GE_S: [u8; 2] = [0xFD, 0x35];
+
+/// i16x8.ge_u = 0xFD 0x36
+pub const I16X8_GE_U: [u8; 2] = [0xFD, 0x36];
+
+/// i32x4.eq = 0xFD 0x37
+pub const I32X4_EQ: [u8; 2] = [0xFD, 0x37];
+
+/// i32x4.ne = 0xFD 0x38
+pub const I32X4_NE: [u8; 2] = [0xFD, 0x38];
+
+/// i32x4.lt_s = 0xFD 0x39
+pub const I32X4_LT_S: [u8; 2] = [0xFD, 0x39];
+
+/// i32x4.lt_u = 0xFD 0x3A
+pub const I32X4_LT_U: [u8; 2] = [0xFD, 0x3A];
+
+/// i32x4.gt_s = 0xFD 0x3B
+pub const I32X4_GT_S: [u8; 2] = [0xFD, 0x3B];
+
+/// i32x4.gt_u = 0xFD 0x3C
+pub const I32X4_GT_U: [u8; 2] = [0xFD, 0x3C];
+
+/// i32x4.le_s = 0xFD 0x3D
+pub const I32X4_LE_S: [u8; 2] = [0xFD, 0x3D];
+
+/// i32x4.le_u = 0xFD 0x3E
+pub const I32X4_LE_U: [u8; 2] = [0xFD, 0x3E];
+
+/// i32x4.ge_s = 0xFD 0x3F
+pub const I32X4_GE_S: [u8; 2] = [0xFD, 0x3F];
+
+/// i32x4.ge_u = 0xFD 0x40
+pub const I32X4_GE_U: [u8; 2] = [0xFD, 0x40];
+
+/// f32x4.eq = 0xFD 0x41
+pub const F32X4_EQ: [u8; 2] = [0xFD, 0x41];
+
+/// f32x4.ne = 0xFD 0x42
+pub const F32X4_NE: [u8; 2] = [0xFD, 0x42];
+
+/// f32x4.lt = 0xFD 0x43
+pub const F32X4_LT: [u8; 2] = [0xFD, 0x43];
+
+/// f32x4.gt = 0xFD 0x44
+pub const F32X4_GT: [u8; 2] = [0xFD, 0x44];
+
+/// f32x4.le = 0xFD 0x45
+pub const F32X4_LE: [u8; 2] = [0xFD, 0x45];
+
+/// f32x4.ge = 0xFD 0x46
+pub const F32X4_GE: [u8; 2] = [0xFD, 0x46];
+
+/// f64x2.eq = 0xFD 0x47
+pub const F64X2_EQ: [u8; 2] = [0xFD, 0x47];
+
+/// f64x2.ne = 0xFD 0x48
+pub const F64X2_NE: [u8; 2] = [0xFD, 0x48];
+
+/// f64x2.lt = 0xFD 0x49
+pub const F64X2_LT: [u8; 2] = [0xFD, 0x49];
+
+/// f64x2.gt = 0xFD 0x4A
+pub const F64X2_GT: [u8; 2] = [0xFD, 0x4A];
+
+/// f64x2.le = 0xFD 0x4B
+pub const F64X2_LE: [u8; 2] = [0xFD, 0x4B];
+
+/// f64x2.ge = 0xFD 0x4C
+pub const F64X2_GE: [u8; 2] = [0xFD, 0x4C];
+
+/// v128.not = 0xFD 0x4D
+pub const V128_NOT: [u8; 2] = [0xFD, 0x4D];
+
+/// v128.and = 0xFD 0x4E
+pub const V128_AND: [u8; 2] = [0xFD, 0x4E];
+
+/// v128.andnot = 0xFD 0x4F
+pub const V128_ANDNOT: [u8; 2] = [0xFD, 0x4F];
+
+/// v128.or = 0xFD 0x50
+pub const V128_OR: [u8; 2] = [0xFD, 0x50];
+
+/// v128.xor = 0xFD 0x51
+pub const V128_XOR: [u8; 2] = [0xFD, 0x51];
+
+/// v128.bitselect = 0xFD 0x52
+pub const V128_BITSELECT: [u8; 2] = [0xFD, 0x52];
+
+/// v128.any_true = 0xFD 0x53
+pub const V128_ANY_TRUE: [u8; 2] = [0xFD, 0x53];
+
+/// v128.load8_lane = 0xFD 0x54
+pub const V128_LOAD8_LANE: [u8; 2] = [0xFD, 0x54];
+
+/// v128.load16_lane = 0xFD 0x55
+pub const V128_LOAD16_LANE: [u8; 2] = [0xFD, 0x55];
+
+/// v128.load32_lane = 0xFD 0x56
+pub const V128_LOAD32_LANE: [u8; 2] = [0xFD, 0x56];
+
+/// v128.load64_lane = 0xFD 0x57
+pub const V128_LOAD64_LANE: [u8; 2] = [0xFD, 0x57];
+
+/// v128.store8_lane = 0xFD 0x58
+pub const V128_STORE8_LANE: [u8; 2] = [0xFD, 0x58];
+
+/// v128.store16_lane = 0xFD 0x59
+pub const V128_STORE16_LANE: [u8; 2] = [0xFD, 0x59];
+
+/// v128.store32_lane = 0xFD 0x5A
+pub const V128_STORE32_LANE: [u8; 2] = [0xFD, 0x5A];
+
+/// v128.store64_lane = 0xFD 0x5B
+pub const V128_STORE64_LANE: [u8; 2] = [0xFD, 0x5B];
+
+/// v128.load32_zero = 0xFD 0x5C
+pub const V128_LOAD32_ZERO: [u8; 2] = [0xFD, 0x5C];
+
+/// v128.load64_zero = 0xFD 0x5D
+pub const V128_LOAD64_ZERO: [u8; 2] = [0xFD, 0x5D];
+
+/// f32x4.demote_f64x2_zero = 0xFD 0x5E
+pub const F32X4_DEMOTE_F64X2_ZERO: [u8; 2] = [0xFD, 0x5E];
+
+/// f64x2.promote_low_f32x4 = 0xFD 0x5F
+pub const F64X2_PROMOTE_LOW_F32X4: [u8; 2] = [0xFD, 0x5F];
+
+/// i8x16.abs = 0xFD 0x60
+pub const I8X16_ABS: [u8; 2] = [0xFD, 0x60];
+
+/// i8x16.neg = 0xFD 0x61
+pub const I8X16_NEG: [u8; 2] = [0xFD, 0x61];
+
+/// i8x16.popcnt = 0xFD 0x62
+pub const I8X16_POPCNT: [u8; 2] = [0xFD, 0x62];
+
+/// i8x16.all_true = 0xFD 0x63
+pub const I8X16_ALL_TRUE: [u8; 2] = [0xFD, 0x63];
+
+/// i8x16.bitmask = 0xFD 0x64
+pub const I8X16_BITMASK: [u8; 2] = [0xFD, 0x64];
+
+/// i8x16.narrow_i16x8_s = 0xFD 0x65
+pub const I8X16_NARROW_I16X8_S: [u8; 2] = [0xFD, 0x65];
+
+/// i8x16.narrow_i16x8_u = 0xFD 0x66
+pub const I8X16_NARROW_I16X8_U: [u8; 2] = [0xFD, 0x66];
+
+/// f32x4.ceil = 0xFD 0x67
+pub const F32X4_CEIL: [u8; 2] = [0xFD, 0x67];
+
+/// f32x4.floor = 0xFD 0x68
+pub const F32X4_FLOOR: [u8; 2] = [0xFD, 0x68];
+
+/// f32x4.trunc = 0xFD 0x69
+pub const F32X4_TRUNC: [u8; 2] = [0xFD, 0x69];
+
+/// f32x4.nearest = 0xFD 0x6A
+pub const F32X4_NEAREST: [u8; 2] = [0xFD, 0x6A];
+
+/// i8x16.shl = 0xFD 0x6B
+pub const I8X16_SHL: [u8; 2] = [0xFD, 0x6B];
+
+/// i8x16.shr_s = 0xFD 0x6C
+pub const I8X16_SHR_S: [u8; 2] = [0xFD, 0x6C];
+
+/// i8x16.shr_u = 0xFD 0x6D
+pub const I8X16_SHR_U: [u8; 2] = [0xFD, 0x6D];
+
+/// i8x16.add = 0xFD 0x6E
+pub const I8X16_ADD: [u8; 2] = [0xFD, 0x6E];
+
+/// i8x16.add_sat_s = 0xFD 0x6F
+pub const I8X16_ADD_SAT_S: [u8; 2] = [0xFD, 0x6F];
+
+/// i8x16.add_sat_u = 0xFD 0x70
+pub const I8X16_ADD_SAT_U: [u8; 2] = [0xFD, 0x70];
+
+/// i8x16.sub = 0xFD 0x71
+pub const I8X16_SUB: [u8; 2] = [0xFD, 0x71];
+
+/// i8x16.sub_sat_s = 0xFD 0x72
+pub const I8X16_SUB_SAT_S: [u8; 2] = [0xFD, 0x72];
+
+/// i8x16.sub_sat_u = 0xFD 0x73
+pub const I8X16_SUB_SAT_U: [u8; 2] = [0xFD, 0x73];
+
+/// f64x2.ceil = 0xFD 0x74
+pub const F64X2_CEIL: [u8; 2] = [0xFD, 0x74];
+
+/// f64x2.floor = 0xFD 0x75
+pub const F64X2_FLOOR: [u8; 2] = [0xFD, 0x75];
+
+/// i8x16.min_s = 0xFD 0x76
+pub const I8X16_MIN_S: [u8; 2] = [0xFD, 0x76];
+
+/// i8x16.min_u = 0xFD 0x77
+pub const I8X16_MIN_U: [u8; 2] = [0xFD, 0x77];
+
+/// i8x16.max_s = 0xFD 0x78
+pub const I8X16_MAX_S: [u8; 2] = [0xFD, 0x78];
+
+/// i8x16.max_u = 0xFD 0x79
+pub const I8X16_MAX_U: [u8; 2] = [0xFD, 0x79];
+
+/// f64x2.trunc = 0xFD 0x7A
+pub const F64X2_TRUNC: [u8; 2] = [0xFD, 0x7A];
+
+/// i8x16.avgr_u = 0xFD 0x7B
+pub const I8X16_AVGR_U: [u8; 2] = [0xFD, 0x7B];
+
+/// i16x8.extadd_pairwise_i8x16_s = 0xFD 0x7C
+pub const I16X8_EXTADD_PAIRWISE_I8X16_S: [u8; 2] = [0xFD, 0x7C];
+
+/// i16x8.extadd_pairwise_i8x16_u = 0xFD 0x7D
+pub const I16X8_EXTADD_PAIRWISE_I8X16_U: [u8; 2] = [0xFD, 0x7D];
+
+/// i32x4.extadd_pairwise_i16x8_s = 0xFD 0x7E
+pub const I32X4_EXTADD_PAIRWISE_I16X8_S: [u8; 2] = [0xFD, 0x7E];
+
+/// i32x4.extadd_pairwise_i16x8_u = 0xFD 0x7F
+pub const I32X4_EXTADD_PAIRWISE_I16X8_U: [u8; 2] = [0xFD, 0x7F];
+
+/// i16x8.abs = 0xFD 0x80 0x01
+pub const I16X8_ABS: [u8; 3] = [0xFD, 0x80, 0x01];
+
+/// i16x8.neg = 0xFD 0x81 0x01
+pub const I16X8_NEG: [u8; 3] = [0xFD, 0x81, 0x01];
+
+/// i16x8.q15mulr_sat_s = 0xFD 0x82 0x01
+pub const I16X8_Q15MULR_SAT_S: [u8; 3] = [0xFD, 0x82, 0x01];
+
+/// i16x8.all_true = 0xFD 0x83 0x01
+pub const I16X8_ALL_TRUE: [u8; 3] = [0xFD, 0x83, 0x01];
+
+/// i16x8.bitmask = 0xFD 0x84 0x01
+pub const I16X8_BITMASK: [u8; 3] = [0xFD, 0x84, 0x01];
+
+/// i16x8.narrow_i32x4_s = 0xFD 0x85 0x01
+pub const I16X8_NARROW_I32X4_S: [u8; 3] = [0xFD, 0x85, 0x01];
+
+/// i16x8.narrow_i32x4_u = 0xFD 0x86 0x01
+pub const I16X8_NARROW_I32X4_U: [u8; 3] = [0xFD, 0x86, 0x01];
+
+/// i16x8.extend_low_i8x16_s = 0xFD 0x87 0x01
+pub const I16X8_EXTEND_LOW_I8X16_S: [u8; 3] = [0xFD, 0x87, 0x01];
+
+/// i16x8.extend_high_i8x16_s = 0xFD 0x88 0x01
+pub const I16X8_EXTEND_HIGH_I8X16_S: [u8; 3] = [0xFD, 0x88, 0x01];
+
+/// i16x8.extend_low_i8x16_u = 0xFD 0x89 0x01
+pub const I16X8_EXTEND_LOW_I8X16_U: [u8; 3] = [0xFD, 0x89, 0x01];
+
+/// i16x8.extend_high_i8x16_u = 0xFD 0x8A 0x01
+pub const I16X8_EXTEND_HIGH_I8X16_U: [u8; 3] = [0xFD, 0x8A, 0x01];
+
+/// i16x8.shl = 0xFD 0x8B 0x01
+pub const I16X8_SHL: [u8; 3] = [0xFD, 0x8B, 0x01];
+
+/// i16x8.shr_s = 0xFD 0x8C 0x01
+pub const I16X8_SHR_S: [u8; 3] = [0xFD, 0x8C, 0x01];
+
+/// i16x8.shr_u = 0xFD 0x8D 0x01
+pub const I16X8_SHR_U: [u8; 3] = [0xFD, 0x8D, 0x01];
+
+/// i16x8.add = 0xFD 0x8E 0x01
+pub const I16X8_ADD: [u8; 3] = [0xFD, 0x8E, 0x01];
+
+/// i16x8.add_sat_s = 0xFD 0x8F 0x01
+pub const I16X8_ADD_SAT_S: [u8; 3] = [0xFD, 0x8F, 0x01];
+
+/// i16x8.add_sat_u = 0xFD 0x90 0x01
+pub const I16X8_ADD_SAT_U: [u8; 3] = [0xFD, 0x90, 0x01];
+
+/// i16x8.sub = 0xFD 0x91 0x01
+pub const I16X8_SUB: [u8; 3] = [0xFD, 0x91, 0x01];
+
+/// i16x8.sub_sat_s = 0xFD 0x92 0x01
+pub const I16X8_SUB_SAT_S: [u8; 3] = [0xFD, 0x92, 0x01];
+
+/// i16x8.sub_sat_u = 0xFD 0x93 0x01
+pub const I16X8_SUB_SAT_U: [u8; 3] = [0xFD, 0x93, 0x01];
+
+/// f64x2.nearest = 0xFD 0x94 0x01
+pub const F64X2_NEAREST: [u8; 3] = [0xFD, 0x94, 0x01];
+
+/// i16x8.mul = 0xFD 0x95 0x01
+pub const I16X8_MUL: [u8; 3] = [0xFD, 0x95, 0x01];
+
+/// i16x8.min_s = 0xFD 0x96 0x01
+pub const I16X8_MIN_S: [u8; 3] = [0xFD, 0x96, 0x01];
+
+/// i16x8.min_u = 0xFD 0x97 0x01
+pub const I16X8_MIN_U: [u8; 3] = [0xFD, 0x97, 0x01];
+
+/// i16x8.max_s = 0xFD 0x98 0x01
+pub const I16X8_MAX_S: [u8; 3] = [0xFD, 0x98, 0x01];
+
+/// i16x8.max_u = 0xFD 0x99 0x01
+pub const I16X8_MAX_U: [u8; 3] = [0xFD, 0x99, 0x01];
+
+/// i16x8.avgr_u = 0xFD 0x9B 0x01
+pub const I16X8_AVGR_U: [u8; 3] = [0xFD, 0x9B, 0x01];
+
+/// i16x8.extmul_low_i8x16_s = 0xFD 0x9C 0x01
+pub const I16X8_EXTMUL_LOW_I8X16_S: [u8; 3] = [0xFD, 0x9C, 0x01];
+
+/// i16x8.extmul_high_i8x16_s = 0xFD 0x9D 0x01
+pub const I16X8_EXTMUL_HIGH_I8X16_S: [u8; 3] = [0xFD, 0x9D, 0x01];
+
+/// i16x8.extmul_low_i8x16_u = 0xFD 0x9E 0x01
+pub const I16X8_EXTMUL_LOW_I8X16_U: [u8; 3] = [0xFD, 0x9E, 0x01];
+
+/// i16x8.extmul_high_i8x16_u = 0xFD 0x9F 0x01
+pub const I16X8_EXTMUL_HIGH_I8X16_U: [u8; 3] = [0xFD, 0x9F, 0x01];
+
+/// i32x4.abs = 0xFD 0xA0 0x01
+pub const I32X4_ABS: [u8; 3] = [0xFD, 0xA0, 0x01];
+
+/// i32x4.neg = 0xFD 0xA1 0x01
+pub const I32X4_NEG: [u8; 3] = [0xFD, 0xA1, 0x01];
+
+/// i32x4.all_true = 0xFD 0xA3 0x01
+pub const I32X4_ALL_TRUE: [u8; 3] = [0xFD, 0xA3, 0x01];
+
+/// i32x4.bitmask = 0xFD 0xA4 0x01
+pub const I32X4_BITMASK: [u8; 3] = [0xFD, 0xA4, 0x01];
+
+/// i32x4.extend_low_i16x8_s = 0xFD 0xA7 0x01
+pub const I32X4_EXTEND_LOW_I16X8_S: [u8; 3] = [0xFD, 0xA7, 0x01];
+
+/// i32x4.extend_high_i16x8_s = 0xFD 0xA8 0x01
+pub const I32X4_EXTEND_HIGH_I16X8_S: [u8; 3] = [0xFD, 0xA8, 0x01];
+
+/// i32x4.extend_low_i16x8_u = 0xFD 0xA9 0x01
+pub const I32X4_EXTEND_LOW_I16X8_U: [u8; 3] = [0xFD, 0xA9, 0x01];
+
+/// i32x4.extend_high_i16x8_u = 0xFD 0xAA 0x01
+pub const I32X4_EXTEND_HIGH_I16X8_U: [u8; 3] = [0xFD, 0xAA, 0x01];
+
+/// i32x4.shl = 0xFD 0xAB 0x01
+pub const I32X4_SHL: [u8; 3] = [0xFD, 0xAB, 0x01];
+
+/// i32x4.shr_s = 0xFD 0xAC 0x01
+pub const I32X4_SHR_S: [u8; 3] = [0xFD, 0xAC, 0x01];
+
+/// i32x4.shr_u = 0xFD 0xAD 0x01
+pub const I32X4_SHR_U: [u8; 3] = [0xFD, 0xAD, 0x01];
+
+/// i32x4.add = 0xFD 0xAE 0x01
+pub const I32X4_ADD: [u8; 3] = [0xFD, 0xAE, 0x01];
+
+/// i32x4.sub = 0xFD 0xB1 0x01
+pub const I32X4_SUB: [u8; 3] = [0xFD, 0xB1, 0x01];
+
+/// i32x4.mul = 0xFD 0xB5 0x01
+pub const I32X4_MUL: [u8; 3] = [0xFD, 0xB5, 0x01];
+
+/// i32x4.min_s = 0xFD 0xB6 0x01
+pub const I32X4_MIN_S: [u8; 3] = [0xFD, 0xB6, 0x01];
+
+/// i32x4.min_u = 0xFD 0xB7 0x01
+pub const I32X4_MIN_U: [u8; 3] = [0xFD, 0xB7, 0x01];
+
+/// i32x4.max_s = 0xFD 0xB8 0x01
+pub const I32X4_MAX_S: [u8; 3] = [0xFD, 0xB8, 0x01];
+
+/// i32x4.max_u = 0xFD 0xB9 0x01
+pub const I32X4_MAX_U: [u8; 3] = [0xFD, 0xB9, 0x01];
+
+/// i32x4.dot_i16x8_s = 0xFD 0xBA 0x01
+pub const I32X4_DOT_I16X8_S: [u8; 3] = [0xFD, 0xBA, 0x01];
+
+/// i32x4.extmul_low_i16x8_s = 0xFD 0xBC 0x01
+pub const I32X4_EXTMUL_LOW_I16X8_S: [u8; 3] = [0xFD, 0xBC, 0x01];
+
+/// i32x4.extmul_high_i16x8_s = 0xFD 0xBD 0x01
+pub const I32X4_EXTMUL_HIGH_I16X8_S: [u8; 3] = [0xFD, 0xBD, 0x01];
+
+/// i32x4.extmul_low_i16x8_u = 0xFD 0xBE 0x01
+pub const I32X4_EXTMUL_LOW_I16X8_U: [u8; 3] = [0xFD, 0xBE, 0x01];
+
+/// i32x4.extmul_high_i16x8_u = 0xFD 0xBF 0x01
+pub const I32X4_EXTMUL_HIGH_I16X8_U: [u8; 3] = [0xFD, 0xBF, 0x01];
+
+/// i64x2.abs = 0xFD 0xC0 0x01
+pub const I64X2_ABS: [u8; 3] = [0xFD, 0xC0, 0x01];
+
+/// i64x2.neg = 0xFD 0xC1 0x01
+pub const I64X2_NEG: [u8; 3] = [0xFD, 0xC1, 0x01];
+
+/// i64x2.all_true = 0xFD 0xC3 0x01
+pub const I64X2_ALL_TRUE: [u8; 3] = [0xFD, 0xC3, 0x01];
+
+/// i64x2.bitmask = 0xFD 0xC4 0x01
+pub const I64X2_BITMASK: [u8; 3] = [0xFD, 0xC4, 0x01];
+
+/// i64x2.extend_low_i32x4_s = 0xFD 0xC7 0x01
+pub const I64X2_EXTEND_LOW_I32X4_S: [u8; 3] = [0xFD, 0xC7, 0x01];
+
+/// i64x2.extend_high_i32x4_s = 0xFD 0xC8 0x01
+pub const I64X2_EXTEND_HIGH_I32X4_S: [u8; 3] = [0xFD, 0xC8, 0x01];
+
+/// i64x2.extend_low_i32x4_u = 0xFD 0xC9 0x01
+pub const I64X2_EXTEND_LOW_I32X4_U: [u8; 3] = [0xFD, 0xC9, 0x01];
+
+/// i64x2.extend_high_i32x4_u = 0xFD 0xCA 0x01
+pub const I64X2_EXTEND_HIGH_I32X4_U: [u8; 3] = [0xFD, 0xCA, 0x01];
+
+/// i64x2.shl = 0xFD 0xCB 0x01
+pub const I64X2_SHL: [u8; 3] = [0xFD, 0xCB, 0x01];
+
+/// i64x2.shr_s = 0xFD 0xCC 0x01
+pub const I64X2_SHR_S: [u8; 3] = [0xFD, 0xCC, 0x01];
+
+/// i64x2.shr_u = 0xFD 0xCD 0x01
+pub const I64X2_SHR_U: [u8; 3] = [0xFD, 0xCD, 0x01];
+
+/// i64x2.add = 0xFD 0xCE 0x01
+pub const I64X2_ADD: [u8; 3] = [0xFD, 0xCE, 0x01];
+
+/// i64x2.sub = 0xFD 0xD1 0x01
+pub const I64X2_SUB: [u8; 3] = [0xFD, 0xD1, 0x01];
+
+/// i64x2.mul = 0xFD 0xD5 0x01
+pub const I64X2_MUL: [u8; 3] = [0xFD, 0xD5, 0x01];
+
+/// i64x2.eq = 0xFD 0xD6 0x01
+pub const I64X2_EQ: [u8; 3] = [0xFD, 0xD6, 0x01];
+
+/// i64x2.ne = 0xFD 0xD7 0x01
+pub const I64X2_NE: [u8; 3] = [0xFD, 0xD7, 0x01];
+
+/// i64x2.lt_s = 0xFD 0xD8 0x01
+pub const I64X2_LT_S: [u8; 3] = [0xFD, 0xD8, 0x01];
+
+/// i64x2.gt_s = 0xFD 0xD9 0x01
+pub const I64X2_GT_S: [u8; 3] = [0xFD, 0xD9, 0x01];
+
+/// i64x2.le_s = 0xFD 0xDA 0x01
+pub const I64X2_LE_S: [u8; 3] = [0xFD, 0xDA, 0x01];
+
+/// i64x2.ge_s = 0xFD 0xDB 0x01
+pub const I64X2_GE_S: [u8; 3] = [0xFD, 0xDB, 0x01];
+
+/// i64x2.extmul_low_i32x4_s = 0xFD 0xDC 0x01
+pub const I64X2_EXTMUL_LOW_I32X4_S: [u8; 3] = [0xFD, 0xDC, 0x01];
+
+/// i64x2.extmul_high_i32x4_s = 0xFD 0xDD 0x01
+pub const I64X2_EXTMUL_HIGH_I32X4_S: [u8; 3] = [0xFD, 0xDD, 0x01];
+
+/// i64x2.extmul_low_i32x4_u = 0xFD 0xDE 0x01
+pub const I64X2_EXTMUL_LOW_I32X4_U: [u8; 3] = [0xFD, 0xDE, 0x01];
+
+/// i64x2.extmul_high_i32x4_u = 0xFD 0xDF 0x01
+pub const I64X2_EXTMUL_HIGH_I32X4_U: [u8; 3] = [0xFD, 0xDF, 0x01];
+
+/// f32x4.abs = 0xFD 0xE0 0x01
+pub const F32X4_ABS: [u8; 3] = [0xFD, 0xE0, 0x01];
+
+/// f32x4.neg = 0xFD 0xE1 0x01
+pub const F32X4_NEG: [u8; 3] = [0xFD, 0xE1, 0x01];
+
+/// f32x4.sqrt = 0xFD 0xE3 0x01
+pub const F32X4_SQRT: [u8; 3] = [0xFD, 0xE3, 0x01];
+
+/// f32x4.add = 0xFD 0xE4 0x01
+pub const F32X4_ADD: [u8; 3] = [0xFD, 0xE4, 0x01];
+
+/// f32x4.sub = 0xFD 0xE5 0x01
+pub const F32X4_SUB: [u8; 3] = [0xFD, 0xE5, 0x01];
+
+/// f32x4.mul = 0xFD 0xE6 0x01
+pub const F32X4_MUL: [u8; 3] = [0xFD, 0xE6, 0x01];
+
+/// f32x4.div = 0xFD 0xE7 0x01
+pub const F32X4_DIV: [u8; 3] = [0xFD, 0xE7, 0x01];
+
+/// f32x4.min = 0xFD 0xE8 0x01
+pub const F32X4_MIN: [u8; 3] = [0xFD, 0xE8, 0x01];
+
+/// f32x4.max = 0xFD 0xE9 0x01
+pub const F32X4_MAX: [u8; 3] = [0xFD, 0xE9, 0x01];
+
+/// f32x4.pmin = 0xFD 0xEA 0x01
+pub const F32X4_PMIN: [u8; 3] = [0xFD, 0xEA, 0x01];
+
+/// f32x4.pmax = 0xFD 0xEB 0x01
+pub const F32X4_PMAX: [u8; 3] = [0xFD, 0xEB, 0x01];
+
+/// f64x2.abs = 0xFD 0xEC 0x01
+pub const F64X2_ABS: [u8; 3] = [0xFD, 0xEC, 0x01];
+
+/// f64x2.neg = 0xFD 0xED 0x01
+pub const F64X2_NEG: [u8; 3] = [0xFD, 0xED, 0x01];
+
+/// f64x2.sqrt = 0xFD 0xEF 0x01
+pub const F64X2_SQRT: [u8; 3] = [0xFD, 0xEF, 0x01];
+
+/// f64x2.add = 0xFD 0xF0 0x01
+pub const F64X2_ADD: [u8; 3] = [0xFD, 0xF0, 0x01];
+
+/// f64x2.sub = 0xFD 0xF1 0x01
+pub const F64X2_SUB: [u8; 3] = [0xFD, 0xF1, 0x01];
+
+/// f64x2.mul = 0xFD 0xF2 0x01
+pub const F64X2_MUL: [u8; 3] = [0xFD, 0xF2, 0x01];
+
+/// f64x2.div = 0xFD 0xF3 0x01
+pub const F64X2_DIV: [u8; 3] = [0xFD, 0xF3, 0x01];
+
+/// f64x2.min = 0xFD 0xF4 0x01
+pub const F64X2_MIN: [u8; 3] = [0xFD, 0xF4, 0x01];
+
+/// f64x2.max = 0xFD 0xF5 0x01
+pub const F64X2_MAX: [u8; 3] = [0xFD, 0xF5, 0x01];
+
+/// f64x2.pmin = 0xFD 0xF6 0x01
+pub const F64X2_PMIN: [u8; 3] = [0xFD, 0xF6, 0x01];
+
+/// f64x2.pmax = 0xFD 0xF7 0x01
+pub const F64X2_PMAX: [u8; 3] = [0xFD, 0xF7, 0x01];
+
+/// i32x4.trunc_sat_f32x4_s = 0xFD 0xF8 0x01
+pub const I32X4_TRUNC_SAT_F32X4_S: [u8; 3] = [0xFD, 0xF8, 0x01];
+
+/// i32x4.trunc_sat_f32x4_u = 0xFD 0xF9 0x01
+pub const I32X4_TRUNC_SAT_F32X4_U: [u8; 3] = [0xFD, 0xF9, 0x01];
+
+/// f32x4.convert_i32x4_s = 0xFD 0xFA 0x01
+pub const F32X4_CONVERT_I32X4_S: [u8; 3] = [0xFD, 0xFA, 0x01];
+
+/// f32x4.convert_i32x4_u = 0xFD 0xFB 0x01
+pub const F32X4_CONVERT_I32X4_U: [u8; 3] = [0xFD, 0xFB, 0x01];
+
+/// i32x4.trunc_sat_f64x2_s_zero = 0xFD 0xFC 0x01
+pub const I32X4_TRUNC_SAT_F64X2_S_ZERO: [u8; 3] = [0xFD, 0xFC, 0x01];
+
+/// i32x4.trunc_sat_f64x2_u_zero = 0xFD 0xFD 0x01
+pub const I32X4_TRUNC_SAT_F64X2_U_ZERO: [u8; 3] = [0xFD, 0xFD, 0x01];
+
+/// f64x2.convert_low_i32x4_s = 0xFD 0xFE 0x01
+pub const F64X2_CONVERT_LOW_I32X4_S: [u8; 3] = [0xFD, 0xFE, 0x01];
+
+/// f64x2.convert_low_i32x4_u = 0xFD 0xFF 0x01
+pub const F64X2_CONVERT_LOW_I32X4_U: [u8; 3] = [0xFD, 0xFF, 0x01];
