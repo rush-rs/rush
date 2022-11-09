@@ -822,7 +822,7 @@ impl<'src> Analyzer<'src> {
         let lhs = self.visit_expression(node.lhs);
         let rhs = self.visit_expression(node.rhs);
 
-        let (expected_types, override_type): (&[Type], _) = match node.op {
+        let (allowed_types, override_result_type): (&[Type], _) = match node.op {
             InfixOp::Plus | InfixOp::Minus | InfixOp::Mul | InfixOp::Div => {
                 (&[Type::Int, Type::Float], None)
             }
@@ -838,11 +838,11 @@ impl<'src> Analyzer<'src> {
             InfixOp::And | InfixOp::Or => (&[Type::Bool], None),
         };
         let result_type = self.infix_test_types(
-            expected_types,
+            allowed_types,
             (lhs.result_type(), rhs.result_type()),
             node.op,
             node.span,
-            override_type,
+            override_result_type,
             (lhs_span, rhs_span),
         );
 
