@@ -230,7 +230,7 @@ impl<'src> Compiler<'src> {
     fn statement(&mut self, node: AnalyzedStatement<'src>) {
         match node {
             AnalyzedStatement::Let(node) => self.let_stmt(node),
-            AnalyzedStatement::Return(node) => todo!(),
+            AnalyzedStatement::Return(node) => self.return_stmt(node),
             AnalyzedStatement::Expr(expr) => {
                 let expr_type = expr.result_type();
                 self.expression(expr);
@@ -253,6 +253,13 @@ impl<'src> Compiler<'src> {
         self.expression(node.expr);
         self.function_body.push(instructions::LOCAL_SET);
         self.function_body.append(&mut local_idx);
+    }
+
+    fn return_stmt(&mut self, node: AnalyzedReturnStmt<'src>) {
+        if let Some(expr) = node {
+            self.expression(expr);
+        }
+        self.function_body.push(instructions::RETURN);
     }
 
     fn expression(&mut self, node: AnalyzedExpression<'src>) {

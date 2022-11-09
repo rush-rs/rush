@@ -25,12 +25,13 @@ mod tests {
             r#"
 fn main() {
     'a';
+    return;
 }
 
 fn _add(left: int) -> int {
     let mut right = 4;
     right += 6;
-    left / right
+    return left / right;
 }
 "#,
         )
