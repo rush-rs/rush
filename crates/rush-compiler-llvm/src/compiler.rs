@@ -421,16 +421,31 @@ impl<'ctx> Compiler<'ctx> {
             .compile_expression(&node.expr)
             .expect("casting is only possible on non-unit values");
 
-        /*
         match (lhs, node.type_) {
-            (BasicValueEnum::IntValue(value), Type::Int) => lhs,
-            (BasicValueEnum::IntValue(value), Type::Float) => BasicValueEnum::FloatValue(FloatValue::) self
+            // required if a char is casted as an int
+            (BasicValueEnum::IntValue(lhs_int), Type::Int) => self
                 .builder
-                .build_signed_int_to_float(lhs.into_int_value(), self.context.f64_type(), "ifcast"),
+                .build_int_cast(lhs_int, self.context.i64_type(), "ii_cast")
+                .as_basic_value_enum(),
+            (BasicValueEnum::IntValue(lhs_int), Type::Float) => self
+                .builder
+                .build_signed_int_to_float(lhs_int, self.context.f64_type(), "if_cast")
+                .as_basic_value_enum(),
+            (BasicValueEnum::IntValue(lhs_int), Type::Char) => self
+                .builder
+                .build_int_cast(lhs_int, self.context.i8_type(), "ic_cast")
+                .as_basic_value_enum(),
+            (BasicValueEnum::FloatValue(_), Type::Float) => lhs,
+            (BasicValueEnum::FloatValue(lhs_float), Type::Int) => self
+                .builder
+                .build_float_to_signed_int(lhs_float, self.context.i64_type(), "fi_cast")
+                .as_basic_value_enum(),
+            (BasicValueEnum::FloatValue(lhs_float), Type::Char) => self
+                .builder
+                .build_float_to_unsigned_int(lhs_float, self.context.i8_type(), "fc_cast")
+                .as_basic_value_enum(),
             _ => todo!(""),
         }
-        */
-        todo!()
     }
 
     /// Builds a return instruction if the current block has no terminater
