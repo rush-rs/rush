@@ -89,7 +89,7 @@ impl<'ctx> Compiler<'ctx> {
         self.compile_main_fn(&program.main_fn);
 
         // return the LLVM IR
-        //self.module.verify()?;
+        self.module.verify()?;
         Ok(self.module.print_to_string().to_string())
     }
 
