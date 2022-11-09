@@ -157,7 +157,7 @@ impl<'ctx> Compiler<'ctx> {
         let basic_block = self.context.append_basic_block(function, "entry");
         self.builder.position_at_end(basic_block);
 
-        // bind each non-unit-tye parameter to the original value (for later reference)
+        // bind each non-unit-type parameter to the original value (for later reference)
         for (i, param) in node
             .params
             .iter()
