@@ -222,6 +222,25 @@ pub enum InfixOp {
     Or,
 }
 
+impl From<AssignOp> for InfixOp {
+    fn from(src: AssignOp) -> Self {
+        match src {
+            AssignOp::Plus => InfixOp::Plus,
+            AssignOp::Minus => InfixOp::Minus,
+            AssignOp::Mul => InfixOp::Mul,
+            AssignOp::Div => InfixOp::Div,
+            AssignOp::Shl => InfixOp::Shl,
+            AssignOp::Shr => InfixOp::Shr,
+            AssignOp::Rem => InfixOp::Rem,
+            AssignOp::Pow => InfixOp::Pow,
+            AssignOp::BitOr => InfixOp::BitOr,
+            AssignOp::BitAnd => InfixOp::And,
+            AssignOp::BitXor => Self::BitXor,
+            AssignOp::Basic => panic!("cannot convert assign op basic to infix op"),
+        }
+    }
+}
+
 impl Display for InfixOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(

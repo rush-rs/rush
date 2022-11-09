@@ -89,7 +89,7 @@ impl<'ctx> Compiler<'ctx> {
         self.compile_main_fn(&program.main_fn);
 
         // return the LLVM IR
-        self.module.verify()?;
+        //self.module.verify()?;
         Ok(self.module.print_to_string().to_string())
     }
 
@@ -672,8 +672,10 @@ impl<'ctx> Compiler<'ctx> {
         } else {
             self.builder
                 .build_conditional_branch(cond_bool, then_block, merge_block);
+
             self.builder.position_at_end(then_block);
             self.compile_branch(&node.then_block, merge_block);
+
             self.builder.position_at_end(merge_block);
             self.unit_value()
         }
@@ -731,10 +733,8 @@ impl<'ctx> Compiler<'ctx> {
     /// Builds a return instruction if the current block has no terminator
     /// TODO: impl block check
     fn build_return(&mut self, return_value: Option<BasicValueEnum<'ctx>>) {
-        let mut curr_fn = self.curr_fn_mut();
-        if !curr_fn.has_returned {
-            curr_fn.has_returned = true;
-            match (return_value, curr_fn.name.as_str()) {
+        if !self.current_instruction_is_block_terminator() {
+            match (return_value, self.curr_fn().name.as_str()) {
                 (Some(value), _) => self.builder.build_return(Some(&value)),
                 (None, "main") => {
                     let success = self.context.i8_type().const_zero();
