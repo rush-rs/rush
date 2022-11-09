@@ -23,3 +23,6 @@ pub const EXTERNREF: u8 = 0x6F;
 
 /// func = 0x60
 pub const FUNC: u8 = 0x60;
+
+/// void = 0x40
+pub const VOID: u8 = 0x40;

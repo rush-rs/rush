@@ -25,13 +25,19 @@ mod tests {
             r#"
 fn main() {
     'a';
-    return;
 }
 
-fn _add(left: int) -> int {
-    let mut right = 4;
-    right += 6;
-    return left / right;
+/*
+// fn _add(left: int) -> int {
+//     let mut right = 4.0;
+//     right += 6.5;
+//     return left / right as int;
+// }
+*/
+
+fn _other() -> char {
+    if false { return 'c'; }
+    if 2 > 1 { 'a' } else { 'b' }
 }
 "#,
         )
