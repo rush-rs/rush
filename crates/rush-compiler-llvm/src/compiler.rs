@@ -253,8 +253,16 @@ impl<'ctx> Compiler<'ctx> {
                     &[BasicMetadataTypeEnum::IntType(self.context.i64_type())],
                     false,
                 );
-                self.module
-                    .add_function("exit", exit_type, Some(Linkage::External))
+                // declare the exit function if it does not exist
+                match self.declared_builtins.insert("exit") {
+                    true => self
+                        .module
+                        .add_function("exit", exit_type, Some(Linkage::External)),
+                    false => self
+                        .module
+                        .get_function("exit")
+                        .expect("exit was previously declared"),
+                }
             }
             // look up the function name inside the module table
             _ => self
