@@ -1,6 +1,6 @@
 use std::{collections::HashMap, mem};
 
-use rush_analyzer::{ast::*, InfixOp, Type};
+use rush_analyzer::{ast::*, AssignOp, InfixOp, Type};
 
 use crate::{
     instructions, types,
@@ -13,9 +13,12 @@ pub struct Compiler<'src> {
     locals: Vec<Vec<u8>>,
 
     /// Maps variable names to `Option<(type, local_idx)>`, or `None` when of type `()`
+    // TODO: maybe remove type
     scope: HashMap<&'src str, Option<(u8, Vec<u8>)>>,
     /// Maps function names to their index encoded as unsigned LEB128
     functions: HashMap<&'src str, Vec<u8>>,
+    /// The count of parameters the current function takes
+    param_count: usize,
 
     type_section: Vec<Vec<u8>>,     // 1
     import_section: Vec<Vec<u8>>,   // 2
@@ -111,6 +114,9 @@ impl<'src> Compiler<'src> {
         // add to self.functions map (main func idx is always 0)
         self.functions.insert("main", vec![0]);
 
+        // set param_count to 0
+        self.param_count = 0;
+
         // add signature to type section
         self.type_section.push(vec![
             types::FUNC,
@@ -167,6 +173,7 @@ impl<'src> Compiler<'src> {
             }
             self.scope.insert(name, wasm_type.map(|t| (t, local_idx)));
         }
+        self.param_count = params.len();
         params.len().write_uleb128(&mut buf);
         buf.append(&mut params);
 
@@ -222,13 +229,30 @@ impl<'src> Compiler<'src> {
 
     fn statement(&mut self, node: AnalyzedStatement<'src>) {
         match node {
-            AnalyzedStatement::Let(node) => todo!(),
+            AnalyzedStatement::Let(node) => self.let_stmt(node),
             AnalyzedStatement::Return(node) => todo!(),
             AnalyzedStatement::Expr(expr) => {
+                let expr_type = expr.result_type();
                 self.expression(expr);
-                self.function_body.push(instructions::DROP);
+                if expr_type != Type::Unit {
+                    self.function_body.push(instructions::DROP);
+                }
             }
         }
+    }
+
+    fn let_stmt(&mut self, node: AnalyzedLetStmt<'src>) {
+        let wasm_type = utils::type_to_byte(node.expr.result_type());
+        let mut local_idx = (self.locals.len() + self.param_count).to_uleb128();
+        if let Some(byte) = wasm_type {
+            self.locals.push(vec![1, byte]);
+        }
+        self.scope
+            .insert(node.name, wasm_type.map(|t| (t, local_idx.clone())));
+
+        self.expression(node.expr);
+        self.function_body.push(instructions::LOCAL_SET);
+        self.function_body.append(&mut local_idx);
     }
 
     fn expression(&mut self, node: AnalyzedExpression<'src>) {
@@ -255,10 +279,17 @@ impl<'src> Compiler<'src> {
                 self.function_body.push(instructions::I32_CONST);
                 value.write_uleb128(&mut self.function_body);
             }
-            AnalyzedExpression::Ident(name) => todo!(),
+            AnalyzedExpression::Ident(ident) => match &self.scope[ident.ident] {
+                Some((_type, local_idx)) => {
+                    self.function_body.push(instructions::LOCAL_GET);
+                    self.function_body.extend_from_slice(local_idx);
+                }
+                // unit type requires no instructions
+                None => {}
+            },
             AnalyzedExpression::Prefix(node) => todo!(),
             AnalyzedExpression::Infix(node) => self.infix_expr(*node),
-            AnalyzedExpression::Assign(node) => todo!(),
+            AnalyzedExpression::Assign(node) => self.assign_expr(*node),
             AnalyzedExpression::Call(node) => todo!(),
             AnalyzedExpression::Cast(node) => todo!(),
             AnalyzedExpression::Grouped(expr) => self.expression(*expr),
@@ -290,8 +321,8 @@ impl<'src> Compiler<'src> {
             (InfixOp::Minus, Type::Float) => instructions::F64_SUB,
             (InfixOp::Mul, Type::Int) => instructions::I64_MUL,
             (InfixOp::Mul, Type::Float) => instructions::F64_MUL,
-            (InfixOp::Div, Type::Int) => instructions::I64_MUL,
-            (InfixOp::Div, Type::Float) => instructions::F64_MUL,
+            (InfixOp::Div, Type::Int) => instructions::I64_DIV_S,
+            (InfixOp::Div, Type::Float) => instructions::F64_DIV,
             (InfixOp::Rem, Type::Int) => instructions::I64_REM_S,
             (InfixOp::Pow, Type::Int) => todo!(), // TODO: pow
             (InfixOp::Eq, Type::Int) => instructions::I64_EQ,
@@ -306,8 +337,8 @@ impl<'src> Compiler<'src> {
             (InfixOp::Lt, Type::Float) => instructions::F64_LT,
             (InfixOp::Gt, Type::Int) => instructions::I32_GT_S,
             (InfixOp::Gt, Type::Float) => instructions::F64_GT,
-            (InfixOp::Lte, Type::Int) => instructions::I32_GE_S,
-            (InfixOp::Lte, Type::Float) => instructions::F64_GE,
+            (InfixOp::Lte, Type::Int) => instructions::I32_LE_S,
+            (InfixOp::Lte, Type::Float) => instructions::F64_LE,
             (InfixOp::Gte, Type::Int) => instructions::I32_GE_S,
             (InfixOp::Gte, Type::Float) => instructions::F64_GE,
             (InfixOp::Shl, Type::Int) => instructions::I64_SHL,
@@ -324,5 +355,60 @@ impl<'src> Compiler<'src> {
             _ => unreachable!("the analyzer guarantees one of the above to match"),
         };
         self.function_body.push(instruction);
+    }
+
+    fn assign_expr(&mut self, node: AnalyzedAssignExpr<'src>) {
+        let Some((type_, local_idx)) = &self.scope[node.assignee] else {
+            self.expression(node.expr);
+            return;
+        };
+
+        // get the current value if assignment is more than just `=`
+        if node.op != AssignOp::Basic {
+            self.function_body.push(instructions::LOCAL_GET);
+            self.function_body.extend_from_slice(local_idx);
+        }
+
+        // save expr_type
+        let expr_type = node.expr.result_type();
+
+        // compile rhs
+        self.expression(node.expr);
+
+        // calculate new value for non-basic assignments
+        if node.op != AssignOp::Basic {
+            // match on op and type (analyzer guarantees same type for variable and expr)
+            let instruction = match (node.op, expr_type) {
+                (AssignOp::Plus, Type::Int) => instructions::I64_ADD,
+                (AssignOp::Plus, Type::Float) => instructions::F64_ADD,
+                (AssignOp::Minus, Type::Int) => instructions::I64_SUB,
+                (AssignOp::Minus, Type::Float) => instructions::F64_SUB,
+                (AssignOp::Mul, Type::Int) => instructions::I64_MUL,
+                (AssignOp::Mul, Type::Float) => instructions::F64_MUL,
+                (AssignOp::Div, Type::Int) => instructions::I64_DIV_S,
+                (AssignOp::Div, Type::Float) => instructions::F64_DIV,
+                (AssignOp::Rem, Type::Int) => instructions::I64_REM_S,
+                (AssignOp::Pow, Type::Int) => todo!(), // TODO: pow
+                (AssignOp::Shl, Type::Int) => instructions::I64_SHL,
+                (AssignOp::Shr, Type::Int) => instructions::I64_SHR_S,
+                (AssignOp::BitOr, Type::Int) => instructions::I64_OR,
+                (AssignOp::BitOr, Type::Bool) => instructions::I32_OR,
+                (AssignOp::BitAnd, Type::Int) => instructions::I64_AND,
+                (AssignOp::BitAnd, Type::Bool) => instructions::I32_AND,
+                (AssignOp::BitXor, Type::Int) => instructions::I64_XOR,
+                (AssignOp::BitXor, Type::Bool) => instructions::I32_XOR,
+                _ => unreachable!("the analyzer guarantees one of the above to match"),
+            };
+            self.function_body.push(instruction);
+        }
+
+        // set local to new value
+        self.function_body.push(instructions::LOCAL_SET);
+        self.function_body.extend_from_slice(
+            &self.scope[node.assignee]
+                .as_ref()
+                .expect("we checked this at the top of the function")
+                .1,
+        );
     }
 }

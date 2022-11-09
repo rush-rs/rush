@@ -28,7 +28,9 @@ fn main() {
 }
 
 fn _add(left: int) -> int {
-    1 + 2 * 3
+    let mut right = 4;
+    right += 6;
+    left / right
 }
 "#,
         )
