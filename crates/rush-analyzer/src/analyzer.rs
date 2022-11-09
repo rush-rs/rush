@@ -870,7 +870,23 @@ impl<'src> Analyzer<'src> {
 
     fn visit_assign_expr(&mut self, node: AssignExpr<'src>) -> AnalyzedExpression<'src> {
         let var_type = match self.scope().vars.get(node.assignee.inner) {
-            Some(var) => var.type_,
+            Some(var) => {
+                let type_ = var.type_;
+                if !var.mutable {
+                    let span = var.span;
+                    self.error(
+                        ErrorKind::Semantic,
+                        format!(
+                            "cannot re-assign to immutable variable `{}`",
+                            node.assignee.inner
+                        ),
+                        vec![],
+                        node.span,
+                    );
+                    self.hint("variable not declared as `mut`", span);
+                }
+                type_
+            }
             None => match self.functions.get(node.assignee.inner) {
                 Some(_) => {
                     self.error(
