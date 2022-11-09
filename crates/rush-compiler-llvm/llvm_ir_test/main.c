@@ -1,4 +1,9 @@
-#include <stdbool.h>
+#include <stdlib.h>
+
+void foo(int a, int b) {
+    exit(a + b);
+}
+
 int main() {
-    int a = 1;
+    foo(1, 2);
 }
