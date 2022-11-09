@@ -1,6 +1,6 @@
 use std::{collections::HashMap, mem};
 
-use rush_analyzer::{ast::*, AssignOp, InfixOp, Type};
+use rush_analyzer::{ast::*, AssignOp, InfixOp, PrefixOp, Type};
 
 use crate::{
     instructions, types,
@@ -265,7 +265,7 @@ impl<'src> Compiler<'src> {
     fn expression(&mut self, node: AnalyzedExpression<'src>) {
         match node {
             AnalyzedExpression::Block(node) => self.block_expr(*node),
-            AnalyzedExpression::If(value) => todo!(),
+            AnalyzedExpression::If(node) => self.if_expr(*node),
             AnalyzedExpression::Int(value) => {
                 // `int`s are stored as signed `i64`
                 self.function_body.push(instructions::I64_CONST);
@@ -294,11 +294,11 @@ impl<'src> Compiler<'src> {
                 // unit type requires no instructions
                 None => {}
             },
-            AnalyzedExpression::Prefix(node) => todo!(),
+            AnalyzedExpression::Prefix(node) => self.prefix_expr(*node),
             AnalyzedExpression::Infix(node) => self.infix_expr(*node),
             AnalyzedExpression::Assign(node) => self.assign_expr(*node),
             AnalyzedExpression::Call(node) => todo!(),
-            AnalyzedExpression::Cast(node) => todo!(),
+            AnalyzedExpression::Cast(node) => self.cast_expr(*node),
             AnalyzedExpression::Grouped(expr) => self.expression(*expr),
         }
     }
@@ -309,6 +309,62 @@ impl<'src> Compiler<'src> {
         }
         if let Some(expr) = node.expr {
             self.expression(expr);
+        }
+    }
+
+    fn if_expr(&mut self, node: AnalyzedIfExpr<'src>) {
+        // compile condition
+        self.expression(node.cond);
+
+        self.function_body.push(instructions::IF);
+        // TODO: never type
+        match utils::type_to_byte(node.result_type) {
+            Some(byte) => self.function_body.push(byte),
+            None => self.function_body.push(types::VOID),
+        }
+
+        self.block_expr(node.then_block);
+
+        if let Some(else_block) = node.else_block {
+            self.function_body.push(instructions::ELSE);
+            self.block_expr(else_block);
+        }
+
+        self.function_body.push(instructions::END);
+    }
+
+    fn prefix_expr(&mut self, node: AnalyzedPrefixExpr<'src>) {
+        // match op and expr type
+        match (node.op, node.expr.result_type()) {
+            (PrefixOp::Not, Type::Bool) => {
+                // compile expression
+                self.expression(node.expr);
+
+                // push constant 1
+                self.function_body.push(instructions::I32_CONST);
+                self.function_body.push(1);
+
+                // push xor
+                self.function_body.push(instructions::I32_XOR);
+            }
+            (PrefixOp::Neg, Type::Int) => {
+                // push constant 0
+                self.function_body.push(instructions::I64_CONST);
+                self.function_body.push(0);
+
+                // compile expression
+                self.expression(node.expr);
+
+                // push subtract
+                self.function_body.push(instructions::I64_SUB);
+            }
+            (PrefixOp::Neg, Type::Float) => {
+                // compile expression
+                self.expression(node.expr);
+
+                self.function_body.push(instructions::F64_NEG);
+            }
+            _ => unreachable!("the analyzer guarantees one of the above to match"),
         }
     }
 
@@ -342,11 +398,11 @@ impl<'src> Compiler<'src> {
             (InfixOp::Neq, Type::Char) => instructions::I32_NE,
             (InfixOp::Lt, Type::Int) => instructions::I64_LT_S,
             (InfixOp::Lt, Type::Float) => instructions::F64_LT,
-            (InfixOp::Gt, Type::Int) => instructions::I32_GT_S,
+            (InfixOp::Gt, Type::Int) => instructions::I64_GT_S,
             (InfixOp::Gt, Type::Float) => instructions::F64_GT,
-            (InfixOp::Lte, Type::Int) => instructions::I32_LE_S,
+            (InfixOp::Lte, Type::Int) => instructions::I64_LE_S,
             (InfixOp::Lte, Type::Float) => instructions::F64_LE,
-            (InfixOp::Gte, Type::Int) => instructions::I32_GE_S,
+            (InfixOp::Gte, Type::Int) => instructions::I64_GE_S,
             (InfixOp::Gte, Type::Float) => instructions::F64_GE,
             (InfixOp::Shl, Type::Int) => instructions::I64_SHL,
             (InfixOp::Shr, Type::Int) => instructions::I64_SHR_S,
@@ -417,5 +473,38 @@ impl<'src> Compiler<'src> {
                 .expect("we checked this at the top of the function")
                 .1,
         );
+    }
+
+    fn cast_expr(&mut self, node: AnalyzedCastExpr<'src>) {
+        // save expr type
+        let expr_type = node.expr.result_type();
+
+        // compile expression
+        self.expression(node.expr);
+
+        // match source and dest types
+        match (expr_type, node.type_) {
+            // type does not change: do nothing
+            (source, dest) if source == dest => {}
+            (Type::Bool, Type::Char) | (Type::Char, Type::Bool) => {}
+
+            (Type::Int, Type::Float) => self.function_body.push(instructions::F64_CONVERT_I64_S),
+            (Type::Int, Type::Bool) => self.function_body.push(instructions::I32_WRAP_I64),
+            (Type::Int, Type::Char) => self.function_body.push(instructions::I32_WRAP_I64),
+            (Type::Float, Type::Int) => {
+                self.function_body.extend(instructions::I64_TRUNC_SAT_F64_S)
+            }
+            (Type::Float, Type::Bool) => {
+                self.function_body.extend(instructions::I32_TRUNC_SAT_F64_U)
+            }
+            (Type::Float, Type::Char) => {
+                self.function_body.extend(instructions::I32_TRUNC_SAT_F64_U)
+            }
+            (Type::Bool, Type::Int) => self.function_body.push(instructions::I64_EXTEND_I32_U),
+            (Type::Bool, Type::Float) => self.function_body.push(instructions::F64_CONVERT_I32_U),
+            (Type::Char, Type::Int) => self.function_body.push(instructions::I64_EXTEND_I32_U),
+            (Type::Char, Type::Float) => self.function_body.push(instructions::F64_CONVERT_I32_U),
+            _ => unreachable!("the analyzer guarantees one of the above to match"),
+        }
     }
 }
