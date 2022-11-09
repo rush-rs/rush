@@ -1,68 +1,80 @@
-////////////// PART ONE //////////////
+/* 01: test unit values in args
+fn foo(a: int, _: (), b: int) {
+    exit(a * b)
+}
+
+fn _() {}
 
 fn main() {
-    let mut answer: int = 42; // int (i64)
-    let pi: float = 3.14159265358979323846264338327950; // float (f64)
-    let is_good: bool = false; // bool
-    let _char = 'a'; // ASCII char (u8)
+    let a = 1;
+    a = 2;
+    foo(2, _(), a)
+}
+*/
 
-    // Re-assignments
-    answer += 3;
-    answer -= 3;
-    answer *= 3;
-    answer /= 3;
-    // not for floats:
-    answer %= 3;
-    answer **= 3;
-    answer |= 3;
-    answer &= 3;
-    answer ^= 3;
-    answer >>= 3;
-    answer <<= 3;
-
-    let answer: float = 4_2f; // float literal, underscores are ignored, f forces float type
-    // integer = DIGIT , { DIGIT | '_' } ;
-    // [0-9][0-9_]*
-    // float = DIGIT , { DIGIT | '_' } , ( '.' , DIGIT , { DIGIT | '_' } | 'f' ) ;
-    // [0-9][0-9_]*(\.[0-9][0-9_]*|f)
-    answer as int; // cast between primitive types
-
-    (1 + 2) * 3 / 4 % 5 ** 6 - 7; // arithmetic operators
-    1 >> 2 << 3 | 4 & 5 ^ 6; // bitwise operators
-    true || false && true; // logical operators
-    1 < 2; 1 <= 3; 1 > 0; 1 >= -1; 1 == 1; 1 != 2; // relational operators
-
-    let _float = if answer > pi || is_good {
-        answer;
-    } else if pi > answer {
-        pi;
-    } else {
-        is_good as float;
-    };
-
-    exit(1); // -> ! // exit(code: int) -> (), uses WASI proc_exit(i32)
+/* 02: test re-assignments
+fn ex(cod: int) {
+    let a = cod;
+    a += 2;
+    a -= 1;
+    a *= 3;
+    a /= 3;
+    a **= 3;
+    a %= 4;
 }
 
-fn _add(left: int, right: int) -> int {
-    left + right
+fn main() {
+    main();
+    ex(1)
 }
 
-////////////// PART TWO //////////////
+*/
 
 /*
 fn main() {
-    let name = "rush";
-    let array: [int; 3] = [1, 2, 3];
-    println(name, "rush");
+ let a = 5;
+ a &= 3;
+ exit(a);
+}
+*/
 
-    loop { break; }
-    while true { break; }
 
-    // TODO: maybe?
-    // for i = 0; i < len(name); i += 1 {
-    //     let char_ = name[i];
-    //     if char_ == 'u' { continue; }
-    //     print(char_);
-    // }
+/*
+fn fib(n: int) -> int {
+    if n < 2 {
+        n
+    } else {
+        fib(n - 1) + fib(n - 2)
+    }
+}
+
+fn main() {
+    let res = fib(30);
+    exit(res/ 10000);
+}
+*/
+
+fn int() -> int {
+    if !true {
+        return 1;
+    } else {
+        return 2;
+    }
+}
+
+fn main() {
+    exit(int());
+}
+
+/*
+fn main() {
+    let a = false;
+
+    let b = if a {
+        1
+    } else {
+        2
+    };
+    exit(b);
 }
 */
