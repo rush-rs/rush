@@ -225,6 +225,12 @@ impl<'ctx> Compiler<'ctx> {
             AnalyzedExpression::Int(value) => Some(BasicValueEnum::IntValue(
                 self.context.i64_type().const_int(*value as u64, false),
             )),
+            AnalyzedExpression::Float(value) => Some(BasicValueEnum::FloatValue(
+                self.context.f64_type().const_float(*value),
+            )),
+            AnalyzedExpression::Char(value) => Some(BasicValueEnum::IntValue(
+                self.context.i8_type().const_int(*value as u64, false),
+            )),
             AnalyzedExpression::Ident(name) => *self
                 .curr_fn()
                 .vars
