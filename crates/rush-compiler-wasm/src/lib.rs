@@ -2,6 +2,9 @@ pub use compiler::Compiler;
 use rush_analyzer::Diagnostic;
 
 mod compiler;
+mod instructions;
+mod types;
+mod utils;
 
 /// Compiles rush source code to a binary WebAssembly module.
 /// The `Ok(_)` variant also returns non-error diagnostics.
@@ -21,7 +24,11 @@ mod tests {
         let bytes = crate::compile(
             r#"
 fn main() {
-    1 + 2;
+    'a';
+}
+
+fn _add(left: int) -> int {
+    1 + 2 * 3
 }
 "#,
         )
