@@ -125,25 +125,15 @@ impl<'ctx> Compiler<'ctx> {
         let params: Vec<BasicMetadataTypeEnum> = node
             .params
             .iter()
-            .filter_map(|param| {
-                Some(match param.1 {
-                    Type::Int => BasicMetadataTypeEnum::IntType(self.context.i64_type()),
-                    Type::Float => BasicMetadataTypeEnum::FloatType(self.context.f64_type()),
-                    Type::Bool => BasicMetadataTypeEnum::IntType(self.context.bool_type()),
-                    Type::Char => BasicMetadataTypeEnum::IntType(self.context.i8_type()),
-                    Type::Unit => {
-                        // allocate a pointer for the dummy parameter
-                        let ptr = self
-                            .builder
-                            .build_alloca(self.context.i8_type(), "skipped_unit");
-                        // insert the dummy pointer into vars
-                        self.curr_fn_mut().vars.insert(param.0.to_string(), ptr);
-                        return None;
-                    }
-                    Type::Never | Type::Unknown => {
-                        unreachable!("the analyzer disallows these types to be used as parameters")
-                    }
-                })
+            .map(|param| match param.1 {
+                Type::Int => BasicMetadataTypeEnum::IntType(self.context.i64_type()),
+                Type::Float => BasicMetadataTypeEnum::FloatType(self.context.f64_type()),
+                Type::Bool => BasicMetadataTypeEnum::IntType(self.context.bool_type()),
+                Type::Char => BasicMetadataTypeEnum::IntType(self.context.i8_type()),
+                Type::Unit => BasicMetadataTypeEnum::IntType(self.context.i8_type()),
+                Type::Never | Type::Unknown => {
+                    unreachable!("the analyzer disallows these types to be used as parameters")
+                }
             })
             .collect();
 
@@ -168,26 +158,34 @@ impl<'ctx> Compiler<'ctx> {
         self.builder.position_at_end(basic_block);
 
         // bind each non-unit-type parameter to the original value (for later reference)
-        for (i, param) in node
-            .params
-            .iter()
-            .filter(|param| param.1 != Type::Unit) // filter out any values of type `()`
-            .enumerate()
-        {
-
+        for (i, param) in node.params.iter().enumerate() {
             // todo: do this
 
             // allocate a pointer for the parameters
-            let ptr = self.builder.build_alloca(ty, name)
-            
+            let ptr = self.builder.build_alloca(
+                match param.1 {
+                    Type::Int => self.context.i64_type().as_basic_type_enum(),
+                    Type::Float => self.context.f64_type().as_basic_type_enum(),
+                    Type::Char => self.context.i8_type().as_basic_type_enum(),
+                    Type::Bool => self.context.bool_type().as_basic_type_enum(),
+                    Type::Unit => self.context.i8_type().as_basic_type_enum(),
+                    Type::Never | Type::Unknown => {
+                        unreachable!("either filtered out out not possible")
+                    }
+                },
+                param.0,
+            );
+
+            // get the param value from the function
             let value = function
                 .get_nth_param(i as u32)
                 .expect("this parameter exists");
 
+            // store the param value in the ptr
+            self.builder.build_store(ptr, value);
+
             // insert the parameter into the vars map
-            self.curr_fn_mut()
-                .vars
-                .insert(param.0.to_string(), Some(value));
+            self.curr_fn_mut().vars.insert(param.0.to_string(), ptr);
         }
 
         // build the return value of the function's body
@@ -220,16 +218,18 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     fn compile_let_statement(&mut self, node: &AnalyzedLetStmt) {
-        // compile the value
-        let value = self.compile_expression(&node.expr);
-
         // allocate a pointer to the value
         let ptr = self
             .builder
             .build_alloca(self.context.i64_type(), node.name);
 
+        // store the value in the ptr if the value is not `()`
+        if let Some(value) = self.compile_expression(&node.expr) {
+            self.builder.build_store(ptr, value);
+        }
+
         // insert the value into the vars of the current function
-        self.curr_fn_mut().vars.insert(node.name.to_string(), value);
+        self.curr_fn_mut().vars.insert(node.name.to_string(), ptr);
     }
 
     fn compile_return_statement(&mut self, node: &AnalyzedReturnStmt) {
@@ -256,13 +256,16 @@ impl<'ctx> Compiler<'ctx> {
             AnalyzedExpression::Bool(value) => Some(BasicValueEnum::IntValue(
                 self.context.i8_type().const_int(u64::from(*value), false),
             )),
-            AnalyzedExpression::Ident(name) => Some(
-                self.curr_fn()
+            AnalyzedExpression::Ident(name) => {
+                let ptr = self
+                    .curr_fn()
                     .vars
                     .get(name.ident)
-                    .expect("this variable was declared beforehand")
-                    .as_basic_value_enum(),
-            ),
+                    .expect("this variable was declared beforehand");
+
+                let value = self.builder.build_load(*ptr, name.ident);
+                Some(value)
+            }
             AnalyzedExpression::Call(node) => self.compile_call_expression(node),
             AnalyzedExpression::Grouped(node) => self.compile_expression(node),
             AnalyzedExpression::Block(node) => self.compile_block(node),
@@ -307,9 +310,9 @@ impl<'ctx> Compiler<'ctx> {
         let args: Vec<BasicMetadataValueEnum> = node
             .args
             .iter()
-            .filter_map(|arg| {
-                self.compile_expression(arg)
-                    .map(BasicMetadataValueEnum::from)
+            .map(|arg| match self.compile_expression(arg) {
+                Some(value) => BasicMetadataValueEnum::from(value),
+                None => BasicMetadataValueEnum::IntValue(self.context.i8_type().const_zero()),
             })
             .collect();
 
@@ -325,20 +328,18 @@ impl<'ctx> Compiler<'ctx> {
         }
     }
 
-    fn compile_infix_expression(&mut self, node: &AnalyzedInfixExpr) -> BasicValueEnum<'ctx> {
-        let lhs = self
-            .compile_expression(&node.lhs)
-            .expect("can only use infix expressions on non-unit values");
-
-        let rhs = self
-            .compile_expression(&node.rhs)
-            .expect("can only use infix expressions on non-unit values");
-
-        match node.lhs.result_type() {
+    fn infix_helper(
+        &mut self,
+        lhs_type: Type,
+        op: InfixOp,
+        lhs: BasicValueEnum<'ctx>,
+        rhs: BasicValueEnum<'ctx>,
+    ) -> BasicValueEnum<'ctx> {
+        match lhs_type {
             Type::Float => {
                 let lhs = lhs.into_float_value();
                 let rhs = rhs.into_float_value();
-                match node.op {
+                match op {
                     // arithmetic operators
                     InfixOp::Plus => self.builder.build_float_add(lhs, rhs, "f_sum"),
                     InfixOp::Minus => self.builder.build_float_sub(lhs, rhs, "f_sum"),
@@ -368,7 +369,7 @@ impl<'ctx> Compiler<'ctx> {
             Type::Int => {
                 let lhs = lhs.into_int_value();
                 let rhs = rhs.into_int_value();
-                match node.op {
+                match op {
                     // arithmetic operators
                     InfixOp::Plus => self.builder.build_int_add(lhs, rhs, "i_sum"),
                     InfixOp::Minus => self.builder.build_int_sub(lhs, rhs, "i_sum"),
@@ -414,7 +415,7 @@ impl<'ctx> Compiler<'ctx> {
                             InfixOp::Gte => (IntPredicate::SGE, "i_gte"),
                             InfixOp::Lt => (IntPredicate::SLT, "i_lt"),
                             InfixOp::Lte => (IntPredicate::SLE, "i_lte"),
-                            _ => unreachable!("other operators cannot be used on int"),
+                            _ => unreachable!("other operators cannot be used on int: {op:?}"),
                         };
                         return self
                             .builder
@@ -428,7 +429,7 @@ impl<'ctx> Compiler<'ctx> {
                 let lhs = lhs.into_int_value();
                 let rhs = rhs.into_int_value();
 
-                match node.op {
+                match op {
                     InfixOp::Eq => {
                         self.builder
                             .build_int_compare(IntPredicate::EQ, lhs, rhs, "c_eq")
@@ -445,7 +446,7 @@ impl<'ctx> Compiler<'ctx> {
                 let lhs = lhs.into_int_value();
                 let rhs = rhs.into_int_value();
 
-                match node.op {
+                match op {
                     InfixOp::Eq => {
                         self.builder
                             .build_int_compare(IntPredicate::EQ, lhs, rhs, "b_eq")
@@ -461,8 +462,25 @@ impl<'ctx> Compiler<'ctx> {
                 }
                 .as_basic_value_enum()
             }
-            _ => todo!("implement other types: {:?}", node.result_type),
+            Type::Unknown | Type::Unit | Type::Never => {
+                todo!("these types cannot be used in an infix expression")
+            }
         }
+    }
+
+    fn compile_infix_expression(&mut self, node: &AnalyzedInfixExpr) -> BasicValueEnum<'ctx> {
+        let lhs = self
+            .compile_expression(&node.lhs)
+            .expect("can only use infix expressions on non-unit values");
+
+        let rhs = match self
+            .compile_expression(&node.rhs) {
+                Some(value) => value,
+                None => return self.context.i8_type().const_zero().as_basic_value_enum(),
+            };
+
+        // call the infix helper
+        self.infix_helper(node.lhs.result_type(), node.op, lhs, rhs)
     }
 
     fn pow_helper(&mut self, lhs: FloatValue<'ctx>, rhs: FloatValue<'ctx>) -> FloatValue<'ctx> {
