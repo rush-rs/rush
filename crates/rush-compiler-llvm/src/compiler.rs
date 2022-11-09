@@ -9,7 +9,7 @@ use inkwell::{
     context::Context,
     module::{Linkage, Module},
     targets::TargetTriple,
-    types::BasicMetadataTypeEnum,
+    types::{BasicMetadataTypeEnum, BasicType},
     values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum, FloatValue, PointerValue},
     FloatPredicate, IntPredicate,
 };
@@ -19,7 +19,7 @@ use rush_analyzer::{
         AnalyzedFunctionDefinition, AnalyzedInfixExpr, AnalyzedLetStmt, AnalyzedPrefixExpr,
         AnalyzedProgram, AnalyzedReturnStmt, AnalyzedStatement,
     },
-    InfixOp, PrefixOp, Type,
+    AssignOp, InfixOp, PrefixOp, Type,
 };
 
 pub struct Compiler<'ctx> {
@@ -36,6 +36,8 @@ pub struct Compiler<'ctx> {
 
 #[derive(Debug)]
 struct Function<'ctx> {
+    // specifies the name of the function
+    name: String,
     // saves the declared variables of the function
     // TODO: remove the need for String allocation
     vars: HashMap<String, PointerValue<'ctx>>,
@@ -87,7 +89,7 @@ impl<'ctx> Compiler<'ctx> {
 
     fn compile_main_fn(&mut self, node: &AnalyzedBlock) {
         // create the main function which returns an int (exit-code)
-        let fn_type = self.context.void_type().fn_type(&[], false);
+        let fn_type = self.context.i8_type().fn_type(&[], false);
         let main_fn = self
             .module
             .add_function("main", fn_type, Some(Linkage::External));
@@ -98,6 +100,7 @@ impl<'ctx> Compiler<'ctx> {
 
         // create a new scope for the main function
         self.curr_fn = Some(Function {
+            name: "main".to_string(),
             vars: HashMap::new(),
             has_returned: false,
         });
@@ -106,13 +109,14 @@ impl<'ctx> Compiler<'ctx> {
         self.compile_block(node);
 
         // return exit-code 0 by default
-        //let success = self.context.i64_type().const_zero();
-        self.build_return(None);
+        let success = self.context.i8_type().const_zero().as_basic_value_enum();
+        self.build_return(Some(success));
     }
 
     fn compile_fn_definition(&mut self, node: &AnalyzedFunctionDefinition) {
         // create a new scope for the current function
         self.curr_fn = Some(Function {
+            name: node.name.to_string(),
             vars: HashMap::new(),
             has_returned: false,
         });
@@ -564,18 +568,61 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     fn compile_assign_expression(&mut self, node: &AnalyzedAssignExpr) {
-        todo!()
+        match (node.op, node.expr.result_type()) {
+            (AssignOp::Basic, _) => {
+                let rhs = self.compile_expression(&node.expr);
+
+                // get the pointer from the scope
+                let ptr = self
+                    .curr_fn()
+                    .vars
+                    .get(node.assignee)
+                    .expect("can only assign to declared variables");
+
+                // only store a new value if the result value is not `()`
+                if let Some(value) = rhs {
+                    self.builder.build_store(*ptr, value);
+                }
+            }
+            (op, Type::Int) => {
+                // compile the value of the rhs
+                let rhs = match self.compile_expression(&node.expr) {
+                    Some(value) => value,
+                    None => return, // quit if the rhs is `()`
+                };
+
+                // get the pointer from the scope
+                let ptr = *self
+                    .curr_fn()
+                    .vars
+                    .get(node.assignee)
+                    .expect("can only assign to declared variables");
+
+                // load the value from the pointer
+                let assignee = self.builder.build_load(ptr, node.assignee);
+
+                // perform the operation on the pointer value and the rhs
+                let res = self.infix_helper(Type::Int, InfixOp::from(op), assignee, rhs);
+
+                self.builder.build_store(ptr, res);
+            }
+            _ => todo!(),
+        }
     }
 
-    /// Builds a return instruction if the current block has no terminater
+    /// Builds a return instruction if the current block has no terminator
     /// TODO: impl block check
     fn build_return(&mut self, return_value: Option<BasicValueEnum<'ctx>>) {
         let mut curr_fn = self.curr_fn_mut();
         if !curr_fn.has_returned {
             curr_fn.has_returned = true;
-            match return_value {
-                Some(value) => self.builder.build_return(Some(&value)),
-                None => self.builder.build_return(None),
+            match (return_value, curr_fn.name.as_str()) {
+                (Some(value), _) => self.builder.build_return(Some(&value)),
+                (None, "main") => {
+                    let success = self.context.i8_type().const_zero();
+                    self.builder.build_return(Some(&success))
+                }
+                (None, _) => self.builder.build_return(None),
             };
         }
     }
