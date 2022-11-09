@@ -5,19 +5,23 @@ use std::collections::{HashMap, HashSet};
 
 use crate::error::Result;
 use inkwell::{
+    basic_block::BasicBlock,
     builder::Builder,
     context::Context,
     module::{Linkage, Module},
     targets::TargetTriple,
-    types::{BasicMetadataTypeEnum, BasicType},
-    values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum, FloatValue, PointerValue},
+    types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum},
+    values::{
+        BasicMetadataValueEnum, BasicValue, BasicValueEnum, FloatValue, FunctionValue,
+        InstructionOpcode, PointerValue,
+    },
     FloatPredicate, IntPredicate,
 };
 use rush_analyzer::{
     ast::{
         AnalyzedAssignExpr, AnalyzedBlock, AnalyzedCallExpr, AnalyzedCastExpr, AnalyzedExpression,
-        AnalyzedFunctionDefinition, AnalyzedInfixExpr, AnalyzedLetStmt, AnalyzedPrefixExpr,
-        AnalyzedProgram, AnalyzedReturnStmt, AnalyzedStatement,
+        AnalyzedFunctionDefinition, AnalyzedIfExpr, AnalyzedInfixExpr, AnalyzedLetStmt,
+        AnalyzedPrefixExpr, AnalyzedProgram, AnalyzedReturnStmt, AnalyzedStatement,
     },
     AssignOp, InfixOp, PrefixOp, Type,
 };
@@ -43,6 +47,8 @@ struct Function<'ctx> {
     vars: HashMap<String, PointerValue<'ctx>>,
     // specifies whether the function has already returned
     has_returned: bool,
+    // holds the LLVM function value
+    llvm_value: FunctionValue<'ctx>,
 }
 
 impl<'ctx> Compiler<'ctx> {
@@ -103,6 +109,7 @@ impl<'ctx> Compiler<'ctx> {
             name: "main".to_string(),
             vars: HashMap::new(),
             has_returned: false,
+            llvm_value: main_fn,
         });
 
         // build the function's block
@@ -114,13 +121,6 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     fn compile_fn_definition(&mut self, node: &AnalyzedFunctionDefinition) {
-        // create a new scope for the current function
-        self.curr_fn = Some(Function {
-            name: node.name.to_string(),
-            vars: HashMap::new(),
-            has_returned: false,
-        });
-
         // create the function's parameters
         let params: Vec<BasicMetadataTypeEnum> = node
             .params
@@ -157,6 +157,14 @@ impl<'ctx> Compiler<'ctx> {
         let basic_block = self.context.append_basic_block(function, "entry");
         self.builder.position_at_end(basic_block);
 
+        // create a new scope for the current function
+        self.curr_fn = Some(Function {
+            name: node.name.to_string(),
+            vars: HashMap::new(),
+            has_returned: false,
+            llvm_value: function,
+        });
+
         // bind each non-unit-type parameter to the original value (for later reference)
         for (i, param) in node.params.iter().enumerate() {
             // todo: do this
@@ -190,11 +198,11 @@ impl<'ctx> Compiler<'ctx> {
 
         // build the return value of the function's body
         let return_value = self.compile_block(&node.block);
-        self.build_return(return_value);
+        self.build_return(Some(return_value));
     }
 
     /// Compiles a block and returns its return value
-    fn compile_block(&mut self, node: &AnalyzedBlock) -> Option<BasicValueEnum<'ctx>> {
+    fn compile_block(&mut self, node: &AnalyzedBlock) -> BasicValueEnum<'ctx> {
         for stmt in &node.stmts {
             if self.curr_fn().has_returned {
                 break;
@@ -204,7 +212,7 @@ impl<'ctx> Compiler<'ctx> {
         // if there is an expression, return its value instead of void
         node.expr
             .as_ref()
-            .map_or_else(|| None, |expr| self.compile_expression(expr))
+            .map_or(self.unit_value(), |expr| self.compile_expression(expr))
     }
 
     fn compile_statement(&mut self, node: &AnalyzedStatement) {
@@ -218,15 +226,13 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     fn compile_let_statement(&mut self, node: &AnalyzedLetStmt) {
-        // allocate a pointer to the value
-        let ptr = self
-            .builder
-            .build_alloca(self.context.i64_type(), node.name);
+        let rhs = self.compile_expression(&node.expr);
 
-        // store the value in the ptr if the value is not `()`
-        if let Some(value) = self.compile_expression(&node.expr) {
-            self.builder.build_store(ptr, value);
-        }
+        // allocate a pointer to the value
+        let ptr = self.builder.build_alloca(rhs.get_type(), node.name);
+
+        // store the value in the ptr
+        self.builder.build_store(ptr, rhs);
 
         // insert the value into the vars of the current function
         self.curr_fn_mut().vars.insert(node.name.to_string(), ptr);
@@ -236,26 +242,35 @@ impl<'ctx> Compiler<'ctx> {
         match node {
             Some(expr) => {
                 let value = self.compile_expression(expr);
-                self.build_return(value)
+                self.build_return(Some(value))
             }
             None => self.build_return(None),
         };
     }
 
-    fn compile_expression(&mut self, node: &AnalyzedExpression) -> Option<BasicValueEnum<'ctx>> {
+    fn compile_expression(&mut self, node: &AnalyzedExpression) -> BasicValueEnum<'ctx> {
         match node {
-            AnalyzedExpression::Int(value) => Some(BasicValueEnum::IntValue(
-                self.context.i64_type().const_int(*value as u64, false),
-            )),
-            AnalyzedExpression::Float(value) => Some(BasicValueEnum::FloatValue(
-                self.context.f64_type().const_float(*value),
-            )),
-            AnalyzedExpression::Char(value) => Some(BasicValueEnum::IntValue(
-                self.context.i8_type().const_int(*value as u64, false),
-            )),
-            AnalyzedExpression::Bool(value) => Some(BasicValueEnum::IntValue(
-                self.context.i8_type().const_int(u64::from(*value), false),
-            )),
+            AnalyzedExpression::Int(value) => self
+                .context
+                .i64_type()
+                .const_int(*value as u64, false)
+                .as_basic_value_enum(),
+
+            AnalyzedExpression::Float(value) => self
+                .context
+                .f64_type()
+                .const_float(*value)
+                .as_basic_value_enum(),
+            AnalyzedExpression::Char(value) => self
+                .context
+                .i8_type()
+                .const_int(*value as u64, false)
+                .as_basic_value_enum(),
+            AnalyzedExpression::Bool(value) => self
+                .context
+                .i8_type()
+                .const_int(u64::from(*value), false)
+                .as_basic_value_enum(),
             AnalyzedExpression::Ident(name) => {
                 let ptr = self
                     .curr_fn()
@@ -263,24 +278,23 @@ impl<'ctx> Compiler<'ctx> {
                     .get(name.ident)
                     .expect("this variable was declared beforehand");
 
-                let value = self.builder.build_load(*ptr, name.ident);
-                Some(value)
+                self.builder.build_load(*ptr, name.ident)
             }
             AnalyzedExpression::Call(node) => self.compile_call_expression(node),
             AnalyzedExpression::Grouped(node) => self.compile_expression(node),
             AnalyzedExpression::Block(node) => self.compile_block(node),
-            AnalyzedExpression::Infix(node) => Some(self.compile_infix_expression(node)),
-            AnalyzedExpression::Prefix(node) => Some(self.compile_prefix_expression(node)),
-            AnalyzedExpression::Cast(node) => Some(self.compile_cast_expression(node)),
+            AnalyzedExpression::Infix(node) => self.compile_infix_expression(node),
+            AnalyzedExpression::Prefix(node) => self.compile_prefix_expression(node),
+            AnalyzedExpression::Cast(node) => self.compile_cast_expression(node),
             AnalyzedExpression::Assign(node) => {
                 self.compile_assign_expression(node);
-                None
+                self.unit_value()
             }
-            AnalyzedExpression::If(_) => todo!("if still needs to be implemented"),
+            AnalyzedExpression::If(node) => self.compile_if_expression(node),
         }
     }
 
-    fn compile_call_expression(&mut self, node: &AnalyzedCallExpr) -> Option<BasicValueEnum<'ctx>> {
+    fn compile_call_expression(&mut self, node: &AnalyzedCallExpr) -> BasicValueEnum<'ctx> {
         // check that the function is not a builtin one
         let func = match node.func {
             "exit" => {
@@ -310,10 +324,7 @@ impl<'ctx> Compiler<'ctx> {
         let args: Vec<BasicMetadataValueEnum> = node
             .args
             .iter()
-            .map(|arg| match self.compile_expression(arg) {
-                Some(value) => BasicMetadataValueEnum::from(value),
-                None => BasicMetadataValueEnum::IntValue(self.context.i8_type().const_zero()),
-            })
+            .map(|arg| BasicMetadataValueEnum::from(self.compile_expression(arg)))
             .collect();
 
         let res = self
@@ -321,11 +332,7 @@ impl<'ctx> Compiler<'ctx> {
             .build_call(func, &args, format!("ret_{}", node.func).as_str())
             .try_as_basic_value();
 
-        if res.is_left() {
-            Some(res.unwrap_left())
-        } else {
-            None
-        }
+        res.left_or(self.unit_value())
     }
 
     fn infix_helper(
@@ -469,15 +476,9 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     fn compile_infix_expression(&mut self, node: &AnalyzedInfixExpr) -> BasicValueEnum<'ctx> {
-        let lhs = self
-            .compile_expression(&node.lhs)
-            .expect("can only use infix expressions on non-unit values");
+        let lhs = self.compile_expression(&node.lhs);
 
-        let rhs = match self
-            .compile_expression(&node.rhs) {
-                Some(value) => value,
-                None => return self.context.i8_type().const_zero().as_basic_value_enum(),
-            };
+        let rhs = self.compile_expression(&node.rhs);
 
         // call the infix helper
         self.infix_helper(node.lhs.result_type(), node.op, lhs, rhs)
@@ -519,9 +520,7 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     fn compile_prefix_expression(&mut self, node: &AnalyzedPrefixExpr) -> BasicValueEnum<'ctx> {
-        let base = self
-            .compile_expression(&node.expr)
-            .expect("this must return a non `()` value");
+        let base = self.compile_expression(&node.expr);
 
         match (node.expr.result_type(), node.op) {
             (Type::Int, PrefixOp::Neg) => self
@@ -554,9 +553,7 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     fn compile_cast_expression(&mut self, node: &AnalyzedCastExpr) -> BasicValueEnum<'ctx> {
-        let lhs = self
-            .compile_expression(&node.expr)
-            .expect("casting is only possible on non-unit values");
+        let lhs = self.compile_expression(&node.expr);
 
         match (lhs, node.type_) {
             // required if a char is casted as an int
@@ -597,17 +594,12 @@ impl<'ctx> Compiler<'ctx> {
                     .get(node.assignee)
                     .expect("can only assign to declared variables");
 
-                // only store a new value if the result value is not `()`
-                if let Some(value) = rhs {
-                    self.builder.build_store(*ptr, value);
-                }
+                // store the new value in the pointer
+                self.builder.build_store(*ptr, rhs);
             }
             (op, Type::Int) => {
                 // compile the value of the rhs
-                let rhs = match self.compile_expression(&node.expr) {
-                    Some(value) => value,
-                    None => return, // quit if the rhs is `()`
-                };
+                let rhs = self.compile_expression(&node.expr);
 
                 // get the pointer from the scope
                 let ptr = *self
@@ -626,6 +618,114 @@ impl<'ctx> Compiler<'ctx> {
             }
             _ => todo!(),
         }
+    }
+
+    fn compile_if_expression(&mut self, node: &AnalyzedIfExpr) -> BasicValueEnum<'ctx> {
+        // compile the condition
+        let cond = self.compile_expression(&node.cond);
+
+        let cond_bool =
+            self.builder
+                .build_int_cast(cond.into_int_value(), self.context.bool_type(), "if_cond");
+
+        // create basic blocks for the `then` and `else` cases
+        let then_block = self
+            .context
+            .append_basic_block(self.curr_fn().llvm_value, "then");
+        let merge_block = self
+            .context
+            .append_basic_block(self.curr_fn().llvm_value, "merge");
+
+        // create an else block if specified in the node
+        if let Some(else_node) = &node.else_block {
+            let else_block = self
+                .context
+                .append_basic_block(self.curr_fn().llvm_value, "else");
+            self.builder
+                .build_conditional_branch(cond_bool, then_block, else_block);
+
+            self.builder.position_at_end(then_block);
+            let (if_type, then_option) = self.compile_branch(&node.then_block, merge_block);
+
+            self.builder.position_at_end(else_block);
+            let (_, else_option) = self.compile_branch(else_node, merge_block);
+
+            self.builder.position_at_end(merge_block);
+
+            // if a branch has terminated early (return), no phi should be inserted
+            match (then_option, else_option) {
+                (Some((then_value, then_branch)), Some((else_value, else_branch))) => {
+                    let phi = self.builder.build_phi(then_value.get_type(), "if_res");
+                    phi.add_incoming(&[(&then_value, then_branch), (&else_value, else_branch)]);
+                    phi.as_basic_value()
+                }
+                (Some((then_value, _)), None) => then_value,
+                (None, Some((else_value, _))) => else_value,
+                (None, None) => {
+                    self.builder.build_unreachable();
+
+                    // in this case, the block is unreachable due to a previous return
+                    // the compiler still needs a value so a `undef` value is returned
+                    self.undef_value(if_type)
+                }
+            }
+        } else {
+            self.builder
+                .build_conditional_branch(cond_bool, then_block, merge_block);
+            self.builder.position_at_end(then_block);
+            self.compile_branch(&node.then_block, merge_block);
+            self.builder.position_at_end(merge_block);
+            self.unit_value()
+        }
+    }
+
+    fn unit_value(&self) -> BasicValueEnum<'ctx> {
+        let i1 = self.context.bool_type();
+        i1.const_int(0, false).into()
+    }
+
+    fn undef_value(&self, typ: BasicTypeEnum<'ctx>) -> BasicValueEnum<'ctx> {
+        match typ {
+            BasicTypeEnum::ArrayType(array) => array.get_undef().into(),
+            BasicTypeEnum::FloatType(float) => float.get_undef().into(),
+            BasicTypeEnum::IntType(int) => int.get_undef().into(),
+            BasicTypeEnum::PointerType(pointer) => pointer.get_undef().into(),
+            BasicTypeEnum::StructType(tuple) => tuple.get_undef().into(),
+            BasicTypeEnum::VectorType(vector) => vector.get_undef().into(),
+        }
+    }
+
+    fn compile_branch(
+        &mut self,
+        node: &AnalyzedBlock,
+        end_block: BasicBlock<'ctx>,
+    ) -> (
+        BasicTypeEnum<'ctx>,
+        Option<(BasicValueEnum<'ctx>, BasicBlock<'ctx>)>,
+    ) {
+        let branch_value = self.compile_block(node);
+
+        if self.current_instruction_is_block_terminator() {
+            (branch_value.get_type(), None)
+        } else {
+            let branch_block = self.curr_block();
+            self.builder.build_unconditional_branch(end_block);
+            (branch_value.get_type(), Some((branch_value, branch_block)))
+        }
+    }
+
+    fn curr_block(&self) -> BasicBlock<'ctx> {
+        self.builder
+            .get_insert_block()
+            .expect("this function is only used if a block was previously inserted")
+    }
+
+    fn current_instruction_is_block_terminator(&self) -> bool {
+        let instruction = self.curr_block().get_last_instruction();
+        matches!(
+            instruction.map(|instruction| instruction.get_opcode()),
+            Some(InstructionOpcode::Return | InstructionOpcode::Unreachable)
+        )
     }
 
     /// Builds a return instruction if the current block has no terminator
