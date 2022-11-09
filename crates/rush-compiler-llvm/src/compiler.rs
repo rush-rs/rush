@@ -11,10 +11,11 @@ use inkwell::{
     targets::TargetTriple,
     types::BasicMetadataTypeEnum,
     values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum, FloatValue},
+    FloatPredicate, IntPredicate,
 };
 use rush_analyzer::{
     ast::{
-        AnalyzedBlock, AnalyzedCallExpr, AnalyzedCastExpr, AnalyzedExpression,
+        AnalyzedAssignExpr, AnalyzedBlock, AnalyzedCallExpr, AnalyzedCastExpr, AnalyzedExpression,
         AnalyzedFunctionDefinition, AnalyzedInfixExpr, AnalyzedLetStmt, AnalyzedPrefixExpr,
         AnalyzedProgram, AnalyzedReturnStmt, AnalyzedStatement,
     },
@@ -231,6 +232,9 @@ impl<'ctx> Compiler<'ctx> {
             AnalyzedExpression::Char(value) => Some(BasicValueEnum::IntValue(
                 self.context.i8_type().const_int(*value as u64, false),
             )),
+            AnalyzedExpression::Bool(value) => Some(BasicValueEnum::IntValue(
+                self.context.i8_type().const_int(u64::from(*value), false),
+            )),
             AnalyzedExpression::Ident(name) => *self
                 .curr_fn()
                 .vars
@@ -238,10 +242,15 @@ impl<'ctx> Compiler<'ctx> {
                 .expect("this variable was declared beforehand"),
             AnalyzedExpression::Call(node) => self.compile_call_expression(node),
             AnalyzedExpression::Grouped(node) => self.compile_expression(node),
+            AnalyzedExpression::Block(node) => self.compile_block(node),
             AnalyzedExpression::Infix(node) => Some(self.compile_infix_expression(node)),
             AnalyzedExpression::Prefix(node) => Some(self.compile_prefix_expression(node)),
             AnalyzedExpression::Cast(node) => Some(self.compile_cast_expression(node)),
-            _ => todo!("implement this expression kind: {:?}", node),
+            AnalyzedExpression::Assign(node) => {
+                self.compile_assign_expression(node);
+                None
+            }
+            AnalyzedExpression::If(_) => todo!("if still needs to be implemented"),
         }
     }
 
@@ -302,18 +311,34 @@ impl<'ctx> Compiler<'ctx> {
             .compile_expression(&node.rhs)
             .expect("can only use infix expressions on non-unit values");
 
-        match node.result_type {
+        match node.lhs.result_type() {
             Type::Float => {
                 let lhs = lhs.into_float_value();
                 let rhs = rhs.into_float_value();
                 match node.op {
+                    // arithmetic operators
                     InfixOp::Plus => self.builder.build_float_add(lhs, rhs, "f_sum"),
                     InfixOp::Minus => self.builder.build_float_sub(lhs, rhs, "f_sum"),
                     InfixOp::Mul => self.builder.build_float_mul(lhs, rhs, "f_prod"),
                     InfixOp::Div => self.builder.build_float_div(lhs, rhs, "f_prod"),
                     InfixOp::Rem => self.builder.build_float_rem(lhs, rhs, "f_rem"),
                     InfixOp::Pow => self.pow_helper(lhs, rhs),
-                    _ => todo!("implement more operators"),
+                    // comparison operators
+                    op => {
+                        let (op, label) = match op {
+                            InfixOp::Eq => (FloatPredicate::OEQ, "f_eq"),
+                            InfixOp::Neq => (FloatPredicate::ONE, "f_neq"),
+                            InfixOp::Gt => (FloatPredicate::OGT, "f_gt"),
+                            InfixOp::Gte => (FloatPredicate::OGE, "f_gte"),
+                            InfixOp::Lt => (FloatPredicate::OLT, "f_lt"),
+                            InfixOp::Lte => (FloatPredicate::OLE, "f_lte"),
+                            _ => unreachable!("other operators cannot be used on float"),
+                        };
+                        return self
+                            .builder
+                            .build_float_compare(op, lhs, rhs, label)
+                            .as_basic_value_enum();
+                    }
                 }
                 .as_basic_value_enum()
             }
@@ -321,6 +346,7 @@ impl<'ctx> Compiler<'ctx> {
                 let lhs = lhs.into_int_value();
                 let rhs = rhs.into_int_value();
                 match node.op {
+                    // arithmetic operators
                     InfixOp::Plus => self.builder.build_int_add(lhs, rhs, "i_sum"),
                     InfixOp::Minus => self.builder.build_int_sub(lhs, rhs, "i_sum"),
                     InfixOp::Mul => self.builder.build_int_mul(lhs, rhs, "i_prod"),
@@ -350,11 +376,69 @@ impl<'ctx> Compiler<'ctx> {
 
                         res
                     }
-                    _ => todo!("implement more operators"),
+                    // bitwise operators
+                    InfixOp::Shl => self.builder.build_left_shift(lhs, rhs, "i_shl"),
+                    InfixOp::Shr => self.builder.build_right_shift(lhs, rhs, true, "i_shr"),
+                    InfixOp::BitOr => self.builder.build_or(lhs, rhs, "i_bor"),
+                    InfixOp::BitAnd => self.builder.build_and(lhs, rhs, "i_band"),
+                    InfixOp::BitXor => self.builder.build_xor(lhs, rhs, "i_bxor"),
+                    // comparison operators
+                    op => {
+                        let (op, label) = match op {
+                            InfixOp::Eq => (IntPredicate::EQ, "i_eq"),
+                            InfixOp::Neq => (IntPredicate::NE, "i_neq"),
+                            InfixOp::Gt => (IntPredicate::SGT, "i_gt"),
+                            InfixOp::Gte => (IntPredicate::SGE, "i_gte"),
+                            InfixOp::Lt => (IntPredicate::SLT, "i_lt"),
+                            InfixOp::Lte => (IntPredicate::SLE, "i_lte"),
+                            _ => unreachable!("other operators cannot be used on int"),
+                        };
+                        return self
+                            .builder
+                            .build_int_compare(op, lhs, rhs, label)
+                            .as_basic_value_enum();
+                    }
                 }
                 .as_basic_value_enum()
             }
-            _ => todo!("implement other types"),
+            Type::Char => {
+                let lhs = lhs.into_int_value();
+                let rhs = rhs.into_int_value();
+
+                match node.op {
+                    InfixOp::Eq => {
+                        self.builder
+                            .build_int_compare(IntPredicate::EQ, lhs, rhs, "c_eq")
+                    }
+                    InfixOp::Neq => {
+                        self.builder
+                            .build_int_compare(IntPredicate::EQ, lhs, rhs, "c_eq")
+                    }
+                    _ => unreachable!("other operators cannot be used on char"),
+                }
+                .as_basic_value_enum()
+            }
+            Type::Bool => {
+                let lhs = lhs.into_int_value();
+                let rhs = rhs.into_int_value();
+
+                match node.op {
+                    InfixOp::Eq => {
+                        self.builder
+                            .build_int_compare(IntPredicate::EQ, lhs, rhs, "b_eq")
+                    }
+                    InfixOp::Neq => {
+                        self.builder
+                            .build_int_compare(IntPredicate::NE, lhs, rhs, "b_neq")
+                    }
+                    InfixOp::BitOr | InfixOp::Or => self.builder.build_or(lhs, rhs, "b_or"),
+                    InfixOp::BitAnd | InfixOp::And => self.builder.build_and(lhs, rhs, "b_and"),
+                    InfixOp::BitXor => self.builder.build_xor(lhs, rhs, "b_xor"),
+                    _ => unreachable!("other operators cannot be used on bool"),
+                }
+                .as_basic_value_enum()
+            }
+            _ => todo!("implement other types: {:?}", node.result_type),
         }
     }
 
@@ -408,10 +492,22 @@ impl<'ctx> Compiler<'ctx> {
                 .build_float_neg(base.into_float_value(), "neg")
                 .as_basic_value_enum(),
             // TODO: is this the right way of negating bools?
-            (Type::Bool, PrefixOp::Not) => self
-                .builder
-                .build_int_neg(base.into_int_value(), "neg")
-                .as_basic_value_enum(),
+            (Type::Bool, PrefixOp::Not) => {
+                // convert the original type to i1
+                let value = self.builder.build_int_cast(
+                    base.into_int_value(),
+                    self.context.bool_type(),
+                    "bool_tmp",
+                );
+                // use XOR to do a negate operation on the bool
+                let negated = self.builder.build_xor(
+                    value,
+                    self.context.bool_type().const_int(1, false),
+                    "bool_neg",
+                );
+                // return the negated bool
+                negated.as_basic_value_enum()
+            }
             _ => unreachable!("other types cannot be negated"),
         }
     }
@@ -446,6 +542,10 @@ impl<'ctx> Compiler<'ctx> {
                 .as_basic_value_enum(),
             _ => todo!(""),
         }
+    }
+
+    fn compile_assign_expression(&mut self, node: &AnalyzedAssignExpr) {
+        todo!()
     }
 
     /// Builds a return instruction if the current block has no terminater
