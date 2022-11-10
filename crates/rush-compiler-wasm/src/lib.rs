@@ -31,16 +31,16 @@ fn main() {
     if a as char == '\x00' { // this should be false
         exit(1);
     } else if a as char == '\x7F' { // this should be true
-        exit(2);
+        exit(add(3));
     } else {
         exit(3);
     }
 }
 
-fn _add(left: int) -> int {
+fn add(left: int) -> int {
     let mut right = 4.0;
     right += 6.5;
-    return left / right as int;
+    return left + right as int;
 }
 
 fn _other() -> char {

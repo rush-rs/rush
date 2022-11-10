@@ -519,7 +519,10 @@ impl<'src> Compiler<'src> {
         }
 
         match self.functions.get(node.func) {
-            Some(func) => todo!(),
+            Some(func) => {
+                self.function_body.push(instructions::CALL);
+                self.function_body.extend_from_slice(func);
+            }
             None => match node.func {
                 "exit" => self.builtin_exit(),
                 _ => unreachable!("the analyzer guarantees one of the above to match"),
