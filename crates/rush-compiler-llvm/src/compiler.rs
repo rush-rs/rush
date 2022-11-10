@@ -729,7 +729,12 @@ impl<'ctx> Compiler<'ctx> {
                 .as_basic_value_enum(),
             (Type::Bool, Type::Int) => self
                 .builder
-                .build_int_cast(lhs.into_int_value(), self.context.i64_type(), "bi_cast")
+                .build_int_cast_sign_flag(
+                    lhs.into_int_value(),
+                    self.context.i64_type(),
+                    false,
+                    "bi_cast",
+                )
                 .as_basic_value_enum(),
             (Type::Bool, Type::Float) => self
                 .builder
