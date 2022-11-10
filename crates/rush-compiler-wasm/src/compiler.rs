@@ -404,12 +404,8 @@ impl<'src> Compiler<'src> {
                 // compile expression
                 self.expression(node.expr);
 
-                // push constant 1
-                self.function_body.push(instructions::I32_CONST);
-                self.function_body.push(1);
-
-                // push xor
-                self.function_body.push(instructions::I32_XOR);
+                // negate
+                self.function_body.push(instructions::I32_EQZ);
             }
             (PrefixOp::Neg, Type::Int) => {
                 // push constant 0
