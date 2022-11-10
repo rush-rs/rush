@@ -486,24 +486,117 @@ impl<'src> Compiler<'src> {
         match (expr_type, node.type_) {
             // type does not change: do nothing
             (source, dest) if source == dest => {}
-            (Type::Bool, Type::Char) | (Type::Char, Type::Bool) => {}
+            (Type::Bool, Type::Char) => {}
 
             (Type::Int, Type::Float) => self.function_body.push(instructions::F64_CONVERT_I64_S),
-            (Type::Int, Type::Bool) => self.function_body.push(instructions::I32_WRAP_I64),
-            (Type::Int, Type::Char) => self.function_body.push(instructions::I32_WRAP_I64),
+            (Type::Int, Type::Bool) => {
+                // push constant 0
+                self.function_body.push(instructions::I64_CONST);
+                self.function_body.push(0);
+
+                // true if != 0
+                self.function_body.push(instructions::I64_NE);
+            }
+            (Type::Int, Type::Char) => {
+                // save expression result in new local
+                let mut local_idx = self.locals.len().to_uleb128();
+                self.locals.push(vec![1, types::I64]);
+                self.function_body.push(instructions::LOCAL_TEE);
+                self.function_body.extend_from_slice(&local_idx);
+
+                // if > 0x7F
+                self.function_body.push(instructions::I64_CONST);
+                self.function_body.push(0x7F);
+                self.function_body.push(instructions::I64_GT_S);
+                self.function_body.push(instructions::IF);
+                self.function_body.push(types::I32);
+
+                // then return 0x7F
+                self.function_body.push(instructions::I32_CONST);
+                self.function_body.push(0x7F);
+
+                // else if < 0x00
+                self.function_body.push(instructions::ELSE);
+                self.function_body.push(instructions::LOCAL_GET);
+                self.function_body.extend_from_slice(&local_idx);
+                self.function_body.push(instructions::I64_CONST);
+                self.function_body.push(0);
+                self.function_body.push(instructions::I64_LT_S);
+                self.function_body.push(instructions::IF);
+                self.function_body.push(types::I32);
+
+                // then return 0x00
+                self.function_body.push(instructions::I32_CONST);
+                self.function_body.push(0x00);
+
+                // else truncate to 7 bits
+                self.function_body.push(instructions::ELSE);
+                self.function_body.push(instructions::LOCAL_GET);
+                self.function_body.append(&mut local_idx);
+                self.function_body.push(instructions::I32_WRAP_I64);
+                self.function_body.push(instructions::I32_CONST);
+                self.function_body.push(0x7F);
+                self.function_body.push(instructions::I32_AND);
+
+                // end
+                self.function_body.push(instructions::END);
+                self.function_body.push(instructions::END);
+            }
             (Type::Float, Type::Int) => {
-                self.function_body.extend(instructions::I64_TRUNC_SAT_F64_S)
+                self.function_body.extend(instructions::I64_TRUNC_SAT_F64_S);
             }
             (Type::Float, Type::Bool) => {
-                self.function_body.extend(instructions::I32_TRUNC_SAT_F64_U)
+                // push constant 0
+                self.function_body.push(instructions::F64_CONST);
+                self.function_body.extend(0_f64.to_le_bytes());
+
+                // true if != 0
+                self.function_body.push(instructions::F64_NE);
             }
             (Type::Float, Type::Char) => {
-                self.function_body.extend(instructions::I32_TRUNC_SAT_F64_U)
+                // convert to i32
+                self.function_body.extend(instructions::I32_TRUNC_SAT_F64_U);
+
+                // save result in new local
+                let mut local_idx = self.locals.len().to_uleb128();
+                self.locals.push(vec![1, types::I32]);
+                self.function_body.push(instructions::LOCAL_TEE);
+                self.function_body.extend_from_slice(&local_idx);
+
+                // if > 0x7F
+                self.function_body.push(instructions::I32_CONST);
+                self.function_body.push(0x7F);
+                self.function_body.push(instructions::I32_GT_U);
+                self.function_body.push(instructions::IF);
+                self.function_body.push(types::I32);
+
+                // then return 0x7F
+                self.function_body.push(instructions::I32_CONST);
+                self.function_body.push(0x7F);
+
+                // else truncate to 7 bits
+                self.function_body.push(instructions::ELSE);
+                self.function_body.push(instructions::LOCAL_GET);
+                self.function_body.append(&mut local_idx);
+                self.function_body.push(instructions::I32_CONST);
+                self.function_body.push(0x7F);
+                self.function_body.push(instructions::I32_AND);
+
+                // end
+                self.function_body.push(instructions::END);
             }
             (Type::Bool, Type::Int) => self.function_body.push(instructions::I64_EXTEND_I32_U),
             (Type::Bool, Type::Float) => self.function_body.push(instructions::F64_CONVERT_I32_U),
             (Type::Char, Type::Int) => self.function_body.push(instructions::I64_EXTEND_I32_U),
             (Type::Char, Type::Float) => self.function_body.push(instructions::F64_CONVERT_I32_U),
+            (Type::Char, Type::Bool) => {
+                // push constant 0
+                self.function_body.push(instructions::I32_CONST);
+                self.function_body.push(0);
+
+                // true if != 0
+                self.function_body.push(instructions::I32_NE);
+            }
             _ => unreachable!("the analyzer guarantees one of the above to match"),
         }
     }

@@ -24,7 +24,15 @@ mod tests {
         let bytes = crate::compile(
             r#"
 fn main() {
-    'a';
+    let a: int = 0x80;
+
+    if a as char == '\x00' { // this should be false
+        // exit(1);
+    } else if a as char == '\x7F' { // this should be true
+        // exit(2);
+    } else {
+        // exit(3);
+    }
 }
 
 /*
