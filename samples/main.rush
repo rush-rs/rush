@@ -33,11 +33,11 @@ fn main() {
     1 < 2; 1 <= 3; 1 > 0; 1 >= -1; 1 == 1; 1 != 2; // relational operators
 
     let _float = if answer > pi || is_good {
-        answer;
+        answer
     } else if pi > answer {
-        pi;
+        pi
     } else {
-        is_good as float;
+        is_good as float
     };
 
     exit(1); // -> ! // exit(code: int) -> (), uses WASI proc_exit(i32)
