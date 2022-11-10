@@ -646,7 +646,7 @@ impl<'src> Compiler<'src> {
                 1, // num of return vals
                 types::I32,
             ],
-            vec![0], // no locals
+            vec![1, 1, types::I32],
             &[
                 // get param
                 instructions::LOCAL_GET,
@@ -654,6 +654,9 @@ impl<'src> Compiler<'src> {
                 // convert to i32
                 instructions::I32_TRUNC_SAT_F64_U[0],
                 instructions::I32_TRUNC_SAT_F64_U[1],
+                // set local to result
+                instructions::LOCAL_TEE,
+                1,
                 // if > 0x7F
                 instructions::I32_CONST,
                 0x7F,
@@ -666,7 +669,7 @@ impl<'src> Compiler<'src> {
                 // else truncate to 7 bits
                 instructions::ELSE,
                 instructions::LOCAL_GET,
-                0,
+                1,
                 instructions::I32_CONST,
                 0x7F,
                 instructions::I32_AND,
