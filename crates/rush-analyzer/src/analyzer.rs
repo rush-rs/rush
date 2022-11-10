@@ -12,6 +12,7 @@ pub struct Analyzer<'src> {
     pub functions: HashMap<&'src str, Function<'src>>,
     builtin_functions: HashMap<&'static str, BuiltinFunction>,
     scope: Option<Scope<'src>>,
+    used_builtins: HashSet<&'src str>,
     pub diagnostics: Vec<Diagnostic>,
 }
 
@@ -194,7 +195,14 @@ impl<'src> Analyzer<'src> {
         }
 
         match main_fn {
-            Some(main_fn) => Ok((AnalyzedProgram { functions, main_fn }, self.diagnostics)),
+            Some(main_fn) => Ok((
+                AnalyzedProgram {
+                    functions,
+                    main_fn,
+                    used_builtins: self.used_builtins,
+                },
+                self.diagnostics,
+            )),
             None => {
                 self.error(
                     ErrorKind::Semantic,
@@ -971,6 +979,7 @@ impl<'src> Analyzer<'src> {
                 ))
             }
             (_, Some(builtin)) => {
+                self.used_builtins.insert(node.func.inner);
                 let builtin = builtin.clone();
                 let (result_type, args) = if node.args.len() != builtin.param_types.len() {
                     self.error(
@@ -1224,7 +1233,8 @@ mod tests {
                     main_fn: (Block -> Type::Unit,
                         constant: true,
                         stmts: [],
-                        expr: (None)))
+                        expr: (None)),
+                    used_builtins: [])
             },
         )?;
 

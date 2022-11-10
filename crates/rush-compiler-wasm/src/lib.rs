@@ -29,21 +29,19 @@ fn main() {
     a as char == b as char;
 
     if a as char == '\x00' { // this should be false
-        // exit(1);
+        exit(1);
     } else if a as char == '\x7F' { // this should be true
-        // exit(2);
+        exit(2);
     } else {
-        // exit(3);
+        exit(3);
     }
 }
 
-/*
-// fn _add(left: int) -> int {
-//     let mut right = 4.0;
-//     right += 6.5;
-//     return left / right as int;
-// }
-*/
+fn _add(left: int) -> int {
+    let mut right = 4.0;
+    right += 6.5;
+    return left / right as int;
+}
 
 fn _other() -> char {
     if false { return 'c'; }

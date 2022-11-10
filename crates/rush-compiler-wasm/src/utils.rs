@@ -65,7 +65,7 @@ pub fn type_to_byte(type_: Type) -> Option<u8> {
         Type::Float => Some(types::F64),
         Type::Bool => Some(types::I32),
         Type::Char => Some(types::I32),
-        Type::Unit => None,
-        Type::Never | Type::Unknown => unreachable!("let stmts and params never have these types"),
+        Type::Unit | Type::Never => None,
+        Type::Unknown => unreachable!("the analyzer guarantees one of the above to match"),
     }
 }

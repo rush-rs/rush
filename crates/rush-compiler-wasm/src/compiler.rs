@@ -12,9 +12,8 @@ pub struct Compiler<'src> {
     function_body: Vec<u8>,
     locals: Vec<Vec<u8>>,
 
-    /// Maps variable names to `Option<(type, local_idx)>`, or `None` when of type `()`
-    // TODO: maybe remove type
-    scope: HashMap<&'src str, Option<(u8, Vec<u8>)>>,
+    /// Maps variable names to `Option<local_idx>`, or `None` when of type `()`
+    scope: HashMap<&'src str, Option<Vec<u8>>>,
     /// Maps function names to their index encoded as unsigned LEB128
     functions: HashMap<&'src str, Vec<u8>>,
     /// The count of parameters the current function takes
@@ -23,6 +22,8 @@ pub struct Compiler<'src> {
     builtin_functions: HashMap<&'static str, Vec<u8>>,
     /// Function bodies to append to the code section after the user defined functions
     builtins_code: Vec<Vec<u8>>,
+    /// The number of imports this module uses
+    import_count: usize,
 
     type_section: Vec<Vec<u8>>,     // 1
     import_section: Vec<Vec<u8>>,   // 2
@@ -31,6 +32,7 @@ pub struct Compiler<'src> {
     memory_section: Vec<Vec<u8>>,   // 5
     global_section: Vec<Vec<u8>>,   // 6
     export_section: Vec<Vec<u8>>,   // 7
+    start_section: Vec<u8>,         // 8
     element_section: Vec<Vec<u8>>,  // 9
     code_section: Vec<Vec<u8>>,     // 10
     data_section: Vec<Vec<u8>>,     // 11
@@ -43,6 +45,7 @@ impl<'src> Compiler<'src> {
     }
 
     pub fn compile(mut self, tree: AnalyzedProgram<'src>) -> Vec<u8> {
+        self.import_count = tree.used_builtins.len();
         self.program(tree);
         [
             &b"\0asm"[..],        // magic
@@ -54,11 +57,7 @@ impl<'src> Compiler<'src> {
             &Self::section(5, self.memory_section),
             &Self::section(6, self.global_section),
             &Self::section(7, self.export_section),
-            &[
-                8, // start section id
-                1, // section size (1 byte)
-                0, // index of main func
-            ],
+            &self.start_section,
             &Self::section(9, self.element_section),
             &Self::section(10, self.code_section),
             &Self::section(11, self.data_section),
@@ -113,8 +112,9 @@ impl<'src> Compiler<'src> {
     fn program(&mut self, node: AnalyzedProgram<'src>) {
         // add main fn signature
         {
-            // add to self.functions map (main func idx is always 0)
-            self.functions.insert("main", vec![0]);
+            // add to self.functions map
+            self.functions
+                .insert("main", self.import_count.to_uleb128());
 
             // add signature to type section
             self.type_section.push(vec![
@@ -123,56 +123,13 @@ impl<'src> Compiler<'src> {
                 0, // num of return vals
             ]);
 
-            // index of type in type_section (main func is always 0)
+            // index of signature in type section (main func is always 0)
             self.function_section.push(vec![0]);
         }
 
         // add other function signatures
         for func in &node.functions {
-            // skip unused functions
-            if !func.used {
-                continue;
-            }
-
-            // add to self.functions map
-            let func_idx = self.function_section.len();
-            self.functions.insert(func.name, func_idx.to_uleb128());
-
-            // start new buf vor func signature
-            let mut buf = vec![types::FUNC];
-
-            // add param types
-            let mut params = vec![];
-            for (name, type_) in &func.params {
-                let local_idx = params.len().to_uleb128();
-                let wasm_type = utils::type_to_byte(*type_);
-
-                if let Some(byte) = wasm_type {
-                    params.push(byte);
-                }
-                self.scope.insert(name, wasm_type.map(|t| (t, local_idx)));
-            }
-            self.param_count = params.len();
-            params.len().write_uleb128(&mut buf);
-            buf.append(&mut params);
-
-            // add return type
-            match utils::type_to_byte(func.return_type) {
-                // unit type => no return values
-                None => buf.push(0),
-                // any other type => 1 return value of that type
-                Some(return_type) => {
-                    buf.push(1); // 1 return value
-                    buf.push(return_type); // the return type
-                }
-            }
-
-            // push to type section and save idx
-            let func_type_idx = self.type_section.len();
-            self.type_section.push(buf);
-
-            // index of type in type_section
-            self.function_section.push(func_type_idx.to_uleb128());
+            self.function_signature(func);
         }
 
         // compile functions
@@ -186,26 +143,73 @@ impl<'src> Compiler<'src> {
     }
 
     fn main_fn(&mut self, body: AnalyzedBlock<'src>) {
-        // set param_count to 0
-        self.param_count = 0;
+        let main_idx = self.import_count.to_uleb128();
 
         // export main func as WASI `_start` func
         self.export_section.push(
             [
-                &[
-                    6, // string len
-                ][..],
+                &[6][..],  // string len
                 b"_start", // name of export
-                &[
-                    0, // export kind (0 = func)
-                    0, // index of func in function_section (main func is always 0)
-                ],
+                &[0],      // export kind (0 = func)
+                &main_idx, // index of func
             ]
             .concat(),
         );
 
+        // point to main func in start section
+        self.start_section = [
+            &[8][..],                     // section id
+            &main_idx.len().to_uleb128(), // section len
+            &main_idx,                    // index of main func
+        ]
+        .concat();
+
+        // set param_count to 0
+        self.param_count = 0;
+
         // function body
         self.function_body(body);
+    }
+
+    fn function_signature(&mut self, node: &AnalyzedFunctionDefinition<'src>) {
+        // skip unused functions
+        if !node.used {
+            return;
+        }
+
+        // add to self.functions map
+        let func_idx = self.function_section.len() + self.import_count;
+        self.functions.insert(node.name, func_idx.to_uleb128());
+
+        // start new buf vor func signature
+        let mut buf = vec![types::FUNC];
+
+        // add param types
+        let mut params: Vec<_> = node
+            .params
+            .iter()
+            .filter_map(|(_name, type_)| utils::type_to_byte(*type_))
+            .collect();
+        params.len().write_uleb128(&mut buf);
+        buf.append(&mut params);
+
+        // add return type
+        match utils::type_to_byte(node.return_type) {
+            // unit type => no return values
+            None => buf.push(0),
+            // any other type => 1 return value of that type
+            Some(return_type) => {
+                buf.push(1); // 1 return value
+                buf.push(return_type); // the return type
+            }
+        }
+
+        // push to type section and save idx
+        let func_type_idx = self.type_section.len();
+        self.type_section.push(buf);
+
+        // index of type in type_section
+        self.function_section.push(func_type_idx.to_uleb128());
     }
 
     fn function_definition(&mut self, node: AnalyzedFunctionDefinition<'src>) {
@@ -216,6 +220,20 @@ impl<'src> Compiler<'src> {
 
         // clear variable scope
         self.scope.clear();
+
+        // reset param count
+        self.param_count = 0;
+
+        // add params to scope
+        for (idx, (name, type_)) in node.params.into_iter().enumerate() {
+            self.scope.insert(
+                name,
+                utils::type_to_byte(type_).map(|_| {
+                    self.param_count += 1;
+                    idx.to_uleb128()
+                }),
+            );
+        }
 
         // function body
         self.function_body(node.block);
@@ -256,7 +274,7 @@ impl<'src> Compiler<'src> {
             AnalyzedStatement::Expr(expr) => {
                 let expr_type = expr.result_type();
                 self.expression(expr);
-                if expr_type != Type::Unit {
+                if !matches!(expr_type, Type::Unit | Type::Never) {
                     self.function_body.push(instructions::DROP);
                 }
             }
@@ -270,7 +288,7 @@ impl<'src> Compiler<'src> {
             self.locals.push(vec![1, byte]);
         }
         self.scope
-            .insert(node.name, wasm_type.map(|t| (t, local_idx.clone())));
+            .insert(node.name, wasm_type.map(|_| local_idx.clone()));
 
         self.expression(node.expr);
         self.function_body.push(instructions::LOCAL_SET);
@@ -309,7 +327,7 @@ impl<'src> Compiler<'src> {
                 value.write_uleb128(&mut self.function_body);
             }
             AnalyzedExpression::Ident(ident) => match &self.scope[ident.ident] {
-                Some((_type, local_idx)) => {
+                Some(local_idx) => {
                     self.function_body.push(instructions::LOCAL_GET);
                     self.function_body.extend_from_slice(local_idx);
                 }
@@ -319,7 +337,7 @@ impl<'src> Compiler<'src> {
             AnalyzedExpression::Prefix(node) => self.prefix_expr(*node),
             AnalyzedExpression::Infix(node) => self.infix_expr(*node),
             AnalyzedExpression::Assign(node) => self.assign_expr(*node),
-            AnalyzedExpression::Call(node) => todo!(),
+            AnalyzedExpression::Call(node) => self.call_expr(*node),
             AnalyzedExpression::Cast(node) => self.cast_expr(*node),
             AnalyzedExpression::Grouped(expr) => self.expression(*expr),
         }
@@ -339,7 +357,6 @@ impl<'src> Compiler<'src> {
         self.expression(node.cond);
 
         self.function_body.push(instructions::IF);
-        // TODO: never type
         match utils::type_to_byte(node.result_type) {
             Some(byte) => self.function_body.push(byte),
             None => self.function_body.push(types::VOID),
@@ -443,7 +460,7 @@ impl<'src> Compiler<'src> {
     }
 
     fn assign_expr(&mut self, node: AnalyzedAssignExpr<'src>) {
-        let Some((type_, local_idx)) = &self.scope[node.assignee] else {
+        let Some(local_idx) = &self.scope[node.assignee] else {
             self.expression(node.expr);
             return;
         };
@@ -490,11 +507,24 @@ impl<'src> Compiler<'src> {
         // set local to new value
         self.function_body.push(instructions::LOCAL_SET);
         self.function_body.extend_from_slice(
-            &self.scope[node.assignee]
+            self.scope[node.assignee]
                 .as_ref()
-                .expect("we checked this at the top of the function")
-                .1,
+                .expect("we checked this at the top of the function"),
         );
+    }
+
+    fn call_expr(&mut self, node: AnalyzedCallExpr<'src>) {
+        for arg in node.args {
+            self.expression(arg);
+        }
+
+        match self.functions.get(node.func) {
+            Some(func) => todo!(),
+            None => match node.func {
+                "exit" => self.builtin_exit(),
+                _ => unreachable!("the analyzer guarantees one of the above to match"),
+            },
+        }
     }
 
     fn cast_expr(&mut self, node: AnalyzedCastExpr<'src>) {
@@ -560,16 +590,17 @@ impl<'src> Compiler<'src> {
         let idx = match self.builtin_functions.get(name) {
             Some(idx) => idx,
             None => {
-                let idx = self.type_section.len().to_uleb128();
+                let type_idx = self.type_section.len().to_uleb128();
 
                 // add signature to type section
                 self.type_section.push(signature);
 
                 // add to function section
-                self.function_section.push(idx.clone());
+                let func_idx = (self.function_section.len() + self.import_count).to_uleb128();
+                self.function_section.push(type_idx);
 
                 // save in builtin_functions map
-                self.builtin_functions.insert(name, idx);
+                self.builtin_functions.insert(name, func_idx);
 
                 // add to end of code section
                 self.builtins_code
@@ -679,5 +710,45 @@ impl<'src> Compiler<'src> {
                 instructions::END,
             ],
         );
+    }
+
+    fn builtin_exit(&mut self) {
+        let idx = match self.builtin_functions.get("exit") {
+            Some(idx) => idx,
+            None => {
+                let type_idx = self.type_section.len().to_uleb128();
+
+                // add signature to type section
+                self.type_section.push(vec![
+                    types::FUNC,
+                    1, // num of params
+                    types::I32,
+                    0, // num of return vals
+                ]);
+
+                // save in builtin_functions map
+                let func_idx = self.import_section.len().to_uleb128();
+                self.builtin_functions.insert("exit", func_idx);
+
+                // add import from WASI
+                self.import_section.push(
+                    [
+                        &[22][..],                 // module string len
+                        b"wasi_snapshot_preview1", // module name
+                        &[9],                      // func name string len
+                        b"proc_exit",              // func name
+                        &[0],                      // import of type `func`
+                        &type_idx,                 // index of func signature in type section
+                    ]
+                    .concat(),
+                );
+
+                &self.builtin_functions["exit"]
+            }
+        };
+
+        self.function_body.push(instructions::I32_WRAP_I64);
+        self.function_body.push(instructions::CALL);
+        self.function_body.extend_from_slice(idx);
     }
 }

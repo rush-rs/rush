@@ -1,9 +1,12 @@
+use std::collections::HashSet;
+
 use rush_parser::ast::{AssignOp, InfixOp, PrefixOp, Type};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnalyzedProgram<'src> {
     pub functions: Vec<AnalyzedFunctionDefinition<'src>>,
     pub main_fn: AnalyzedBlock<'src>,
+    pub used_builtins: HashSet<&'src str>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
