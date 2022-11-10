@@ -450,26 +450,30 @@ impl<'ctx> Compiler<'ctx> {
                 }
                 .as_basic_value_enum()
             }
-            Type::Bool => {
-                let lhs = lhs.into_int_value();
-                let rhs = rhs.into_int_value();
-
-                match op {
-                    InfixOp::Eq => {
-                        self.builder
-                            .build_int_compare(IntPredicate::EQ, lhs, rhs, "b_eq")
-                    }
-                    InfixOp::Neq => {
-                        self.builder
-                            .build_int_compare(IntPredicate::NE, lhs, rhs, "b_neq")
-                    }
-                    InfixOp::BitOr | InfixOp::Or => self.builder.build_or(lhs, rhs, "b_or"),
-                    InfixOp::BitAnd | InfixOp::And => self.builder.build_and(lhs, rhs, "b_and"),
-                    InfixOp::BitXor => self.builder.build_xor(lhs, rhs, "b_xor"),
-                    _ => unreachable!("other operators cannot be used on bool"),
+            Type::Bool => match op {
+                InfixOp::Or | InfixOp::And => {
+                    unreachable!("the cases are handled in `compile_infix_expression`")
                 }
-                .as_basic_value_enum()
-            }
+                other => {
+                    let lhs = lhs.into_int_value();
+                    let rhs = rhs.into_int_value();
+                    match op {
+                        InfixOp::Eq => {
+                            self.builder
+                                .build_int_compare(IntPredicate::EQ, lhs, rhs, "b_eq")
+                        }
+                        InfixOp::Neq => {
+                            self.builder
+                                .build_int_compare(IntPredicate::NE, lhs, rhs, "b_neq")
+                        }
+                        InfixOp::BitOr => self.builder.build_or(lhs, rhs, "b_or"),
+                        InfixOp::BitAnd => self.builder.build_and(lhs, rhs, "b_and"),
+                        InfixOp::BitXor => self.builder.build_xor(lhs, rhs, "b_xor"),
+                        _ => unreachable!("other operators cannot be used on bool"),
+                    }
+                    .as_basic_value_enum()
+                }
+            },
             Type::Unknown | Type::Unit | Type::Never => {
                 todo!("these types cannot be used in an infix expression")
             }
@@ -477,12 +481,101 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     fn compile_infix_expression(&mut self, node: &AnalyzedInfixExpr) -> BasicValueEnum<'ctx> {
-        let lhs = self.compile_expression(&node.lhs);
+        match (node.lhs.result_type(), node.op) {
+            (Type::Bool, InfixOp::Or) => {
+                // comile the condition (lhs)
+                let lhs_cond = self.compile_expression(&node.lhs);
 
-        let rhs = self.compile_expression(&node.rhs);
+                // create the basic blocks
+                let lhs_true_block = self
+                    .context
+                    .append_basic_block(self.curr_fn().llvm_value, "lhs_is_true");
+                let lhs_false_block = self
+                    .context
+                    .append_basic_block(self.curr_fn().llvm_value, "lhs_is_false");
+                let merge_block = self
+                    .context
+                    .append_basic_block(self.curr_fn().llvm_value, "logical_or_merge");
 
-        // call the infix helper
-        self.infix_helper(node.lhs.result_type(), node.op, lhs, rhs)
+                self.builder.build_conditional_branch(
+                    lhs_cond.into_int_value(),
+                    lhs_true_block,
+                    lhs_false_block,
+                );
+
+                // if the lhs is true, stop here and return true
+                self.builder.position_at_end(lhs_true_block);
+                let lhs_true_value = self.context.bool_type().const_int(1, false);
+                self.builder.build_unconditional_branch(merge_block);
+
+                // if the value is false, execute the rhs and return its value
+                self.builder.position_at_end(lhs_false_block);
+                let rhs_value = self.compile_expression(&node.rhs);
+                self.builder.build_unconditional_branch(merge_block);
+
+                // insert a phi node to pick the correct value
+                self.builder.position_at_end(merge_block);
+                let phi = self
+                    .builder
+                    .build_phi(self.context.bool_type(), "logical_or_res");
+                phi.add_incoming(&[
+                    (&lhs_true_value, lhs_true_block),
+                    (&rhs_value, lhs_false_block),
+                ]);
+
+                // return the value of the phi
+                phi.as_basic_value()
+            }
+            (Type::Bool, InfixOp::And) => {
+                // compile the condition (lhs)
+                let lhs_cond = self.compile_expression(&node.lhs);
+
+                // create the basic blocks
+                let lhs_true_block = self
+                    .context
+                    .append_basic_block(self.curr_fn().llvm_value, "lhs_is_true");
+                let lhs_false_block = self
+                    .context
+                    .append_basic_block(self.curr_fn().llvm_value, "lhs_is_false");
+                let merge_block = self
+                    .context
+                    .append_basic_block(self.curr_fn().llvm_value, "logical_or_merge");
+
+                self.builder.build_conditional_branch(
+                    lhs_cond.into_int_value(),
+                    lhs_true_block,
+                    lhs_false_block,
+                );
+
+                // if the lhs is true, execute the rhs and return its value
+                self.builder.position_at_end(lhs_true_block);
+                let rhs_value = self.compile_expression(&node.rhs);
+                self.builder.build_unconditional_branch(merge_block);
+
+                // if the lhs value is false, stop here and return valse
+                self.builder.position_at_end(lhs_false_block);
+                let false_value = self.context.bool_type().const_zero();
+                self.builder.build_unconditional_branch(merge_block);
+
+                // insert a phi node to pick the correct value
+                self.builder.position_at_end(merge_block);
+                let phi = self
+                    .builder
+                    .build_phi(self.context.bool_type(), "logical_and_res");
+                phi.add_incoming(&[
+                    (&rhs_value, lhs_true_block),
+                    (&false_value, lhs_false_block),
+                ]);
+
+                // return the value of the phi
+                phi.as_basic_value()
+            }
+            (type_, _) => {
+                let lhs = self.compile_expression(&node.lhs);
+                let rhs = self.compile_expression(&node.rhs);
+                self.infix_helper(type_, node.op, lhs, rhs)
+            }
+        }
     }
 
     fn pow_helper(&mut self, lhs: FloatValue<'ctx>, rhs: FloatValue<'ctx>) -> FloatValue<'ctx> {
