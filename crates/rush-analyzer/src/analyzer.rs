@@ -180,7 +180,7 @@ impl<'src> Analyzer<'src> {
             })
             .collect();
 
-        // add warnings to ununsed functions
+        // add warnings to unused functions
         for ident in unused_funcs {
             self.warn(
                 format!("function `{}` is never called", ident.inner),
