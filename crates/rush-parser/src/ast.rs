@@ -234,7 +234,7 @@ impl From<AssignOp> for InfixOp {
             AssignOp::Rem => InfixOp::Rem,
             AssignOp::Pow => InfixOp::Pow,
             AssignOp::BitOr => InfixOp::BitOr,
-            AssignOp::BitAnd => InfixOp::And,
+            AssignOp::BitAnd => InfixOp::BitAnd,
             AssignOp::BitXor => Self::BitXor,
             AssignOp::Basic => panic!("cannot convert assign op basic to infix op"),
         }
