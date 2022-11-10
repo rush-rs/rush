@@ -84,12 +84,11 @@ impl<'ctx> Compiler<'ctx> {
         for func in program.functions.iter().filter(|func| func.used) {
             self.compile_fn_definition(func);
         }
-
         // compile the main function
         self.compile_main_fn(&program.main_fn);
-
-        // return the LLVM IR
+        // verify the LLVM module first
         self.module.verify()?;
+        // return the LLVM IR
         Ok(self.module.print_to_string().to_string())
     }
 
