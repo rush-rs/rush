@@ -42,6 +42,10 @@ pub struct Compiler<'src> {
 
     function_names: Vec<Vec<u8>>,
     imported_function_names: Vec<Vec<u8>>,
+    /// List of `(func_idx, list_of_locals)`
+    local_names: Vec<(Vec<u8>, Vec<Vec<u8>>)>,
+    /// The index of the currently compiling function in the `local_names` vec
+    curr_func_idx: usize,
 }
 
 impl<'src> Compiler<'src> {
@@ -92,7 +96,7 @@ impl<'src> Compiler<'src> {
             &Self::section(10, self.code_section),
             &Self::section(11, self.data_section),
             &self.data_count_section,
-            &Self::name_section(self.imported_function_names),
+            &Self::name_section(self.imported_function_names, self.local_names),
         ]
         .concat()
     }
@@ -136,11 +140,22 @@ impl<'src> Compiler<'src> {
         buf
     }
 
-    fn name_section(function_names: Vec<Vec<u8>>) -> Vec<u8> {
+    fn name_section(
+        function_names: Vec<Vec<u8>>,
+        local_names: Vec<(Vec<u8>, Vec<Vec<u8>>)>,
+    ) -> Vec<u8> {
         let contents = [
             &[4][..],                          // string len
             b"name",                           // custom section name "name"
             &Self::section(1, function_names), // function names subsection
+            // local names subsection
+            &Self::section(
+                2,
+                local_names
+                    .into_iter()
+                    .map(|(func_idx, locals)| [func_idx, Self::vector(locals, false)].concat())
+                    .collect(),
+            ),
         ]
         .concat();
         [
@@ -179,6 +194,9 @@ impl<'src> Compiler<'src> {
                 ]
                 .concat(),
             );
+
+            // no params in name section
+            self.local_names.push((func_idx, vec![]));
         }
 
         // add other function signatures
@@ -188,7 +206,8 @@ impl<'src> Compiler<'src> {
 
         // compile functions
         self.main_fn(node.main_fn);
-        for func in node.functions {
+        for (idx, func) in node.functions.into_iter().enumerate() {
+            self.curr_func_idx = idx + 1;
             self.function_definition(func);
         }
 
@@ -239,10 +258,21 @@ impl<'src> Compiler<'src> {
         let mut buf = vec![types::FUNC];
 
         // add param types
+        let mut param_names = vec![];
         let mut params: Vec<_> = node
             .params
             .iter()
-            .filter_map(|(_name, type_)| utils::type_to_byte(*type_))
+            .filter_map(|(name, type_)| {
+                param_names.push(
+                    [
+                        &param_names.len().to_uleb128()[..], // local index
+                        &name.len().to_uleb128(),            // string len
+                        name.as_bytes(),                     // param name
+                    ]
+                    .concat(),
+                );
+                utils::type_to_byte(*type_)
+            })
             .collect();
         params.len().write_uleb128(&mut buf);
         buf.append(&mut params);
@@ -274,6 +304,9 @@ impl<'src> Compiler<'src> {
             ]
             .concat(),
         );
+
+        // add param names to name section
+        self.local_names.push((func_idx, param_names));
     }
 
     fn function_definition(&mut self, node: AnalyzedFunctionDefinition<'src>) {
@@ -347,7 +380,7 @@ impl<'src> Compiler<'src> {
 
     fn let_stmt(&mut self, node: AnalyzedLetStmt<'src>) {
         let wasm_type = utils::type_to_byte(node.expr.result_type());
-        let mut local_idx = (self.locals.len() + self.param_count).to_uleb128();
+        let local_idx = (self.locals.len() + self.param_count).to_uleb128();
         if let Some(byte) = wasm_type {
             self.locals.push(vec![1, byte]);
         }
@@ -356,7 +389,17 @@ impl<'src> Compiler<'src> {
 
         self.expression(node.expr);
         self.function_body.push(instructions::LOCAL_SET);
-        self.function_body.append(&mut local_idx);
+        self.function_body.extend_from_slice(&local_idx);
+
+        // add variable name to name section
+        self.local_names[self.curr_func_idx].1.push(
+            [
+                &local_idx[..],                // local index
+                &node.name.len().to_uleb128(), // string len
+                node.name.as_bytes(),
+            ]
+            .concat(),
+        );
     }
 
     fn return_stmt(&mut self, node: AnalyzedReturnStmt<'src>) {
@@ -695,6 +738,7 @@ impl<'src> Compiler<'src> {
         name: &'static str,
         signature: Vec<u8>,
         locals: Vec<u8>,
+        local_names: &[&str],
         body: &[u8],
     ) {
         let idx = match self.builtin_functions.get(name) {
@@ -727,6 +771,23 @@ impl<'src> Compiler<'src> {
                     .concat(),
                 );
 
+                // add local names to name section
+                self.local_names.push((
+                    func_idx.clone(),
+                    local_names
+                        .iter()
+                        .enumerate()
+                        .map(|(idx, name)| {
+                            [
+                                &idx.to_uleb128()[..],    // local index
+                                &name.len().to_uleb128(), // string len
+                                name.as_bytes(),          // local name
+                            ]
+                            .concat()
+                        })
+                        .collect(),
+                ));
+
                 func_idx
             }
         };
@@ -746,7 +807,8 @@ impl<'src> Compiler<'src> {
                 1, // num of return vals
                 types::I32,
             ],
-            vec![0], // no locals
+            vec![0],  // no locals
+            &["int"], // name of param
             &[
                 // get param
                 instructions::LOCAL_GET,
@@ -799,6 +861,7 @@ impl<'src> Compiler<'src> {
                 types::I32,
             ],
             vec![1, 1, types::I32],
+            &["float", "tmp"], // names of params and locals
             &[
                 // get param
                 instructions::LOCAL_GET,
@@ -843,7 +906,8 @@ impl<'src> Compiler<'src> {
                 1,          // num of return vals
                 types::I64,
             ],
-            vec![1, 1, types::I64], // 1 local i64: accumulator
+            vec![1, 1, types::I64],               // 1 local i64: accumulator
+            &["base", "exponent", "accumulator"], // names of params and locals
             &[
                 // if exponent < 0
                 instructions::LOCAL_GET,
