@@ -384,12 +384,12 @@ impl<'src> Compiler<'src> {
             AnalyzedExpression::Bool(value) => {
                 // `bool`s are stored as unsigned `i32`
                 self.function_body.push(instructions::I32_CONST);
-                value.write_uleb128(&mut self.function_body);
+                value.write_sleb128(&mut self.function_body);
             }
             AnalyzedExpression::Char(value) => {
                 // `char`s are stored as unsigned `i32`
                 self.function_body.push(instructions::I32_CONST);
-                value.write_uleb128(&mut self.function_body);
+                value.write_sleb128(&mut self.function_body);
             }
             AnalyzedExpression::Ident(ident) => match &self.scope[ident.ident] {
                 Some(local_idx) => {
@@ -753,13 +753,15 @@ impl<'src> Compiler<'src> {
                 0,
                 // if > 0x7F
                 instructions::I64_CONST,
-                0x7F,
+                0xFF, // 0x7F in signed LEB128 is [0xFF, 0x00]
+                0x00,
                 instructions::I64_GT_S,
                 instructions::IF,
                 types::I32,
                 // then return 0x7F
                 instructions::I32_CONST,
-                0x7F,
+                0xFF, // 0x7F in signed LEB128 is [0xFF, 0x00]
+                0x00,
                 // else if < 0x00
                 instructions::ELSE,
                 instructions::LOCAL_GET,
@@ -809,13 +811,15 @@ impl<'src> Compiler<'src> {
                 1,
                 // if > 0x7F
                 instructions::I32_CONST,
-                0x7F,
+                0xFF, // 0x7F in signed LEB128 is [0xFF, 0x00]
+                0x00,
                 instructions::I32_GT_U,
                 instructions::IF,
                 types::I32,
                 // then return 0x7F
                 instructions::I32_CONST,
-                0x7F,
+                0xFF, // 0x7F in signed LEB128 is [0xFF, 0x00]
+                0x00,
                 // else use value
                 instructions::ELSE,
                 instructions::LOCAL_GET,
