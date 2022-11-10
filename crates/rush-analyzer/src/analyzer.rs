@@ -121,9 +121,36 @@ impl<'src> Analyzer<'src> {
         mut self,
         program: Program<'src>,
     ) -> Result<(AnalyzedProgram<'src>, Vec<Diagnostic>), Vec<Diagnostic>> {
+        // add all function signatures first
+        for func in &program.functions {
+            // check for duplicate function names
+            if let Some(prev_def) = self.functions.get(func.name.inner) {
+                let prev_def_span = prev_def.ident.span;
+                self.error(
+                    ErrorKind::Semantic,
+                    format!("duplicate function definition `{}`", func.name.inner),
+                    vec![],
+                    func.name.span,
+                );
+                self.hint(
+                    format!("function `{}` previously defined here", func.name.inner),
+                    prev_def_span,
+                );
+            }
+            self.functions.insert(
+                func.name.inner,
+                Function {
+                    ident: func.name.clone(),
+                    params: func.params.clone(),
+                    return_type: func.return_type.clone(),
+                    used: true, // is modified later
+                },
+            );
+        }
+
+        // then analyze each function body
         let mut functions = vec![];
         let mut main_fn = None;
-
         for func in program.functions {
             let func = self.visit_function_definition(func);
             match func.name {
@@ -153,6 +180,7 @@ impl<'src> Analyzer<'src> {
             })
             .collect();
 
+        // add warnings to ununsed functions
         for ident in unused_funcs {
             self.warn(
                 format!("function `{}` is never called", ident.inner),
@@ -240,16 +268,6 @@ impl<'src> Analyzer<'src> {
         &mut self,
         node: FunctionDefinition<'src>,
     ) -> AnalyzedFunctionDefinition<'src> {
-        // check for duplicate function names
-        if self.functions.contains_key(node.name.inner) {
-            self.error(
-                ErrorKind::Semantic,
-                format!("duplicate function definition `{}`", node.name.inner),
-                vec![],
-                node.name.span,
-            );
-        }
-
         // check if the function is the main function
         let is_main_fn = node.name.inner == "main";
 
@@ -332,23 +350,9 @@ impl<'src> Analyzer<'src> {
                         mutable: false,
                     },
                 );
-                params.push((ident, type_));
+                params.push((ident.inner, type_.inner));
             }
         }
-
-        // add the function to the analyzer's function map
-        self.functions.insert(
-            node.name.inner,
-            Function {
-                params: Spanned {
-                    span: node.params.span,
-                    inner: params.clone(),
-                },
-                return_type: node.return_type.clone(),
-                used: false,
-                ident: node.name.clone(),
-            },
-        );
 
         // set the scope to a new blank scope
         self.scope = Some(Scope {
@@ -391,18 +395,13 @@ impl<'src> Analyzer<'src> {
             );
         }
 
-        let params_without_spans = params
-            .iter()
-            .map(|(ident, type_)| (ident.inner, type_.inner))
-            .collect();
-
         // drop the scope when finished
         self.drop_scope();
 
         AnalyzedFunctionDefinition {
             used: true, // is modified in Self::analyze()
             name: node.name.inner,
-            params: params_without_spans,
+            params,
             return_type: node.return_type.inner.unwrap_or(Type::Unit),
             block,
         }
