@@ -115,30 +115,6 @@ impl<'src> Lexer<'src> {
             self.next()
         }
         self.next();
-
-        match self.curr_char {
-            Some('/') => {
-                self.next();
-                while self.curr_char.is_none() && self.curr_char != Some('\n') {
-                    self.next()
-                }
-                self.next();
-            }
-            Some('*') => {
-                self.next();
-                while let Some(current) = self.curr_char {
-                    match current {
-                        '*' if self.next_char == Some('/') => {
-                            self.next();
-                            self.next();
-                            break;
-                        }
-                        _ => self.next(),
-                    }
-                }
-            }
-            _ => (),
-        }
     }
 
     fn skip_block_comment(&mut self) {
