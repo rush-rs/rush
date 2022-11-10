@@ -31,7 +31,6 @@ pub struct Compiler<'src> {
     memory_section: Vec<Vec<u8>>,   // 5
     global_section: Vec<Vec<u8>>,   // 6
     export_section: Vec<Vec<u8>>,   // 7
-    start_section: Vec<u8>,         // 8
     element_section: Vec<Vec<u8>>,  // 9
     code_section: Vec<Vec<u8>>,     // 10
     data_section: Vec<Vec<u8>>,     // 11
@@ -55,11 +54,15 @@ impl<'src> Compiler<'src> {
             &Self::section(5, self.memory_section),
             &Self::section(6, self.global_section),
             &Self::section(7, self.export_section),
-            // TODO: start and data_count section
-            // &Self::section(8, self.start_section),
+            &[
+                8, // start section id
+                1, // section size (1 byte)
+                0, // index of main func
+            ],
             &Self::section(9, self.element_section),
             &Self::section(10, self.code_section),
             &Self::section(11, self.data_section),
+            // TODO: data_count section
             // &Self::section(12, self.data_count_section),
         ]
         .concat()
