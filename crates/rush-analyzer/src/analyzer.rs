@@ -777,29 +777,62 @@ impl<'src> Analyzer<'src> {
         )
     }
 
-    fn infix_test_types(
-        &mut self,
-        types: &[Type],
-        (left_type, right_type): (Type, Type),
-        op: InfixOp,
-        span: Span,
-        override_result_type: Option<Type>,
-        (lhs_span, rhs_span): (Span, Span),
-    ) -> Type {
-        match (left_type, right_type) {
+    fn visit_infix_expr(&mut self, node: InfixExpr<'src>) -> AnalyzedExpression<'src> {
+        let lhs_span = node.lhs.span();
+        let rhs_span = node.rhs.span();
+        let lhs = self.visit_expression(node.lhs);
+        let rhs = self.visit_expression(node.rhs);
+
+        let allowed_types: &[Type];
+        let mut override_result_type = None;
+        let mut inherits_never_type = true;
+        match node.op {
+            InfixOp::Plus | InfixOp::Minus | InfixOp::Mul | InfixOp::Div => {
+                allowed_types = &[Type::Int, Type::Float];
+            }
+            InfixOp::Lt | InfixOp::Gt | InfixOp::Lte | InfixOp::Gte => {
+                allowed_types = &[Type::Int, Type::Float];
+                override_result_type = Some(Type::Bool);
+            }
+            InfixOp::Rem | InfixOp::Pow | InfixOp::Shl | InfixOp::Shr => {
+                allowed_types = &[Type::Int];
+            }
+            InfixOp::Eq | InfixOp::Neq => {
+                allowed_types = &[Type::Int, Type::Float, Type::Bool, Type::Char];
+                override_result_type = Some(Type::Bool);
+            }
+            InfixOp::BitOr | InfixOp::BitAnd | InfixOp::BitXor => {
+                allowed_types = &[Type::Int, Type::Bool];
+            }
+            InfixOp::And | InfixOp::Or => {
+                allowed_types = &[Type::Bool];
+                inherits_never_type = false;
+            }
+        }
+
+        let result_type = match (lhs.result_type(), rhs.result_type()) {
             (Type::Unknown, _) | (_, Type::Unknown) => Type::Unknown,
-            (Type::Never, _) => {
-                self.warn_unreachable(span, lhs_span, true);
+            (Type::Never, Type::Never) => {
+                self.warn_unreachable(node.span, lhs_span, true);
+                self.warn_unreachable(node.span, rhs_span, true);
                 Type::Never
             }
-            (_, Type::Never) => {
-                self.warn_unreachable(span, rhs_span, true);
+            (Type::Never, _) if inherits_never_type => {
+                self.warn_unreachable(node.span, lhs_span, true);
                 Type::Never
             }
-            (left, right) if left == right && types.contains(&left) => match override_result_type {
-                Some(type_) => type_,
-                None => left,
-            },
+            (_, Type::Never) if inherits_never_type => {
+                self.warn_unreachable(node.span, rhs_span, true);
+                Type::Never
+            }
+            (Type::Never, _) => rhs.result_type(),
+            (_, Type::Never) => lhs.result_type(),
+            (left, right) if left == right && allowed_types.contains(&left) => {
+                match override_result_type {
+                    Some(type_) => type_,
+                    None => left,
+                }
+            }
             (left, right) if left != right => {
                 self.error(
                     ErrorKind::Type,
@@ -807,51 +840,23 @@ impl<'src> Analyzer<'src> {
                         "infix expressions require equal types on both sides, got `{left}` and `{right}`"
                     ),
                     vec![],
-                    span,
+                    node.span,
                 );
                 Type::Unknown
             }
             (type_, _) => {
                 self.error(
                     ErrorKind::Type,
-                    format!("infix operator `{op}` does not allow values of type `{type_}`"),
+                    format!(
+                        "infix operator `{}` does not allow values of type `{type_}`",
+                        node.op
+                    ),
                     vec![],
-                    span,
+                    node.span,
                 );
                 Type::Unknown
             }
-        }
-    }
-
-    fn visit_infix_expr(&mut self, node: InfixExpr<'src>) -> AnalyzedExpression<'src> {
-        let lhs_span = node.lhs.span();
-        let rhs_span = node.rhs.span();
-        let lhs = self.visit_expression(node.lhs);
-        let rhs = self.visit_expression(node.rhs);
-
-        let (allowed_types, override_result_type): (&[Type], _) = match node.op {
-            InfixOp::Plus | InfixOp::Minus | InfixOp::Mul | InfixOp::Div => {
-                (&[Type::Int, Type::Float], None)
-            }
-            InfixOp::Lt | InfixOp::Gt | InfixOp::Lte | InfixOp::Gte => {
-                (&[Type::Int, Type::Float], Some(Type::Bool))
-            }
-            InfixOp::Rem | InfixOp::Pow | InfixOp::Shl | InfixOp::Shr => (&[Type::Int], None),
-            InfixOp::Eq | InfixOp::Neq => (
-                &[Type::Int, Type::Float, Type::Bool, Type::Char],
-                Some(Type::Bool),
-            ),
-            InfixOp::BitOr | InfixOp::BitAnd | InfixOp::BitXor => (&[Type::Int, Type::Bool], None),
-            InfixOp::And | InfixOp::Or => (&[Type::Bool], None),
         };
-        let result_type = self.infix_test_types(
-            allowed_types,
-            (lhs.result_type(), rhs.result_type()),
-            node.op,
-            node.span,
-            override_result_type,
-            (lhs_span, rhs_span),
-        );
 
         AnalyzedExpression::Infix(
             AnalyzedInfixExpr {
