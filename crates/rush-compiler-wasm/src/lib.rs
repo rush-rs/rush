@@ -25,6 +25,8 @@ mod tests {
             r#"
 fn main() {
     let a: int = 0x80;
+    let b: float = 129f;
+    a as char == b as char;
 
     if a as char == '\x00' { // this should be false
         // exit(1);

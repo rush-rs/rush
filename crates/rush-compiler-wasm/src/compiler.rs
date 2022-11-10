@@ -19,6 +19,10 @@ pub struct Compiler<'src> {
     functions: HashMap<&'src str, Vec<u8>>,
     /// The count of parameters the current function takes
     param_count: usize,
+    /// Maps builtin function names to their index encoded as unsigned LEB128
+    builtin_functions: HashMap<&'static str, Vec<u8>>,
+    /// Function bodies to append to the code section after the user defined functions
+    builtins_code: Vec<Vec<u8>>,
 
     type_section: Vec<Vec<u8>>,     // 1
     import_section: Vec<Vec<u8>>,   // 2
@@ -104,28 +108,83 @@ impl<'src> Compiler<'src> {
     /////////////////////////
 
     fn program(&mut self, node: AnalyzedProgram<'src>) {
+        // add main fn signature
+        {
+            // add to self.functions map (main func idx is always 0)
+            self.functions.insert("main", vec![0]);
+
+            // add signature to type section
+            self.type_section.push(vec![
+                types::FUNC,
+                0, // num of params
+                0, // num of return vals
+            ]);
+
+            // index of type in type_section (main func is always 0)
+            self.function_section.push(vec![0]);
+        }
+
+        // add other function signatures
+        for func in &node.functions {
+            // skip unused functions
+            if !func.used {
+                continue;
+            }
+
+            // add to self.functions map
+            let func_idx = self.function_section.len();
+            self.functions.insert(func.name, func_idx.to_uleb128());
+
+            // start new buf vor func signature
+            let mut buf = vec![types::FUNC];
+
+            // add param types
+            let mut params = vec![];
+            for (name, type_) in &func.params {
+                let local_idx = params.len().to_uleb128();
+                let wasm_type = utils::type_to_byte(*type_);
+
+                if let Some(byte) = wasm_type {
+                    params.push(byte);
+                }
+                self.scope.insert(name, wasm_type.map(|t| (t, local_idx)));
+            }
+            self.param_count = params.len();
+            params.len().write_uleb128(&mut buf);
+            buf.append(&mut params);
+
+            // add return type
+            match utils::type_to_byte(func.return_type) {
+                // unit type => no return values
+                None => buf.push(0),
+                // any other type => 1 return value of that type
+                Some(return_type) => {
+                    buf.push(1); // 1 return value
+                    buf.push(return_type); // the return type
+                }
+            }
+
+            // push to type section and save idx
+            let func_type_idx = self.type_section.len();
+            self.type_section.push(buf);
+
+            // index of type in type_section
+            self.function_section.push(func_type_idx.to_uleb128());
+        }
+
+        // compile functions
         self.main_fn(node.main_fn);
         for func in node.functions {
             self.function_definition(func);
         }
+
+        // push contents of `after_code_section`
+        self.code_section.append(&mut self.builtins_code);
     }
 
     fn main_fn(&mut self, body: AnalyzedBlock<'src>) {
-        // add to self.functions map (main func idx is always 0)
-        self.functions.insert("main", vec![0]);
-
         // set param_count to 0
         self.param_count = 0;
-
-        // add signature to type section
-        self.type_section.push(vec![
-            types::FUNC,
-            0, // num of params
-            0, // num of return vals
-        ]);
-
-        // index of type in type_section (main func is always 0)
-        self.function_section.push(vec![0]);
 
         // export main func as WASI `_start` func
         self.export_section.push(
@@ -152,48 +211,8 @@ impl<'src> Compiler<'src> {
             return;
         }
 
-        // add to self.functions map
-        let func_idx = self.function_section.len();
-        self.functions.insert(node.name, func_idx.to_uleb128());
-
         // clear variable scope
         self.scope.clear();
-
-        // start new buf vor func signature
-        let mut buf = vec![types::FUNC];
-
-        // add param types
-        let mut params = vec![];
-        for (name, type_) in node.params {
-            let local_idx = params.len().to_uleb128();
-            let wasm_type = utils::type_to_byte(type_);
-
-            if let Some(byte) = wasm_type {
-                params.push(byte);
-            }
-            self.scope.insert(name, wasm_type.map(|t| (t, local_idx)));
-        }
-        self.param_count = params.len();
-        params.len().write_uleb128(&mut buf);
-        buf.append(&mut params);
-
-        // add return type
-        match utils::type_to_byte(node.return_type) {
-            // unit type => no return values
-            None => buf.push(0),
-            // any other type => 1 return value of that type
-            Some(return_type) => {
-                buf.push(1); // 1 return value
-                buf.push(return_type); // the return type
-            }
-        }
-
-        // push to type section and save idx
-        let func_type_idx = self.type_section.len();
-        self.type_section.push(buf);
-
-        // index of type in type_section
-        self.function_section.push(func_type_idx.to_uleb128());
 
         // function body
         self.function_body(node.block);
@@ -497,51 +516,7 @@ impl<'src> Compiler<'src> {
                 // true if != 0
                 self.function_body.push(instructions::I64_NE);
             }
-            (Type::Int, Type::Char) => {
-                // save expression result in new local
-                let mut local_idx = self.locals.len().to_uleb128();
-                self.locals.push(vec![1, types::I64]);
-                self.function_body.push(instructions::LOCAL_TEE);
-                self.function_body.extend_from_slice(&local_idx);
-
-                // if > 0x7F
-                self.function_body.push(instructions::I64_CONST);
-                self.function_body.push(0x7F);
-                self.function_body.push(instructions::I64_GT_S);
-                self.function_body.push(instructions::IF);
-                self.function_body.push(types::I32);
-
-                // then return 0x7F
-                self.function_body.push(instructions::I32_CONST);
-                self.function_body.push(0x7F);
-
-                // else if < 0x00
-                self.function_body.push(instructions::ELSE);
-                self.function_body.push(instructions::LOCAL_GET);
-                self.function_body.extend_from_slice(&local_idx);
-                self.function_body.push(instructions::I64_CONST);
-                self.function_body.push(0);
-                self.function_body.push(instructions::I64_LT_S);
-                self.function_body.push(instructions::IF);
-                self.function_body.push(types::I32);
-
-                // then return 0x00
-                self.function_body.push(instructions::I32_CONST);
-                self.function_body.push(0x00);
-
-                // else truncate to 7 bits
-                self.function_body.push(instructions::ELSE);
-                self.function_body.push(instructions::LOCAL_GET);
-                self.function_body.append(&mut local_idx);
-                self.function_body.push(instructions::I32_WRAP_I64);
-                self.function_body.push(instructions::I32_CONST);
-                self.function_body.push(0x7F);
-                self.function_body.push(instructions::I32_AND);
-
-                // end
-                self.function_body.push(instructions::END);
-                self.function_body.push(instructions::END);
-            }
+            (Type::Int, Type::Char) => self.builtin_cast_int_to_char(),
             (Type::Float, Type::Int) => {
                 self.function_body.extend(instructions::I64_TRUNC_SAT_F64_S);
             }
@@ -553,38 +528,7 @@ impl<'src> Compiler<'src> {
                 // true if != 0
                 self.function_body.push(instructions::F64_NE);
             }
-            (Type::Float, Type::Char) => {
-                // convert to i32
-                self.function_body.extend(instructions::I32_TRUNC_SAT_F64_U);
-
-                // save result in new local
-                let mut local_idx = self.locals.len().to_uleb128();
-                self.locals.push(vec![1, types::I32]);
-                self.function_body.push(instructions::LOCAL_TEE);
-                self.function_body.extend_from_slice(&local_idx);
-
-                // if > 0x7F
-                self.function_body.push(instructions::I32_CONST);
-                self.function_body.push(0x7F);
-                self.function_body.push(instructions::I32_GT_U);
-                self.function_body.push(instructions::IF);
-                self.function_body.push(types::I32);
-
-                // then return 0x7F
-                self.function_body.push(instructions::I32_CONST);
-                self.function_body.push(0x7F);
-
-                // else truncate to 7 bits
-                self.function_body.push(instructions::ELSE);
-                self.function_body.push(instructions::LOCAL_GET);
-                self.function_body.append(&mut local_idx);
-                self.function_body.push(instructions::I32_CONST);
-                self.function_body.push(0x7F);
-                self.function_body.push(instructions::I32_AND);
-
-                // end
-                self.function_body.push(instructions::END);
-            }
+            (Type::Float, Type::Char) => self.builtin_cast_float_to_char(),
             (Type::Bool, Type::Int) => self.function_body.push(instructions::I64_EXTEND_I32_U),
             (Type::Bool, Type::Float) => self.function_body.push(instructions::F64_CONVERT_I32_U),
             (Type::Char, Type::Int) => self.function_body.push(instructions::I64_EXTEND_I32_U),
@@ -599,5 +543,135 @@ impl<'src> Compiler<'src> {
             }
             _ => unreachable!("the analyzer guarantees one of the above to match"),
         }
+    }
+
+    /////////////////////////
+
+    fn call_builtin(
+        &mut self,
+        name: &'static str,
+        signature: Vec<u8>,
+        locals: Vec<u8>,
+        body: &[u8],
+    ) {
+        let idx = match self.builtin_functions.get(name) {
+            Some(idx) => idx,
+            None => {
+                let idx = self.type_section.len().to_uleb128();
+
+                // add signature to type section
+                self.type_section.push(signature);
+
+                // add to function section
+                self.function_section.push(idx.clone());
+
+                // save in builtin_functions map
+                self.builtin_functions.insert(name, idx);
+
+                // add to end of code section
+                self.builtins_code
+                    .push([&(body.len() + locals.len()).to_uleb128(), &locals, body].concat());
+
+                &self.builtin_functions[name]
+            }
+        };
+
+        self.function_body.push(instructions::CALL);
+        self.function_body.extend_from_slice(idx);
+    }
+
+    fn builtin_cast_int_to_char(&mut self) {
+        self.call_builtin(
+            "rush_cast_int_to_char",
+            vec![
+                types::FUNC,
+                1, // num of params
+                types::I64,
+                1, // num of return vals
+                types::I32,
+            ],
+            vec![0], // no locals
+            &[
+                // get param
+                instructions::LOCAL_GET,
+                0,
+                // if > 0x7F
+                instructions::I64_CONST,
+                0x7F,
+                instructions::I64_GT_S,
+                instructions::IF,
+                types::I32,
+                // then return 0x7F
+                instructions::I32_CONST,
+                0x7F,
+                // else if < 0x00
+                instructions::ELSE,
+                instructions::LOCAL_GET,
+                0,
+                instructions::I64_CONST,
+                0,
+                instructions::I64_LT_S,
+                instructions::IF,
+                types::I32,
+                // then return 0x00
+                instructions::I32_CONST,
+                0x00,
+                // else truncate to 7 bits
+                instructions::ELSE,
+                instructions::LOCAL_GET,
+                0,
+                instructions::I32_WRAP_I64,
+                instructions::I32_CONST,
+                0x7F,
+                instructions::I32_AND,
+                // end if
+                instructions::END,
+                instructions::END,
+                // end function body
+                instructions::END,
+            ],
+        );
+    }
+
+    fn builtin_cast_float_to_char(&mut self) {
+        self.call_builtin(
+            "rush_cast_float_to_char",
+            vec![
+                types::FUNC,
+                1, // num of params
+                types::F64,
+                1, // num of return vals
+                types::I32,
+            ],
+            vec![0], // no locals
+            &[
+                // get param
+                instructions::LOCAL_GET,
+                0,
+                // convert to i32
+                instructions::I32_TRUNC_SAT_F64_U[0],
+                instructions::I32_TRUNC_SAT_F64_U[1],
+                // if > 0x7F
+                instructions::I32_CONST,
+                0x7F,
+                instructions::I32_GT_U,
+                instructions::IF,
+                types::I32,
+                // then return 0x7F
+                instructions::I32_CONST,
+                0x7F,
+                // else truncate to 7 bits
+                instructions::ELSE,
+                instructions::LOCAL_GET,
+                0,
+                instructions::I32_CONST,
+                0x7F,
+                instructions::I32_AND,
+                // end if
+                instructions::END,
+                // end function body
+                instructions::END,
+            ],
+        );
     }
 }
