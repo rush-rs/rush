@@ -971,12 +971,17 @@ impl<'src> Analyzer<'src> {
     }
 
     fn visit_call_expr(&mut self, node: CallExpr<'src>) -> AnalyzedExpression<'src> {
+        // saves the name of the current function (not the callee!)
+        let curr_fn_name = self.scope().fn_name;
         let func = match (
             self.functions.get_mut(node.func.inner),
             self.builtin_functions.get(node.func.inner),
         ) {
             (Some(func), _) => {
-                func.used = true;
+                // only mark the function as used if it is called from outside of its body
+                if curr_fn_name != node.func.inner {
+                    func.used = true;
+                }
                 Some((
                     func.return_type.inner.unwrap_or(Type::Unit),
                     func.params.clone(),
