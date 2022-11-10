@@ -144,7 +144,7 @@ impl<'src> Analyzer<'src> {
                     ident: func.name.clone(),
                     params: func.params.clone(),
                     return_type: func.return_type.clone(),
-                    used: true, // is modified later
+                    used: false,
                 },
             );
         }
