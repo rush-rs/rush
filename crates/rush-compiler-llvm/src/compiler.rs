@@ -80,6 +80,9 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     pub fn compile(&mut self, program: AnalyzedProgram) -> Result<String> {
+        // TODO: remove this test
+        self.define_cast_int_to_char_core();
+
         // compile all defined functions which are later used
         for func in program.functions.iter().filter(|func| func.used) {
             self.compile_fn_definition(func);
@@ -266,11 +269,14 @@ impl<'ctx> Compiler<'ctx> {
                 .i8_type()
                 .const_int(*value as u64, false)
                 .as_basic_value_enum(),
-            AnalyzedExpression::Bool(value) => self
-                .context
-                .i8_type()
-                .const_int(u64::from(*value), false)
-                .as_basic_value_enum(),
+            AnalyzedExpression::Bool(value) => {
+                // create a pseudo-bool
+                let bool_int = self.context.i8_type().const_int(u64::from(*value), false);
+                // cast the bool to a real bool
+                self.builder
+                    .build_int_cast(bool_int, self.context.bool_type(), "bool")
+                    .as_basic_value_enum()
+            }
             AnalyzedExpression::Ident(name) => {
                 let ptr = self
                     .curr_fn()
@@ -554,30 +560,41 @@ impl<'ctx> Compiler<'ctx> {
     fn compile_cast_expression(&mut self, node: &AnalyzedCastExpr) -> BasicValueEnum<'ctx> {
         let lhs = self.compile_expression(&node.expr);
 
-        match (lhs, node.type_) {
-            // required if a char is casted as an int
-            (BasicValueEnum::IntValue(lhs_int), Type::Int) => self
-                .builder
-                .build_int_cast(lhs_int, self.context.i64_type(), "ii_cast")
-                .as_basic_value_enum(),
-            (BasicValueEnum::IntValue(lhs_int), Type::Float) => self
-                .builder
-                .build_signed_int_to_float(lhs_int, self.context.f64_type(), "if_cast")
-                .as_basic_value_enum(),
-            (BasicValueEnum::IntValue(lhs_int), Type::Char) => self
-                .builder
-                .build_int_cast(lhs_int, self.context.i8_type(), "ic_cast")
-                .as_basic_value_enum(),
-            (BasicValueEnum::FloatValue(_), Type::Float) => lhs,
-            (BasicValueEnum::FloatValue(lhs_float), Type::Int) => self
-                .builder
-                .build_float_to_signed_int(lhs_float, self.context.i64_type(), "fi_cast")
-                .as_basic_value_enum(),
-            (BasicValueEnum::FloatValue(lhs_float), Type::Char) => self
-                .builder
-                .build_float_to_unsigned_int(lhs_float, self.context.i8_type(), "fc_cast")
-                .as_basic_value_enum(),
-            _ => todo!(""),
+        // TODO: implement cast to char the right way
+        match (node.expr.result_type(), node.type_) {
+            (l, typ) if l == typ => lhs,
+            (Type::Int, Type::Float) => {
+                let lhs_int = lhs.into_int_value();
+                self.builder
+                    .build_signed_int_to_float(lhs_int, self.context.f64_type(), "if_cast")
+                    .as_basic_value_enum()
+            }
+            (Type::Int, Type::Char) => {
+                // TODO impl char cast using core lib
+                todo!()
+            }
+            (Type::Int, Type::Bool) => {
+                let lhs_int = lhs.into_int_value();
+                self.builder
+                    .build_int_compare(
+                        IntPredicate::NE,
+                        lhs_int,
+                        self.context.i64_type().const_zero(),
+                        "ib_cast_cmp",
+                    )
+                    .as_basic_value_enum()
+            }
+            (Type::Float, Type::Int) => {
+                let lhs_bool = lhs.into_float_value();
+                self.builder
+                    .build_float_to_signed_int(lhs_bool, self.context.i64_type(), "fi_cast")
+                    .as_basic_value_enum()
+            }
+            (Type::Float, Type::Char) => {
+                // TODO impl char cast using core lib
+                todo!()
+            }
+            _ => todo!("impl this: {lhs:?} {:?}", node.type_),
         }
     }
 
@@ -741,6 +758,65 @@ impl<'ctx> Compiler<'ctx> {
                 (None, _) => self.builder.build_return(None),
             };
         }
+    }
+
+    fn define_cast_int_to_char_core(&mut self) {
+        // declare the function
+        let params = vec![BasicMetadataTypeEnum::IntType(self.context.i64_type())];
+        let signature = self.context.i8_type().fn_type(&params, false);
+        let function =
+            self.module
+                .add_function("core::int_to_char", signature, Some(Linkage::External));
+
+        // create a new basic block for the function
+        let basic_block = self.context.append_basic_block(function, "entry");
+        self.builder.position_at_end(basic_block);
+
+        // get the first argument's value from the function
+        let from_value = function
+            .get_nth_param(0)
+            .expect("this is hardcoded and exists");
+
+        // check if the from value is less greater than 127
+        // in this case, the result is 127
+        let then_block = self.context.append_basic_block(function, "gt_127");
+        let merge_block = self.context.append_basic_block(function, "merge");
+
+        // add the condition ( arg > 127 )
+        let is_gt_127 = self.builder.build_int_compare(
+            inkwell::IntPredicate::SGT,
+            from_value.into_int_value(),
+            self.context.i64_type().const_int(127, true),
+            "gt_127_cond",
+        );
+
+        // add the conditional jump to the if block
+        self.builder
+            .build_conditional_branch(is_gt_127, then_block, merge_block);
+
+        // the if block returns 127
+        self.builder.position_at_end(then_block);
+        let const_127 = self.context.i8_type().const_int(127, false);
+        self.builder.build_return(Some(&const_127));
+
+        // add the main conversion code in the `merge_block`
+        self.builder.position_at_end(merge_block);
+        let char_res = self.builder.build_int_cast(
+            from_value.into_int_value(),
+            self.context.i8_type(),
+            "char_res",
+        );
+        // return the char result in the end
+        self.builder.build_return(Some(&char_res));
+
+        let result = self
+            .context
+            .i8_type()
+            .const_int(97, false)
+            .as_basic_value_enum();
+
+        // return the result
+        self.builder.build_return(Some(&result));
     }
 }
 
