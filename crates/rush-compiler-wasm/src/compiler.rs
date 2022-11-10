@@ -324,6 +324,7 @@ impl<'src> Compiler<'src> {
     }
 
     fn expression(&mut self, node: AnalyzedExpression<'src>) {
+        let diverges = node.result_type() == Type::Never;
         match node {
             AnalyzedExpression::Block(node) => self.block_expr(*node),
             AnalyzedExpression::If(node) => self.if_expr(*node),
@@ -361,6 +362,9 @@ impl<'src> Compiler<'src> {
             AnalyzedExpression::Call(node) => self.call_expr(*node),
             AnalyzedExpression::Cast(node) => self.cast_expr(*node),
             AnalyzedExpression::Grouped(expr) => self.expression(*expr),
+        }
+        if diverges {
+            self.function_body.push(instructions::UNREACHABLE);
         }
     }
 
@@ -429,6 +433,47 @@ impl<'src> Compiler<'src> {
     }
 
     fn infix_expr(&mut self, node: AnalyzedInfixExpr<'src>) {
+        match node.op {
+            InfixOp::And => {
+                self.expression(node.lhs);
+                self.function_body.extend([
+                    // if lhs is not true
+                    instructions::I32_EQZ,
+                    instructions::IF,
+                    types::I32,
+                    // then return true
+                    instructions::I32_CONST,
+                    0,
+                    // else return rhs
+                    instructions::ELSE,
+                ]);
+                self.expression(node.rhs);
+                // end if
+                self.function_body.push(instructions::END);
+
+                return;
+            }
+            InfixOp::Or => {
+                self.expression(node.lhs);
+                self.function_body.extend([
+                    // if lhs is true
+                    instructions::IF,
+                    types::I32,
+                    // then return true
+                    instructions::I32_CONST,
+                    1,
+                    // else return rhs
+                    instructions::ELSE,
+                ]);
+                self.expression(node.rhs);
+                // end if
+                self.function_body.push(instructions::END);
+
+                return;
+            }
+            _ => {}
+        }
+
         // save type of lhs
         let lhs_type = node.lhs.result_type();
 
@@ -472,9 +517,6 @@ impl<'src> Compiler<'src> {
             (InfixOp::BitAnd, Type::Bool) => instructions::I32_AND,
             (InfixOp::BitXor, Type::Int) => instructions::I64_XOR,
             (InfixOp::BitXor, Type::Bool) => instructions::I32_XOR,
-            // TODO: logical AND and OR
-            (InfixOp::And, Type::Bool) => todo!(),
-            (InfixOp::Or, Type::Bool) => todo!(),
             _ => unreachable!("the analyzer guarantees one of the above to match"),
         };
         self.function_body.push(instruction);
