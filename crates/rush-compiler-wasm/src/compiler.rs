@@ -426,7 +426,7 @@ impl<'src> Compiler<'src> {
             (InfixOp::Div, Type::Int) => instructions::I64_DIV_S,
             (InfixOp::Div, Type::Float) => instructions::F64_DIV,
             (InfixOp::Rem, Type::Int) => instructions::I64_REM_S,
-            (InfixOp::Pow, Type::Int) => todo!(), // TODO: pow
+            (InfixOp::Pow, Type::Int) => return self.builtin_pow_int(),
             (InfixOp::Eq, Type::Int) => instructions::I64_EQ,
             (InfixOp::Eq, Type::Float) => instructions::F64_EQ,
             (InfixOp::Eq, Type::Bool) => instructions::I32_EQ,
@@ -478,30 +478,35 @@ impl<'src> Compiler<'src> {
         self.expression(node.expr);
 
         // calculate new value for non-basic assignments
-        if node.op != AssignOp::Basic {
-            // match on op and type (analyzer guarantees same type for variable and expr)
-            let instruction = match (node.op, expr_type) {
-                (AssignOp::Plus, Type::Int) => instructions::I64_ADD,
-                (AssignOp::Plus, Type::Float) => instructions::F64_ADD,
-                (AssignOp::Minus, Type::Int) => instructions::I64_SUB,
-                (AssignOp::Minus, Type::Float) => instructions::F64_SUB,
-                (AssignOp::Mul, Type::Int) => instructions::I64_MUL,
-                (AssignOp::Mul, Type::Float) => instructions::F64_MUL,
-                (AssignOp::Div, Type::Int) => instructions::I64_DIV_S,
-                (AssignOp::Div, Type::Float) => instructions::F64_DIV,
-                (AssignOp::Rem, Type::Int) => instructions::I64_REM_S,
-                (AssignOp::Pow, Type::Int) => todo!(), // TODO: pow
-                (AssignOp::Shl, Type::Int) => instructions::I64_SHL,
-                (AssignOp::Shr, Type::Int) => instructions::I64_SHR_S,
-                (AssignOp::BitOr, Type::Int) => instructions::I64_OR,
-                (AssignOp::BitOr, Type::Bool) => instructions::I32_OR,
-                (AssignOp::BitAnd, Type::Int) => instructions::I64_AND,
-                (AssignOp::BitAnd, Type::Bool) => instructions::I32_AND,
-                (AssignOp::BitXor, Type::Int) => instructions::I64_XOR,
-                (AssignOp::BitXor, Type::Bool) => instructions::I32_XOR,
-                _ => unreachable!("the analyzer guarantees one of the above to match"),
-            };
-            self.function_body.push(instruction);
+        'op: {
+            if node.op != AssignOp::Basic {
+                // match on op and type (analyzer guarantees same type for variable and expr)
+                let instruction = match (node.op, expr_type) {
+                    (AssignOp::Plus, Type::Int) => instructions::I64_ADD,
+                    (AssignOp::Plus, Type::Float) => instructions::F64_ADD,
+                    (AssignOp::Minus, Type::Int) => instructions::I64_SUB,
+                    (AssignOp::Minus, Type::Float) => instructions::F64_SUB,
+                    (AssignOp::Mul, Type::Int) => instructions::I64_MUL,
+                    (AssignOp::Mul, Type::Float) => instructions::F64_MUL,
+                    (AssignOp::Div, Type::Int) => instructions::I64_DIV_S,
+                    (AssignOp::Div, Type::Float) => instructions::F64_DIV,
+                    (AssignOp::Rem, Type::Int) => instructions::I64_REM_S,
+                    (AssignOp::Pow, Type::Int) => {
+                        self.builtin_pow_int();
+                        break 'op;
+                    }
+                    (AssignOp::Shl, Type::Int) => instructions::I64_SHL,
+                    (AssignOp::Shr, Type::Int) => instructions::I64_SHR_S,
+                    (AssignOp::BitOr, Type::Int) => instructions::I64_OR,
+                    (AssignOp::BitOr, Type::Bool) => instructions::I32_OR,
+                    (AssignOp::BitAnd, Type::Int) => instructions::I64_AND,
+                    (AssignOp::BitAnd, Type::Bool) => instructions::I32_AND,
+                    (AssignOp::BitXor, Type::Int) => instructions::I64_XOR,
+                    (AssignOp::BitXor, Type::Bool) => instructions::I32_XOR,
+                    _ => unreachable!("the analyzer guarantees one of the above to match"),
+                };
+                self.function_body.push(instruction);
+            }
         }
 
         // set local to new value
@@ -702,6 +707,92 @@ impl<'src> Compiler<'src> {
                 instructions::LOCAL_GET,
                 1,
                 // end if
+                instructions::END,
+                // end function body
+                instructions::END,
+            ],
+        );
+    }
+
+    fn builtin_pow_int(&mut self) {
+        self.call_builtin(
+            "rush_pow_int",
+            vec![
+                types::FUNC,
+                2,          // num of params
+                types::I64, // base
+                types::I64, // exponent
+                1,          // num of return vals
+                types::I64,
+            ],
+            vec![1, 1, types::I64], // 1 local i64: accumulator
+            &[
+                // if exponent < 0
+                instructions::LOCAL_GET,
+                1,
+                instructions::I64_CONST,
+                0,
+                instructions::I64_LT_S,
+                instructions::IF,
+                types::I64,
+                // then return 0
+                instructions::I64_CONST,
+                0,
+                // else if exponent == 0
+                instructions::ELSE,
+                instructions::LOCAL_GET,
+                1,
+                instructions::I64_EQZ,
+                instructions::IF,
+                types::I64,
+                // then return 1
+                instructions::I64_CONST,
+                1,
+                // else calculate with loop
+                instructions::ELSE,
+                // -- set accumulator to base
+                instructions::LOCAL_GET,
+                0,
+                instructions::LOCAL_SET,
+                2,
+                // -- begin loop
+                instructions::LOOP,
+                types::VOID,
+                // -- begin block
+                instructions::BLOCK,
+                types::VOID,
+                // -- subtract 1 from exponent
+                instructions::LOCAL_GET,
+                1,
+                instructions::I64_CONST,
+                1,
+                instructions::I64_SUB,
+                instructions::LOCAL_TEE,
+                1,
+                // -- break if exponent is 0
+                instructions::I64_EQZ,
+                instructions::BR_IF,
+                0, // branch depth, 0 = end of block
+                // -- multiply accumulator with base
+                instructions::LOCAL_GET,
+                2,
+                instructions::LOCAL_GET,
+                0,
+                instructions::I64_MUL,
+                instructions::LOCAL_SET,
+                2,
+                // -- continue loop
+                instructions::BR,
+                1, // branch depth, 1 = start of loop
+                // -- end block
+                instructions::END,
+                // -- end loop
+                instructions::END,
+                // -- get result in accumulator
+                instructions::LOCAL_GET,
+                2,
+                // end if
+                instructions::END,
                 instructions::END,
                 // end function body
                 instructions::END,
