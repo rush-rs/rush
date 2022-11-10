@@ -12,16 +12,28 @@ macro_rules! tree {
     ((
         FunctionDefinition @ $start:literal .. $end:literal,
         name: $ident:tt,
-        params @ $params_start:literal .. $params_end:literal: [$(($param:tt, $type:tt)),* $(,)?],
+        params @ $params_start:literal .. $params_end:literal: [$($param:tt),* $(,)?],
         return_type: $return_type:tt,
         block: $block:tt $(,)?
     )) => {
         FunctionDefinition {
             span: span!($start..$end),
             name: tree!($ident),
-            params: tree!((vec![$((tree!($param), tree!($type))),*], @ $params_start..$params_end)),
+            params: tree!((vec![$(tree!($param)),*], @ $params_start..$params_end)),
             return_type: tree!($return_type),
             block: tree!($block),
+        }
+    };
+    ((
+        Parameter,
+        mutable: $mutable:expr,
+        name: $ident:tt,
+        type: $type:tt $(,)?
+    )) => {
+        Parameter {
+            mutable: $mutable,
+            name: tree!($ident),
+            type_: tree!($type),
         }
     };
 

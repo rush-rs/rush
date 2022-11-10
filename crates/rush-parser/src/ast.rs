@@ -49,9 +49,16 @@ pub struct Program<'src> {
 pub struct FunctionDefinition<'src> {
     pub span: Span,
     pub name: Spanned<&'src str>,
-    pub params: Spanned<Vec<(Spanned<&'src str>, Spanned<Type>)>>,
+    pub params: Spanned<Vec<Parameter<'src>>>,
     pub return_type: Spanned<Option<Type>>,
     pub block: Block<'src>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Parameter<'src> {
+    pub mutable: bool,
+    pub name: Spanned<&'src str>,
+    pub type_: Spanned<Type>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

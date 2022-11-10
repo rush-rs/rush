@@ -222,7 +222,12 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         })
     }
 
-    fn parameter(&mut self) -> Result<(Spanned<&'src str>, Spanned<Type>)> {
+    fn parameter(&mut self) -> Result<Parameter<'src>> {
+        let mutable = self.curr_tok.kind == TokenKind::Mut;
+        if mutable {
+            self.next()?;
+        }
+
         let name = self.expect_ident()?;
         let type_ = match self.curr_tok.kind {
             TokenKind::Comma | TokenKind::RParen => {
@@ -240,7 +245,11 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
                 self.type_()?
             }
         };
-        Ok((name, type_))
+        Ok(Parameter {
+            mutable,
+            name,
+            type_,
+        })
     }
 
     fn block(&mut self) -> Result<Block<'src>> {
@@ -1171,8 +1180,14 @@ mod tests {
                     (FunctionDefinition @ 0..61,
                         name: ("add", @ 3..6),
                         params @ 6..29: [
-                            (("left", @ 7..11), (Type::Int, @ 13..16)),
-                            (("right", @ 18..23), (Type::Int, @ 25..28))],
+                            (Parameter,
+                                mutable: false,
+                                name: ("left", @ 7..11),
+                                type: (Type::Int, @ 13..16)),
+                            (Parameter,
+                                mutable: false,
+                                name: ("right", @ 18..23),
+                                type: (Type::Int, @ 25..28))],
                         return_type: (Some(Type::Int), @ 33..36),
                         block: (Block @ 37..61,
                             stmts: [

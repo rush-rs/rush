@@ -19,7 +19,7 @@ pub struct Analyzer<'src> {
 #[derive(Debug)]
 pub struct Function<'src> {
     pub ident: Spanned<&'src str>,
-    pub params: Spanned<Vec<(Spanned<&'src str>, Spanned<Type>)>>,
+    pub params: Spanned<Vec<Parameter<'src>>>,
     pub return_type: Spanned<Option<Type>>,
     pub used: bool,
 }
@@ -338,27 +338,26 @@ impl<'src> Analyzer<'src> {
 
         // only analyze parameters if this is not the main function
         if !is_main_fn {
-            for (ident, type_) in node.params.inner {
+            for param in node.params.inner {
                 // check for duplicate function parameters
-                if !param_names.insert(ident.inner) {
+                if !param_names.insert(param.name.inner) {
                     self.error(
                         ErrorKind::Semantic,
-                        format!("duplicate parameter name `{}`", ident.inner),
+                        format!("duplicate parameter name `{}`", param.name.inner),
                         vec![],
-                        ident.span,
+                        param.name.span,
                     );
                 }
                 scope_vars.insert(
-                    ident.inner,
+                    param.name.inner,
                     Variable {
-                        type_: type_.inner,
-                        span: ident.span,
+                        type_: param.type_.inner,
+                        span: param.name.span,
                         used: false,
-                        // TODO: maybe allow `mut` params
-                        mutable: false,
+                        mutable: param.mutable,
                     },
                 );
-                params.push((ident.inner, type_.inner));
+                params.push((param.name.inner, param.type_.inner));
             }
         }
 
@@ -1065,7 +1064,7 @@ impl<'src> Analyzer<'src> {
                         .into_iter()
                         .zip(func_params.inner)
                         .map(|(arg, param)| {
-                            self.visit_arg(arg, param.1.inner, node.span, &mut result_type)
+                            self.visit_arg(arg, param.type_.inner, node.span, &mut result_type)
                         })
                         .collect();
                     (result_type, args)
@@ -1198,8 +1197,14 @@ mod tests {
                     (FunctionDefinition @ 0..61,
                         name: ("add", @ 3..6),
                         params @ 6..29: [
-                            (("left", @ 7..11), (Type::Int, @ 13..16)),
-                            (("right", @ 18..23), (Type::Int, @ 25..28))],
+                            (Parameter,
+                                mutable: false,
+                                name: ("left", @ 7..11),
+                                type: (Type::Int, @ 13..16)),
+                            (Parameter,
+                                mutable: false,
+                                name: ("right", @ 18..23),
+                                type: (Type::Int, @ 25..28))],
                         return_type: (Some(Type::Int), @ 33..36),
                         block: (Block @ 37..61,
                             stmts: [

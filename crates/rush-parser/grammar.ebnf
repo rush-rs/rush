@@ -3,7 +3,7 @@ Program = { FunctionDefinition } ;
 FunctionDefinition = 'fn' , ident , '(' , [ ParameterList ] , ')'
                    , [ '->' , Type ] , Block ;
 ParameterList      = Parameter , { ',' , Parameter } , [ ',' ] ;
-Parameter          = ident , ':' , Type ;
+Parameter          = [ 'mut' ] , ident , ':' , Type ;
 
 Block = '{' , { Statement } , [ Expression ] , '}' ;
 Type  = ident
