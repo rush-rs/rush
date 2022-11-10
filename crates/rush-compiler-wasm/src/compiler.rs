@@ -39,6 +39,9 @@ pub struct Compiler<'src> {
     code_section: Vec<Vec<u8>>,     // 10
     data_section: Vec<Vec<u8>>,     // 11
     data_count_section: Vec<u8>,    // 12
+
+    function_names: Vec<Vec<u8>>,
+    imported_function_names: Vec<Vec<u8>>,
 }
 
 impl<'src> Compiler<'src> {
@@ -69,6 +72,10 @@ impl<'src> Compiler<'src> {
             .concat(),
         );
 
+        // concat function name vectors
+        self.imported_function_names
+            .append(&mut self.function_names);
+
         // concat sections
         [
             &b"\0asm"[..],        // magic
@@ -85,6 +92,7 @@ impl<'src> Compiler<'src> {
             &Self::section(10, self.code_section),
             &Self::section(11, self.data_section),
             &self.data_count_section,
+            &Self::name_section(self.imported_function_names),
         ]
         .concat()
     }
@@ -128,14 +136,29 @@ impl<'src> Compiler<'src> {
         buf
     }
 
+    fn name_section(function_names: Vec<Vec<u8>>) -> Vec<u8> {
+        let contents = [
+            &[4][..],                          // string len
+            b"name",                           // custom section name "name"
+            &Self::section(1, function_names), // function names subsection
+        ]
+        .concat();
+        [
+            &[0][..],                     // section id
+            &contents.len().to_uleb128(), // section size
+            &contents,                    // section contents
+        ]
+        .concat()
+    }
+
     /////////////////////////
 
     fn program(&mut self, node: AnalyzedProgram<'src>) {
         // add main fn signature
         {
             // add to self.functions map
-            self.functions
-                .insert("main", self.import_count.to_uleb128());
+            let func_idx = self.import_count.to_uleb128();
+            self.functions.insert("main", func_idx.clone());
 
             // add signature to type section
             self.type_section.push(vec![
@@ -146,6 +169,16 @@ impl<'src> Compiler<'src> {
 
             // index of signature in type section (main func is always 0)
             self.function_section.push(vec![0]);
+
+            // add name to name section
+            self.function_names.push(
+                [
+                    &func_idx[..], // function index
+                    &[4],          // string len
+                    b"main",       // name
+                ]
+                .concat(),
+            );
         }
 
         // add other function signatures
@@ -199,8 +232,8 @@ impl<'src> Compiler<'src> {
         }
 
         // add to self.functions map
-        let func_idx = self.function_section.len() + self.import_count;
-        self.functions.insert(node.name, func_idx.to_uleb128());
+        let func_idx = (self.function_section.len() + self.import_count).to_uleb128();
+        self.functions.insert(node.name, func_idx.clone());
 
         // start new buf vor func signature
         let mut buf = vec![types::FUNC];
@@ -231,6 +264,16 @@ impl<'src> Compiler<'src> {
 
         // index of type in type_section
         self.function_section.push(func_type_idx.to_uleb128());
+
+        // add name to name section
+        self.function_names.push(
+            [
+                &func_idx[..],                 // function index
+                &node.name.len().to_uleb128(), // string len
+                node.name.as_bytes(),          // name
+            ]
+            .concat(),
+        );
     }
 
     fn function_definition(&mut self, node: AnalyzedFunctionDefinition<'src>) {
@@ -668,22 +711,34 @@ impl<'src> Compiler<'src> {
 
                 // save in builtin_functions map
                 self.builtin_functions.insert(name, func_idx);
+                let func_idx = &self.builtin_functions[name];
 
                 // add to end of code section
                 self.builtins_code
                     .push([&(body.len() + locals.len()).to_uleb128(), &locals, body].concat());
 
-                &self.builtin_functions[name]
+                // add name to name section
+                self.function_names.push(
+                    [
+                        &func_idx[..],            // function index
+                        &name.len().to_uleb128(), // string len
+                        name.as_bytes(),          // name
+                    ]
+                    .concat(),
+                );
+
+                func_idx
             }
         };
 
+        // push call instruction
         self.function_body.push(instructions::CALL);
         self.function_body.extend_from_slice(idx);
     }
 
     fn builtin_cast_int_to_char(&mut self) {
         self.call_builtin(
-            "rush_cast_int_to_char",
+            "__rush_internal_cast_int_to_char",
             vec![
                 types::FUNC,
                 1, // num of params
@@ -733,7 +788,7 @@ impl<'src> Compiler<'src> {
 
     fn builtin_cast_float_to_char(&mut self) {
         self.call_builtin(
-            "rush_cast_float_to_char",
+            "__rush_internal_cast_float_to_char",
             vec![
                 types::FUNC,
                 1, // num of params
@@ -775,7 +830,7 @@ impl<'src> Compiler<'src> {
 
     fn builtin_pow_int(&mut self) {
         self.call_builtin(
-            "rush_pow_int",
+            "__rush_internal_pow_int",
             vec![
                 types::FUNC,
                 2,          // num of params
@@ -876,6 +931,7 @@ impl<'src> Compiler<'src> {
                 // save in builtin_functions map
                 let func_idx = self.import_section.len().to_uleb128();
                 self.builtin_functions.insert("exit", func_idx);
+                let func_idx = &self.builtin_functions["exit"];
 
                 // add import from WASI
                 self.import_section.push(
@@ -890,10 +946,21 @@ impl<'src> Compiler<'src> {
                     .concat(),
                 );
 
-                &self.builtin_functions["exit"]
+                // add name to name section
+                self.imported_function_names.push(
+                    [
+                        &func_idx[..], // function index
+                        &[4],          // string len
+                        b"exit",       // name
+                    ]
+                    .concat(),
+                );
+
+                func_idx
             }
         };
 
+        // push call instruction
         self.function_body.push(instructions::I32_WRAP_I64);
         self.function_body.push(instructions::CALL);
         self.function_body.extend_from_slice(idx);
