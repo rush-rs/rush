@@ -650,14 +650,11 @@ impl<'src> Compiler<'src> {
                 // then return 0x00
                 instructions::I32_CONST,
                 0x00,
-                // else truncate to 7 bits
+                // else convert to i32
                 instructions::ELSE,
                 instructions::LOCAL_GET,
                 0,
                 instructions::I32_WRAP_I64,
-                instructions::I32_CONST,
-                0x7F,
-                instructions::I32_AND,
                 // end if
                 instructions::END,
                 instructions::END,
@@ -697,13 +694,10 @@ impl<'src> Compiler<'src> {
                 // then return 0x7F
                 instructions::I32_CONST,
                 0x7F,
-                // else truncate to 7 bits
+                // else use value
                 instructions::ELSE,
                 instructions::LOCAL_GET,
                 1,
-                instructions::I32_CONST,
-                0x7F,
-                instructions::I32_AND,
                 // end if
                 instructions::END,
                 // end function body
