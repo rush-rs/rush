@@ -1,21 +1,20 @@
-// TODO: go over these points
-// - add helper function for getting the current function
-
 use std::collections::{HashMap, HashSet};
 
-use crate::error::Result;
+use crate::{error::Result, Error};
 use inkwell::{
     basic_block::BasicBlock,
     builder::Builder,
     context::Context,
+    memory_buffer::MemoryBuffer,
     module::{Linkage, Module},
-    targets::TargetTriple,
+    passes::{PassManager, PassManagerBuilder},
+    targets::{CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetTriple},
     types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum},
     values::{
         BasicMetadataValueEnum, BasicValue, BasicValueEnum, FloatValue, FunctionValue,
         InstructionOpcode, PointerValue,
     },
-    FloatPredicate, IntPredicate,
+    FloatPredicate, IntPredicate, OptimizationLevel,
 };
 use rush_analyzer::{
     ast::{
@@ -36,6 +35,12 @@ pub struct Compiler<'ctx> {
 
     // contains all builtin functions already declared in the IR
     declared_builtins: HashSet<&'ctx str>,
+
+    // specifies the target machine
+    target_triple: TargetTriple,
+
+    // specifies the optimization level
+    optimization: OptimizationLevel,
 }
 
 #[derive(Debug)]
@@ -52,7 +57,11 @@ struct Function<'ctx> {
 }
 
 impl<'ctx> Compiler<'ctx> {
-    pub fn new(context: &'ctx Context, target_triple: TargetTriple) -> Compiler<'ctx> {
+    pub fn new(
+        context: &'ctx Context,
+        target_triple: TargetTriple,
+        optimization: OptimizationLevel,
+    ) -> Compiler<'ctx> {
         let module = context.create_module("main");
 
         // setup target machine triple
@@ -64,6 +73,8 @@ impl<'ctx> Compiler<'ctx> {
             builder: context.create_builder(),
             curr_fn: None,
             declared_builtins: HashSet::new(),
+            target_triple,
+            optimization,
         }
     }
 
@@ -79,17 +90,57 @@ impl<'ctx> Compiler<'ctx> {
             .expect("this is only called from functions")
     }
 
-    pub fn compile(&mut self, program: AnalyzedProgram) -> Result<String> {
+    pub fn compile(&mut self, program: AnalyzedProgram) -> Result<(MemoryBuffer, String)> {
         // compile all defined functions which are later used
         for func in program.functions.iter().filter(|func| func.used) {
             self.compile_fn_definition(func);
         }
         // compile the main function
         self.compile_main_fn(&program.main_fn);
-        // verify the LLVM module first
-        self.module.verify()?;
-        // return the LLVM IR
-        Ok(self.module.print_to_string().to_string())
+
+        // verify the LLVM module when using debug
+        #[cfg(debug_assertions)]
+        self.module.verify().unwrap();
+
+        // run optimizations on the IR
+        self.optimize();
+
+        // create the LLVM intermediate representation
+        let llvm_ir = self.module.print_to_string().to_string();
+
+        // build target-dependent object code
+        let target = Target::from_triple(&self.target_triple).expect("aa");
+        let Some(target_machine) = target.create_target_machine(
+            &self.target_triple,
+            "",
+            "",
+            self.optimization,
+            RelocMode::PIC,
+            CodeModel::Default,
+        ) else { return Err(Error::NoTarget); };
+
+        let objcode = target_machine.write_to_memory_buffer(&self.module, FileType::Object)?;
+
+        Ok((objcode, llvm_ir))
+    }
+
+    fn optimize(&self) {
+        let config = InitializationConfig::default();
+        Target::initialize_native(&config).unwrap();
+        let pass_manager_builder = PassManagerBuilder::create();
+
+        pass_manager_builder.set_optimization_level(self.optimization);
+        // either 0, 1, or 2
+        pass_manager_builder.set_size_level(0);
+
+        let pass_manager = PassManager::create(());
+        pass_manager_builder.populate_module_pass_manager(&pass_manager);
+        pass_manager.run_on(&self.module);
+
+        // perform LTO optimizations (for function inlining)
+        let link_time_optimizations = PassManager::create(());
+        pass_manager_builder.populate_lto_pass_manager(&link_time_optimizations, false, true);
+        link_time_optimizations.run_on(&self.module);
     }
 
     fn compile_main_fn(&mut self, node: &AnalyzedBlock) {
@@ -1110,7 +1161,7 @@ mod tests {
         let context = Context::create();
         let mut compiler = Compiler::new(&context, TargetMachine::get_default_triple());
 
-        let out = compiler.compile(ast).unwrap();
+        let out = compiler.compile(ast);
         fs::write("./main.ll", &out).unwrap();
         println!("{out}");
     }
