@@ -9,19 +9,21 @@ use crate::{
 
 #[derive(Debug, Default)]
 pub struct Compiler<'src> {
+    /// The instructions of the currently compiling function
     function_body: Vec<u8>,
+    /// The locals of the currently compiling function
     locals: Vec<Vec<u8>>,
+    /// The count of parameters the current function takes
+    param_count: usize,
+    /// Function bodies to append to the code section after the user defined functions
+    builtins_code: Vec<Vec<u8>>,
 
     /// Maps variable names to `Option<local_idx>`, or `None` when of type `()`
     scope: HashMap<&'src str, Option<Vec<u8>>>,
     /// Maps function names to their index encoded as unsigned LEB128
     functions: HashMap<&'src str, Vec<u8>>,
-    /// The count of parameters the current function takes
-    param_count: usize,
     /// Maps builtin function names to their index encoded as unsigned LEB128
     builtin_functions: HashMap<&'static str, Vec<u8>>,
-    /// Function bodies to append to the code section after the user defined functions
-    builtins_code: Vec<Vec<u8>>,
     /// The number of imports this module uses
     import_count: usize,
 
@@ -61,8 +63,7 @@ impl<'src> Compiler<'src> {
             &Self::section(9, self.element_section),
             &Self::section(10, self.code_section),
             &Self::section(11, self.data_section),
-            // TODO: data_count section
-            // &Self::section(12, self.data_count_section),
+            &self.data_count_section,
         ]
         .concat()
     }
@@ -82,7 +83,6 @@ impl<'src> Compiler<'src> {
         buf
     }
 
-    // TODO: maybe remove `add_byte_count` param
     fn vector(vec: Vec<Vec<u8>>, add_byte_count: bool) -> Vec<u8> {
         let mut buf = vec![];
 
