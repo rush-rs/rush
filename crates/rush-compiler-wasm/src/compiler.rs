@@ -47,8 +47,29 @@ impl<'src> Compiler<'src> {
     }
 
     pub fn compile(mut self, tree: AnalyzedProgram<'src>) -> Vec<u8> {
+        // set count of imports needed
         self.import_count = tree.used_builtins.len();
+
+        // compile program
         self.program(tree);
+
+        // add blank memory
+        self.memory_section.push(vec![0, 0]);
+
+        // export memory
+        self.export_section.push(
+            [
+                &[6][..],  // string len
+                b"memory", // export name
+                &[
+                    2, // export kind (2 = memory)
+                    0, // index in memory section
+                ],
+            ]
+            .concat(),
+        );
+
+        // concat sections
         [
             &b"\0asm"[..],        // magic
             &1_i32.to_le_bytes(), // spec version 1
