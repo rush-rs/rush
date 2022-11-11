@@ -951,7 +951,7 @@ impl<'ctx> Compiler<'ctx> {
 
             // compile the `then` branch
             self.builder.position_at_end(then_block);
-            let (if_type, then_option) = self.compile_branch(&node.then_block, merge_block);
+            let (_, then_option) = self.compile_branch(&node.then_block, merge_block);
 
             // compile the `else` branch
             self.builder.position_at_end(else_block);
@@ -971,11 +971,10 @@ impl<'ctx> Compiler<'ctx> {
                 (Some((then_value, _)), None) => then_value,
                 (None, Some((else_value, _))) => else_value,
                 (None, None) => {
-                    self.builder.build_unreachable();
                     // in this case, the block is unreachable due to a previous return
                     // the compiler still needs a value so a `undef` value is returned
-                    // TODO: replace with unit?
-                    self.undef_value(if_type)
+                    self.builder.build_unreachable();
+                    self.unit_value()
                 }
             }
         } else {
@@ -998,17 +997,6 @@ impl<'ctx> Compiler<'ctx> {
     fn unit_value(&self) -> BasicValueEnum<'ctx> {
         let i1 = self.context.bool_type();
         i1.const_zero().into()
-    }
-
-    fn undef_value(&self, typ: BasicTypeEnum<'ctx>) -> BasicValueEnum<'ctx> {
-        match typ {
-            BasicTypeEnum::ArrayType(array) => array.get_undef().into(),
-            BasicTypeEnum::FloatType(float) => float.get_undef().into(),
-            BasicTypeEnum::IntType(int) => int.get_undef().into(),
-            BasicTypeEnum::PointerType(pointer) => pointer.get_undef().into(),
-            BasicTypeEnum::StructType(tuple) => tuple.get_undef().into(),
-            BasicTypeEnum::VectorType(vector) => vector.get_undef().into(),
-        }
     }
 
     /// Compiles a branch in an [`AnalyzedIfExpr`].
