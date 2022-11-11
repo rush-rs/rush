@@ -55,6 +55,12 @@ pub enum TokenKind<'src> {
     Mut,
     /// `return`
     Return,
+    /// `loop`
+    Loop,
+    /// `while`
+    While,
+    /// `break`
+    Break,
     /// `if`
     If,
     /// `else`
@@ -205,6 +211,9 @@ impl Display for TokenKind<'_> {
             Self::Let => write!(f, "let"),
             Self::Mut => write!(f, "mut"),
             Self::Return => write!(f, "return"),
+            Self::Loop => write!(f, "loop"),
+            Self::While => write!(f, "while"),
+            Self::Break => write!(f, "break"),
             Self::If => write!(f, "if"),
             Self::Else => write!(f, "else"),
             Self::As => write!(f, "as"),
