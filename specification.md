@@ -24,7 +24,7 @@ signature of the `main` function has to look like this:
 
 ```rs
 fn main() {
-  ...
+    // ...
 }
 ```
 

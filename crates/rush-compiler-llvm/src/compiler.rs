@@ -16,7 +16,7 @@ use inkwell::{
     },
     FloatPredicate, IntPredicate, OptimizationLevel,
 };
-use rush_analyzer::{ast::*, Type, InfixOp, PrefixOp, AssignOp};
+use rush_analyzer::{ast::*, AssignOp, InfixOp, PrefixOp, Type};
 
 pub struct Compiler<'ctx> {
     // inkwell components
