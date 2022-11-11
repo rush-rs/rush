@@ -926,11 +926,6 @@ impl<'ctx> Compiler<'ctx> {
         // compile the if condition
         let cond = self.compile_expression(&node.cond);
 
-        // TODO: is this conversion required?
-        let cond_bool =
-            self.builder
-                .build_int_cast(cond.into_int_value(), self.context.bool_type(), "if_cond");
-
         // create basic blocks for the `then` and `else` branches
         let then_block = self
             .context
@@ -947,7 +942,7 @@ impl<'ctx> Compiler<'ctx> {
 
             // branch between the `then` and `else` blocks using the condition
             self.builder
-                .build_conditional_branch(cond_bool, then_block, else_block);
+                .build_conditional_branch(cond.into_int_value(), then_block, else_block);
 
             // compile the `then` branch
             self.builder.position_at_end(then_block);
@@ -980,7 +975,7 @@ impl<'ctx> Compiler<'ctx> {
         } else {
             // if there is no `else` block, just branch between the `if` and `merge` blocks
             self.builder
-                .build_conditional_branch(cond_bool, then_block, merge_block);
+                .build_conditional_branch(cond.into_int_value(), then_block, merge_block);
 
             // compile the `then` branch
             self.builder.position_at_end(then_block);
