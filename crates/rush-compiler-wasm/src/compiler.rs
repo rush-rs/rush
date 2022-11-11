@@ -3,38 +3,49 @@ use std::{collections::HashMap, mem};
 use rush_analyzer::{ast::*, AssignOp, InfixOp, PrefixOp, Type};
 
 use crate::{
-    instructions, types,
+    corelib, instructions, types,
     utils::{self, Leb128},
 };
 
 #[derive(Debug, Default)]
 pub struct Compiler<'src> {
-    function_body: Vec<u8>,
-    locals: Vec<Vec<u8>>,
-
-    /// Maps variable names to `Option<(type, local_idx)>`, or `None` when of type `()`
-    // TODO: maybe remove type
-    scope: HashMap<&'src str, Option<(u8, Vec<u8>)>>,
-    /// Maps function names to their index encoded as unsigned LEB128
-    functions: HashMap<&'src str, Vec<u8>>,
+    /// The instructions of the currently compiling function
+    pub(crate) function_body: Vec<u8>,
+    /// The locals of the currently compiling function
+    pub(crate) locals: Vec<Vec<u8>>,
     /// The count of parameters the current function takes
-    param_count: usize,
-    /// Maps builtin function names to their index encoded as unsigned LEB128
-    builtin_functions: HashMap<&'static str, Vec<u8>>,
+    pub(crate) param_count: usize,
     /// Function bodies to append to the code section after the user defined functions
-    builtins_code: Vec<Vec<u8>>,
+    pub(crate) builtins_code: Vec<Vec<u8>>,
 
-    type_section: Vec<Vec<u8>>,     // 1
-    import_section: Vec<Vec<u8>>,   // 2
-    function_section: Vec<Vec<u8>>, // 3
-    table_section: Vec<Vec<u8>>,    // 4
-    memory_section: Vec<Vec<u8>>,   // 5
-    global_section: Vec<Vec<u8>>,   // 6
-    export_section: Vec<Vec<u8>>,   // 7
-    element_section: Vec<Vec<u8>>,  // 9
-    code_section: Vec<Vec<u8>>,     // 10
-    data_section: Vec<Vec<u8>>,     // 11
-    data_count_section: Vec<u8>,    // 12
+    /// Maps variable names to `Option<local_idx>`, or `None` when of type `()`
+    pub(crate) scope: HashMap<&'src str, Option<Vec<u8>>>,
+    /// Maps function names to their index encoded as unsigned LEB128
+    pub(crate) functions: HashMap<&'src str, Vec<u8>>,
+    /// Maps builtin function names to their index encoded as unsigned LEB128
+    pub(crate) builtin_functions: HashMap<&'static str, Vec<u8>>,
+    /// The number of imports this module uses
+    pub(crate) import_count: usize,
+
+    pub(crate) type_section: Vec<Vec<u8>>,     // 1
+    pub(crate) import_section: Vec<Vec<u8>>,   // 2
+    pub(crate) function_section: Vec<Vec<u8>>, // 3
+    pub(crate) table_section: Vec<Vec<u8>>,    // 4
+    pub(crate) memory_section: Vec<Vec<u8>>,   // 5
+    pub(crate) global_section: Vec<Vec<u8>>,   // 6
+    pub(crate) export_section: Vec<Vec<u8>>,   // 7
+    pub(crate) start_section: Vec<u8>,         // 8
+    pub(crate) element_section: Vec<Vec<u8>>,  // 9
+    pub(crate) code_section: Vec<Vec<u8>>,     // 10
+    pub(crate) data_section: Vec<Vec<u8>>,     // 11
+    pub(crate) data_count_section: Vec<u8>,    // 12
+
+    pub(crate) function_names: Vec<Vec<u8>>,
+    pub(crate) imported_function_names: Vec<Vec<u8>>,
+    /// List of `(func_idx, list_of_locals)`
+    pub(crate) local_names: Vec<(Vec<u8>, Vec<Vec<u8>>)>,
+    /// The index of the currently compiling function in the `local_names` vec
+    pub(crate) curr_func_idx: usize,
 }
 
 impl<'src> Compiler<'src> {
@@ -43,7 +54,33 @@ impl<'src> Compiler<'src> {
     }
 
     pub fn compile(mut self, tree: AnalyzedProgram<'src>) -> Vec<u8> {
+        // set count of imports needed
+        self.import_count = tree.used_builtins.len();
+
+        // compile program
         self.program(tree);
+
+        // add blank memory
+        self.memory_section.push(vec![0, 0]);
+
+        // export memory
+        self.export_section.push(
+            [
+                &[6][..],  // string len
+                b"memory", // export name
+                &[
+                    2, // export kind (2 = memory)
+                    0, // index in memory section
+                ],
+            ]
+            .concat(),
+        );
+
+        // concat function name vectors
+        self.imported_function_names
+            .append(&mut self.function_names);
+
+        // concat sections
         [
             &b"\0asm"[..],        // magic
             &1_i32.to_le_bytes(), // spec version 1
@@ -54,16 +91,12 @@ impl<'src> Compiler<'src> {
             &Self::section(5, self.memory_section),
             &Self::section(6, self.global_section),
             &Self::section(7, self.export_section),
-            &[
-                8, // start section id
-                1, // section size (1 byte)
-                0, // index of main func
-            ],
+            &self.start_section,
             &Self::section(9, self.element_section),
             &Self::section(10, self.code_section),
             &Self::section(11, self.data_section),
-            // TODO: data_count section
-            // &Self::section(12, self.data_count_section),
+            &self.data_count_section,
+            &Self::name_section(self.imported_function_names, self.local_names),
         ]
         .concat()
     }
@@ -83,7 +116,6 @@ impl<'src> Compiler<'src> {
         buf
     }
 
-    // TODO: maybe remove `add_byte_count` param
     fn vector(vec: Vec<Vec<u8>>, add_byte_count: bool) -> Vec<u8> {
         let mut buf = vec![];
 
@@ -108,13 +140,40 @@ impl<'src> Compiler<'src> {
         buf
     }
 
+    fn name_section(
+        function_names: Vec<Vec<u8>>,
+        local_names: Vec<(Vec<u8>, Vec<Vec<u8>>)>,
+    ) -> Vec<u8> {
+        let contents = [
+            &[4][..],                          // string len
+            b"name",                           // custom section name "name"
+            &Self::section(1, function_names), // function names subsection
+            // local names subsection
+            &Self::section(
+                2,
+                local_names
+                    .into_iter()
+                    .map(|(func_idx, locals)| [func_idx, Self::vector(locals, false)].concat())
+                    .collect(),
+            ),
+        ]
+        .concat();
+        [
+            &[0][..],                     // section id
+            &contents.len().to_uleb128(), // section size
+            &contents,                    // section contents
+        ]
+        .concat()
+    }
+
     /////////////////////////
 
     fn program(&mut self, node: AnalyzedProgram<'src>) {
         // add main fn signature
         {
-            // add to self.functions map (main func idx is always 0)
-            self.functions.insert("main", vec![0]);
+            // add to self.functions map
+            let func_idx = self.import_count.to_uleb128();
+            self.functions.insert("main", func_idx.clone());
 
             // add signature to type section
             self.type_section.push(vec![
@@ -123,61 +182,32 @@ impl<'src> Compiler<'src> {
                 0, // num of return vals
             ]);
 
-            // index of type in type_section (main func is always 0)
+            // index of signature in type section (main func is always 0)
             self.function_section.push(vec![0]);
+
+            // add name to name section
+            self.function_names.push(
+                [
+                    &func_idx[..], // function index
+                    &[4],          // string len
+                    b"main",       // name
+                ]
+                .concat(),
+            );
+
+            // no params in name section
+            self.local_names.push((func_idx, vec![]));
         }
 
         // add other function signatures
         for func in &node.functions {
-            // skip unused functions
-            if !func.used {
-                continue;
-            }
-
-            // add to self.functions map
-            let func_idx = self.function_section.len();
-            self.functions.insert(func.name, func_idx.to_uleb128());
-
-            // start new buf vor func signature
-            let mut buf = vec![types::FUNC];
-
-            // add param types
-            let mut params = vec![];
-            for (name, type_) in &func.params {
-                let local_idx = params.len().to_uleb128();
-                let wasm_type = utils::type_to_byte(*type_);
-
-                if let Some(byte) = wasm_type {
-                    params.push(byte);
-                }
-                self.scope.insert(name, wasm_type.map(|t| (t, local_idx)));
-            }
-            self.param_count = params.len();
-            params.len().write_uleb128(&mut buf);
-            buf.append(&mut params);
-
-            // add return type
-            match utils::type_to_byte(func.return_type) {
-                // unit type => no return values
-                None => buf.push(0),
-                // any other type => 1 return value of that type
-                Some(return_type) => {
-                    buf.push(1); // 1 return value
-                    buf.push(return_type); // the return type
-                }
-            }
-
-            // push to type section and save idx
-            let func_type_idx = self.type_section.len();
-            self.type_section.push(buf);
-
-            // index of type in type_section
-            self.function_section.push(func_type_idx.to_uleb128());
+            self.function_signature(func);
         }
 
         // compile functions
         self.main_fn(node.main_fn);
-        for func in node.functions {
+        for (idx, func) in node.functions.into_iter().enumerate() {
+            self.curr_func_idx = idx + 1;
             self.function_definition(func);
         }
 
@@ -186,26 +216,97 @@ impl<'src> Compiler<'src> {
     }
 
     fn main_fn(&mut self, body: AnalyzedBlock<'src>) {
-        // set param_count to 0
-        self.param_count = 0;
+        let main_idx = self.import_count.to_uleb128();
 
         // export main func as WASI `_start` func
         self.export_section.push(
             [
-                &[
-                    6, // string len
-                ][..],
+                &[6][..],  // string len
                 b"_start", // name of export
-                &[
-                    0, // export kind (0 = func)
-                    0, // index of func in function_section (main func is always 0)
-                ],
+                &[0],      // export kind (0 = func)
+                &main_idx, // index of func
             ]
             .concat(),
         );
 
+        // point to main func in start section
+        self.start_section = [
+            &[8][..],                     // section id
+            &main_idx.len().to_uleb128(), // section len
+            &main_idx,                    // index of main func
+        ]
+        .concat();
+
+        // set param_count to 0
+        self.param_count = 0;
+
         // function body
         self.function_body(body);
+    }
+
+    fn function_signature(&mut self, node: &AnalyzedFunctionDefinition<'src>) {
+        // skip unused functions
+        if !node.used {
+            return;
+        }
+
+        // add to self.functions map
+        let func_idx = (self.function_section.len() + self.import_count).to_uleb128();
+        self.functions.insert(node.name, func_idx.clone());
+
+        // start new buf vor func signature
+        let mut buf = vec![types::FUNC];
+
+        // add param types
+        let mut param_names = vec![];
+        let mut params: Vec<_> = node
+            .params
+            .iter()
+            .filter_map(|(name, type_)| {
+                param_names.push(
+                    [
+                        &param_names.len().to_uleb128()[..], // local index
+                        &name.len().to_uleb128(),            // string len
+                        name.as_bytes(),                     // param name
+                    ]
+                    .concat(),
+                );
+                utils::type_to_byte(*type_)
+            })
+            .collect();
+        params.len().write_uleb128(&mut buf);
+        buf.append(&mut params);
+
+        // add return type
+        match utils::type_to_byte(node.return_type) {
+            // unit type => no return values
+            None => buf.push(0),
+            // any other type => 1 return value of that type
+            Some(return_type) => {
+                buf.push(1); // 1 return value
+                buf.push(return_type); // the return type
+            }
+        }
+
+        // push to type section and save idx
+        let func_type_idx = self.type_section.len();
+        self.type_section.push(buf);
+
+        // index of type in type_section
+        self.function_section.push(func_type_idx.to_uleb128());
+
+        // add name to name section
+        self.function_names.push(
+            [
+                &func_idx[..],                 // function index
+                &node.name.len().to_uleb128(), // string len
+                node.name.as_bytes(),          // name
+            ]
+            .concat(),
+        );
+
+        // add param names to name section
+        self.local_names.push((func_idx, param_names));
     }
 
     fn function_definition(&mut self, node: AnalyzedFunctionDefinition<'src>) {
@@ -216,6 +317,20 @@ impl<'src> Compiler<'src> {
 
         // clear variable scope
         self.scope.clear();
+
+        // reset param count
+        self.param_count = 0;
+
+        // add params to scope
+        for (idx, (name, type_)) in node.params.into_iter().enumerate() {
+            self.scope.insert(
+                name,
+                utils::type_to_byte(type_).map(|_| {
+                    self.param_count += 1;
+                    idx.to_uleb128()
+                }),
+            );
+        }
 
         // function body
         self.function_body(node.block);
@@ -256,7 +371,7 @@ impl<'src> Compiler<'src> {
             AnalyzedStatement::Expr(expr) => {
                 let expr_type = expr.result_type();
                 self.expression(expr);
-                if expr_type != Type::Unit {
+                if !matches!(expr_type, Type::Unit | Type::Never) {
                     self.function_body.push(instructions::DROP);
                 }
             }
@@ -265,16 +380,26 @@ impl<'src> Compiler<'src> {
 
     fn let_stmt(&mut self, node: AnalyzedLetStmt<'src>) {
         let wasm_type = utils::type_to_byte(node.expr.result_type());
-        let mut local_idx = (self.locals.len() + self.param_count).to_uleb128();
+        let local_idx = (self.locals.len() + self.param_count).to_uleb128();
         if let Some(byte) = wasm_type {
             self.locals.push(vec![1, byte]);
         }
         self.scope
-            .insert(node.name, wasm_type.map(|t| (t, local_idx.clone())));
+            .insert(node.name, wasm_type.map(|_| local_idx.clone()));
 
         self.expression(node.expr);
         self.function_body.push(instructions::LOCAL_SET);
-        self.function_body.append(&mut local_idx);
+        self.function_body.extend_from_slice(&local_idx);
+
+        // add variable name to name section
+        self.local_names[self.curr_func_idx].1.push(
+            [
+                &local_idx[..],                // local index
+                &node.name.len().to_uleb128(), // string len
+                node.name.as_bytes(),
+            ]
+            .concat(),
+        );
     }
 
     fn return_stmt(&mut self, node: AnalyzedReturnStmt<'src>) {
@@ -285,6 +410,7 @@ impl<'src> Compiler<'src> {
     }
 
     fn expression(&mut self, node: AnalyzedExpression<'src>) {
+        let diverges = node.result_type() == Type::Never;
         match node {
             AnalyzedExpression::Block(node) => self.block_expr(*node),
             AnalyzedExpression::If(node) => self.if_expr(*node),
@@ -301,15 +427,15 @@ impl<'src> Compiler<'src> {
             AnalyzedExpression::Bool(value) => {
                 // `bool`s are stored as unsigned `i32`
                 self.function_body.push(instructions::I32_CONST);
-                value.write_uleb128(&mut self.function_body);
+                value.write_sleb128(&mut self.function_body);
             }
             AnalyzedExpression::Char(value) => {
                 // `char`s are stored as unsigned `i32`
                 self.function_body.push(instructions::I32_CONST);
-                value.write_uleb128(&mut self.function_body);
+                value.write_sleb128(&mut self.function_body);
             }
             AnalyzedExpression::Ident(ident) => match &self.scope[ident.ident] {
-                Some((_type, local_idx)) => {
+                Some(local_idx) => {
                     self.function_body.push(instructions::LOCAL_GET);
                     self.function_body.extend_from_slice(local_idx);
                 }
@@ -319,9 +445,12 @@ impl<'src> Compiler<'src> {
             AnalyzedExpression::Prefix(node) => self.prefix_expr(*node),
             AnalyzedExpression::Infix(node) => self.infix_expr(*node),
             AnalyzedExpression::Assign(node) => self.assign_expr(*node),
-            AnalyzedExpression::Call(node) => todo!(),
+            AnalyzedExpression::Call(node) => self.call_expr(*node),
             AnalyzedExpression::Cast(node) => self.cast_expr(*node),
             AnalyzedExpression::Grouped(expr) => self.expression(*expr),
+        }
+        if diverges {
+            self.function_body.push(instructions::UNREACHABLE);
         }
     }
 
@@ -339,7 +468,6 @@ impl<'src> Compiler<'src> {
         self.expression(node.cond);
 
         self.function_body.push(instructions::IF);
-        // TODO: never type
         match utils::type_to_byte(node.result_type) {
             Some(byte) => self.function_body.push(byte),
             None => self.function_body.push(types::VOID),
@@ -362,12 +490,8 @@ impl<'src> Compiler<'src> {
                 // compile expression
                 self.expression(node.expr);
 
-                // push constant 1
-                self.function_body.push(instructions::I32_CONST);
-                self.function_body.push(1);
-
-                // push xor
-                self.function_body.push(instructions::I32_XOR);
+                // negate
+                self.function_body.push(instructions::I32_EQZ);
             }
             (PrefixOp::Neg, Type::Int) => {
                 // push constant 0
@@ -391,6 +515,47 @@ impl<'src> Compiler<'src> {
     }
 
     fn infix_expr(&mut self, node: AnalyzedInfixExpr<'src>) {
+        match node.op {
+            InfixOp::And => {
+                self.expression(node.lhs);
+                self.function_body.extend([
+                    // if lhs is not true
+                    instructions::I32_EQZ,
+                    instructions::IF,
+                    types::I32,
+                    // then return true
+                    instructions::I32_CONST,
+                    0,
+                    // else return rhs
+                    instructions::ELSE,
+                ]);
+                self.expression(node.rhs);
+                // end if
+                self.function_body.push(instructions::END);
+
+                return;
+            }
+            InfixOp::Or => {
+                self.expression(node.lhs);
+                self.function_body.extend([
+                    // if lhs is true
+                    instructions::IF,
+                    types::I32,
+                    // then return true
+                    instructions::I32_CONST,
+                    1,
+                    // else return rhs
+                    instructions::ELSE,
+                ]);
+                self.expression(node.rhs);
+                // end if
+                self.function_body.push(instructions::END);
+
+                return;
+            }
+            _ => {}
+        }
+
         // save type of lhs
         let lhs_type = node.lhs.result_type();
 
@@ -409,7 +574,7 @@ impl<'src> Compiler<'src> {
             (InfixOp::Div, Type::Int) => instructions::I64_DIV_S,
             (InfixOp::Div, Type::Float) => instructions::F64_DIV,
             (InfixOp::Rem, Type::Int) => instructions::I64_REM_S,
-            (InfixOp::Pow, Type::Int) => todo!(), // TODO: pow
+            (InfixOp::Pow, Type::Int) => return corelib::pow_int(self),
             (InfixOp::Eq, Type::Int) => instructions::I64_EQ,
             (InfixOp::Eq, Type::Float) => instructions::F64_EQ,
             (InfixOp::Eq, Type::Bool) => instructions::I32_EQ,
@@ -434,16 +599,13 @@ impl<'src> Compiler<'src> {
             (InfixOp::BitAnd, Type::Bool) => instructions::I32_AND,
             (InfixOp::BitXor, Type::Int) => instructions::I64_XOR,
             (InfixOp::BitXor, Type::Bool) => instructions::I32_XOR,
-            // TODO: logical AND and OR
-            (InfixOp::And, Type::Bool) => todo!(),
-            (InfixOp::Or, Type::Bool) => todo!(),
             _ => unreachable!("the analyzer guarantees one of the above to match"),
         };
         self.function_body.push(instruction);
     }
 
     fn assign_expr(&mut self, node: AnalyzedAssignExpr<'src>) {
-        let Some((type_, local_idx)) = &self.scope[node.assignee] else {
+        let Some(local_idx) = &self.scope[node.assignee] else {
             self.expression(node.expr);
             return;
         };
@@ -461,40 +623,61 @@ impl<'src> Compiler<'src> {
         self.expression(node.expr);
 
         // calculate new value for non-basic assignments
-        if node.op != AssignOp::Basic {
-            // match on op and type (analyzer guarantees same type for variable and expr)
-            let instruction = match (node.op, expr_type) {
-                (AssignOp::Plus, Type::Int) => instructions::I64_ADD,
-                (AssignOp::Plus, Type::Float) => instructions::F64_ADD,
-                (AssignOp::Minus, Type::Int) => instructions::I64_SUB,
-                (AssignOp::Minus, Type::Float) => instructions::F64_SUB,
-                (AssignOp::Mul, Type::Int) => instructions::I64_MUL,
-                (AssignOp::Mul, Type::Float) => instructions::F64_MUL,
-                (AssignOp::Div, Type::Int) => instructions::I64_DIV_S,
-                (AssignOp::Div, Type::Float) => instructions::F64_DIV,
-                (AssignOp::Rem, Type::Int) => instructions::I64_REM_S,
-                (AssignOp::Pow, Type::Int) => todo!(), // TODO: pow
-                (AssignOp::Shl, Type::Int) => instructions::I64_SHL,
-                (AssignOp::Shr, Type::Int) => instructions::I64_SHR_S,
-                (AssignOp::BitOr, Type::Int) => instructions::I64_OR,
-                (AssignOp::BitOr, Type::Bool) => instructions::I32_OR,
-                (AssignOp::BitAnd, Type::Int) => instructions::I64_AND,
-                (AssignOp::BitAnd, Type::Bool) => instructions::I32_AND,
-                (AssignOp::BitXor, Type::Int) => instructions::I64_XOR,
-                (AssignOp::BitXor, Type::Bool) => instructions::I32_XOR,
-                _ => unreachable!("the analyzer guarantees one of the above to match"),
-            };
-            self.function_body.push(instruction);
+        'op: {
+            if node.op != AssignOp::Basic {
+                // match on op and type (analyzer guarantees same type for variable and expr)
+                let instruction = match (node.op, expr_type) {
+                    (AssignOp::Plus, Type::Int) => instructions::I64_ADD,
+                    (AssignOp::Plus, Type::Float) => instructions::F64_ADD,
+                    (AssignOp::Minus, Type::Int) => instructions::I64_SUB,
+                    (AssignOp::Minus, Type::Float) => instructions::F64_SUB,
+                    (AssignOp::Mul, Type::Int) => instructions::I64_MUL,
+                    (AssignOp::Mul, Type::Float) => instructions::F64_MUL,
+                    (AssignOp::Div, Type::Int) => instructions::I64_DIV_S,
+                    (AssignOp::Div, Type::Float) => instructions::F64_DIV,
+                    (AssignOp::Rem, Type::Int) => instructions::I64_REM_S,
+                    (AssignOp::Pow, Type::Int) => {
+                        corelib::pow_int(self);
+                        break 'op;
+                    }
+                    (AssignOp::Shl, Type::Int) => instructions::I64_SHL,
+                    (AssignOp::Shr, Type::Int) => instructions::I64_SHR_S,
+                    (AssignOp::BitOr, Type::Int) => instructions::I64_OR,
+                    (AssignOp::BitOr, Type::Bool) => instructions::I32_OR,
+                    (AssignOp::BitAnd, Type::Int) => instructions::I64_AND,
+                    (AssignOp::BitAnd, Type::Bool) => instructions::I32_AND,
+                    (AssignOp::BitXor, Type::Int) => instructions::I64_XOR,
+                    (AssignOp::BitXor, Type::Bool) => instructions::I32_XOR,
+                    _ => unreachable!("the analyzer guarantees one of the above to match"),
+                };
+                self.function_body.push(instruction);
+            }
         }
 
         // set local to new value
         self.function_body.push(instructions::LOCAL_SET);
         self.function_body.extend_from_slice(
-            &self.scope[node.assignee]
+            self.scope[node.assignee]
                 .as_ref()
-                .expect("we checked this at the top of the function")
-                .1,
+                .expect("we checked this at the top of the function"),
         );
+    }
+
+    fn call_expr(&mut self, node: AnalyzedCallExpr<'src>) {
+        for arg in node.args {
+            self.expression(arg);
+        }
+
+        match self.functions.get(node.func) {
+            Some(func) => {
+                self.function_body.push(instructions::CALL);
+                self.function_body.extend_from_slice(func);
+            }
+            None => match node.func {
+                "exit" => self.builtin_exit(),
+                _ => unreachable!("the analyzer guarantees one of the above to match"),
+            },
+        }
     }
 
     fn cast_expr(&mut self, node: AnalyzedCastExpr<'src>) {
@@ -519,7 +702,7 @@ impl<'src> Compiler<'src> {
                 // true if != 0
                 self.function_body.push(instructions::I64_NE);
             }
-            (Type::Int, Type::Char) => self.builtin_cast_int_to_char(),
+            (Type::Int, Type::Char) => corelib::cast_int_to_char(self),
             (Type::Float, Type::Int) => {
                 self.function_body.extend(instructions::I64_TRUNC_SAT_F64_S);
             }
@@ -531,7 +714,7 @@ impl<'src> Compiler<'src> {
                 // true if != 0
                 self.function_body.push(instructions::F64_NE);
             }
-            (Type::Float, Type::Char) => self.builtin_cast_float_to_char(),
+            (Type::Float, Type::Char) => corelib::cast_float_to_char(self),
             (Type::Bool, Type::Int) => self.function_body.push(instructions::I64_EXTEND_I32_U),
             (Type::Bool, Type::Float) => self.function_body.push(instructions::F64_CONVERT_I32_U),
             (Type::Char, Type::Int) => self.function_body.push(instructions::I64_EXTEND_I32_U),
@@ -550,134 +733,55 @@ impl<'src> Compiler<'src> {
 
     /////////////////////////
 
-    fn call_builtin(
-        &mut self,
-        name: &'static str,
-        signature: Vec<u8>,
-        locals: Vec<u8>,
-        body: &[u8],
-    ) {
-        let idx = match self.builtin_functions.get(name) {
+    fn builtin_exit(&mut self) {
+        let idx = match self.builtin_functions.get("exit") {
             Some(idx) => idx,
             None => {
-                let idx = self.type_section.len().to_uleb128();
+                let type_idx = self.type_section.len().to_uleb128();
 
                 // add signature to type section
-                self.type_section.push(signature);
-
-                // add to function section
-                self.function_section.push(idx.clone());
+                self.type_section.push(vec![
+                    types::FUNC,
+                    1, // num of params
+                    types::I32,
+                    0, // num of return vals
+                ]);
 
                 // save in builtin_functions map
-                self.builtin_functions.insert(name, idx);
+                let func_idx = self.import_section.len().to_uleb128();
+                self.builtin_functions.insert("exit", func_idx);
+                let func_idx = &self.builtin_functions["exit"];
 
-                // add to end of code section
-                self.builtins_code
-                    .push([&(body.len() + locals.len()).to_uleb128(), &locals, body].concat());
+                // add import from WASI
+                self.import_section.push(
+                    [
+                        &[22][..],                 // module string len
+                        b"wasi_snapshot_preview1", // module name
+                        &[9],                      // func name string len
+                        b"proc_exit",              // func name
+                        &[0],                      // import of type `func`
+                        &type_idx,                 // index of func signature in type section
+                    ]
+                    .concat(),
+                );
 
-                &self.builtin_functions[name]
+                // add name to name section
+                self.imported_function_names.push(
+                    [
+                        &func_idx[..], // function index
+                        &[4],          // string len
+                        b"exit",       // name
+                    ]
+                    .concat(),
+                );
+
+                func_idx
             }
         };
 
+        // push call instruction
+        self.function_body.push(instructions::I32_WRAP_I64);
         self.function_body.push(instructions::CALL);
         self.function_body.extend_from_slice(idx);
-    }
-
-    fn builtin_cast_int_to_char(&mut self) {
-        self.call_builtin(
-            "rush_cast_int_to_char",
-            vec![
-                types::FUNC,
-                1, // num of params
-                types::I64,
-                1, // num of return vals
-                types::I32,
-            ],
-            vec![0], // no locals
-            &[
-                // get param
-                instructions::LOCAL_GET,
-                0,
-                // if > 0x7F
-                instructions::I64_CONST,
-                0x7F,
-                instructions::I64_GT_S,
-                instructions::IF,
-                types::I32,
-                // then return 0x7F
-                instructions::I32_CONST,
-                0x7F,
-                // else if < 0x00
-                instructions::ELSE,
-                instructions::LOCAL_GET,
-                0,
-                instructions::I64_CONST,
-                0,
-                instructions::I64_LT_S,
-                instructions::IF,
-                types::I32,
-                // then return 0x00
-                instructions::I32_CONST,
-                0x00,
-                // else truncate to 7 bits
-                instructions::ELSE,
-                instructions::LOCAL_GET,
-                0,
-                instructions::I32_WRAP_I64,
-                instructions::I32_CONST,
-                0x7F,
-                instructions::I32_AND,
-                // end if
-                instructions::END,
-                instructions::END,
-                // end function body
-                instructions::END,
-            ],
-        );
-    }
-
-    fn builtin_cast_float_to_char(&mut self) {
-        self.call_builtin(
-            "rush_cast_float_to_char",
-            vec![
-                types::FUNC,
-                1, // num of params
-                types::F64,
-                1, // num of return vals
-                types::I32,
-            ],
-            vec![1, 1, types::I32],
-            &[
-                // get param
-                instructions::LOCAL_GET,
-                0,
-                // convert to i32
-                instructions::I32_TRUNC_SAT_F64_U[0],
-                instructions::I32_TRUNC_SAT_F64_U[1],
-                // set local to result
-                instructions::LOCAL_TEE,
-                1,
-                // if > 0x7F
-                instructions::I32_CONST,
-                0x7F,
-                instructions::I32_GT_U,
-                instructions::IF,
-                types::I32,
-                // then return 0x7F
-                instructions::I32_CONST,
-                0x7F,
-                // else truncate to 7 bits
-                instructions::ELSE,
-                instructions::LOCAL_GET,
-                1,
-                instructions::I32_CONST,
-                0x7F,
-                instructions::I32_AND,
-                // end if
-                instructions::END,
-                // end function body
-                instructions::END,
-            ],
-        );
     }
 }

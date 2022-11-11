@@ -54,18 +54,6 @@ fn main() {
 }
 */
 
-fn int() -> int {
-    if !true {
-        return 1;
-    } else {
-        return 2;
-    }
-}
-
-fn main() {
-    exit(int());
-}
-
 /*
 fn main() {
     let a = false;
@@ -78,3 +66,9 @@ fn main() {
     exit(b);
 }
 */
+
+fn main() {
+    let a = true as float;
+    exit(a as int);
+    //false || !(1 as char as bool) || !(1.0 as char as bool) || 0 ** 100 as bool || exit(1);
+}

@@ -13,4 +13,3 @@ ir:
 build-ir:
 	llc main.ll
 	clang main.s -o main
-

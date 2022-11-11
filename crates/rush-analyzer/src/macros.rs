@@ -6,11 +6,13 @@ macro_rules! analyzed_tree {
     ((
         Program,
         functions: [$($func:tt),* $(,)?],
-        main_fn: $main_fn:tt $(,)?
+        main_fn: $main_fn:tt,
+        used_builtins: [$($name:expr),* $(,)?] $(,)?
     )) => {
         AnalyzedProgram {
             functions: vec![$(analyzed_tree!($func)),*],
             main_fn: analyzed_tree!($main_fn),
+            used_builtins: HashSet::from([$($name),*]),
         }
     };
     ((
