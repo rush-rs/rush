@@ -286,6 +286,9 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         Ok(match self.curr_tok.kind {
             TokenKind::Let => Either::Left(self.let_stmt()?),
             TokenKind::Return => Either::Left(self.return_stmt()?),
+            TokenKind::Loop => Either::Left(self.loop_stmt()?),
+            TokenKind::While => Either::Left(self.while_stmt()?),
+            TokenKind::Break => Either::Left(self.break_stmt()?),
             _ => self.expr_stmt()?,
         })
     }
@@ -348,6 +351,64 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         Ok(Statement::Return(ReturnStmt {
             span: start_loc.until(self.prev_tok.span.end),
             expr,
+        }))
+    }
+
+    fn loop_stmt(&mut self) -> Result<Statement<'src>> {
+        let start_loc = self.curr_tok.span.start;
+
+        // skip loop token: this function is only called when self.curr_tok.kind == TokenKind::Loop
+        self.next()?;
+
+        let block = self.block()?;
+
+        // skip optional semicolon
+        if self.curr_tok.kind == TokenKind::Semicolon {
+            self.next()?;
+        }
+
+        Ok(Statement::Loop(LoopStmt {
+            span: start_loc.until(self.prev_tok.span.end),
+            block,
+        }))
+    }
+
+    fn while_stmt(&mut self) -> Result<Statement<'src>> {
+        let start_loc = self.curr_tok.span.start;
+
+        // skip while token: this function is only called when self.curr_tok.kind == TokenKind::While
+        self.next()?;
+
+        let cond = self.expression(0)?;
+
+        let block = self.block()?;
+
+        // skip optional semicolon
+        if self.curr_tok.kind == TokenKind::Semicolon {
+            self.next()?;
+        }
+
+        Ok(Statement::While(WhileStmt {
+            span: start_loc.until(self.prev_tok.span.end),
+            cond,
+            block,
+        }))
+    }
+
+    fn break_stmt(&mut self) -> Result<Statement<'src>> {
+        let start_loc = self.curr_tok.span.start;
+
+        // skip break token: this function is only called when self.curr_tok.kind == TokenKind::Break
+        self.next()?;
+
+        self.expect_recoverable(
+            TokenKind::Semicolon,
+            "missing semicolon after statement",
+            self.prev_tok.span,
+        )?;
+
+        Ok(Statement::Break(BreakStmt {
+            span: start_loc.until(self.prev_tok.span.end),
         }))
     }
 

@@ -464,6 +464,9 @@ impl<'src> Analyzer<'src> {
         match node {
             Statement::Let(node) => self.visit_let_stmt(node),
             Statement::Return(node) => self.visit_return_stmt(node),
+            Statement::Loop(_node) => todo!(),
+            Statement::While(_node) => todo!(),
+            Statement::Break(_node) => todo!(),
             Statement::Expr(node) => AnalyzedStatement::Expr(self.visit_expression(node.expr)),
         }
     }

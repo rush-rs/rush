@@ -82,6 +82,9 @@ impl Block<'_> {
 pub enum Statement<'src> {
     Let(LetStmt<'src>),
     Return(ReturnStmt<'src>),
+    Loop(LoopStmt<'src>),
+    While(WhileStmt<'src>),
+    Break(BreakStmt),
     Expr(ExprStmt<'src>),
 }
 
@@ -90,6 +93,9 @@ impl Statement<'_> {
         match self {
             Self::Let(stmt) => stmt.span,
             Self::Return(stmt) => stmt.span,
+            Self::Loop(stmt) => stmt.span,
+            Self::While(stmt) => stmt.span,
+            Self::Break(stmt) => stmt.span,
             Self::Expr(stmt) => stmt.span,
         }
     }
@@ -108,6 +114,24 @@ pub struct LetStmt<'src> {
 pub struct ReturnStmt<'src> {
     pub span: Span,
     pub expr: Option<Expression<'src>>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LoopStmt<'src> {
+    pub span: Span,
+    pub block: Block<'src>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct WhileStmt<'src> {
+    pub span: Span,
+    pub cond: Expression<'src>,
+    pub block: Block<'src>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BreakStmt {
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
