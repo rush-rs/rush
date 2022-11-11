@@ -1,4 +1,5 @@
 mod compiler;
+mod corelib;
 mod error;
 
 pub use compiler::*;
