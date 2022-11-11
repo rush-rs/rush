@@ -421,7 +421,9 @@ impl<'src> Compiler<'src> {
 
     fn loop_stmt(&mut self, node: AnalyzedLoopStmt<'src>) {
         self.function_body.push(instructions::BLOCK); // outer block to jump to with `break`
+        self.function_body.push(types::VOID); // with result `()`
         self.function_body.push(instructions::LOOP); // loop to jump to with `continue`
+        self.function_body.push(types::VOID); // with result `()`
 
         // TODO: analyzer needs to guarantee result type `()`
         self.block_expr(node.block);
@@ -434,7 +436,9 @@ impl<'src> Compiler<'src> {
 
     fn while_stmt(&mut self, node: AnalyzedWhileStmt<'src>) {
         self.function_body.push(instructions::BLOCK); // outer block to jump to with `break`
+        self.function_body.push(types::VOID); // with result `()`
         self.function_body.push(instructions::LOOP); // loop to jump to with `continue`
+        self.function_body.push(types::VOID); // with result `()`
 
         // TODO: analyzer needs to guarantee result type `bool`
         self.expression(node.cond); // compile condition
