@@ -756,23 +756,15 @@ impl<'ctx> Compiler<'ctx> {
                 .builder
                 .build_float_neg(base.into_float_value(), "neg")
                 .as_basic_value_enum(),
-            (Type::Bool, PrefixOp::Not) => {
-                // TODO: improve this through `bool == 0`
-                // convert the original type to i1
-                let value = self.builder.build_int_cast(
+            (Type::Bool, PrefixOp::Not) => self
+                .builder
+                .build_int_compare(
+                    IntPredicate::EQ,
                     base.into_int_value(),
-                    self.context.bool_type(),
-                    "bool_tmp",
-                );
-                // use XOR to do a negate operation on the bool
-                let negated = self.builder.build_xor(
-                    value,
-                    self.context.bool_type().const_int(1, false),
+                    self.context.bool_type().const_zero(),
                     "bool_neg",
-                );
-                // return the negated bool
-                negated.as_basic_value_enum()
-            }
+                )
+                .as_basic_value_enum(),
             _ => unreachable!("other types are not supported by prefix"),
         }
     }
