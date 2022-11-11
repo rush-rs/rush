@@ -1,8 +1,56 @@
-use inkwell::{module::Linkage, types::BasicMetadataTypeEnum, FloatPredicate, IntPredicate};
+use inkwell::{
+    module::Linkage,
+    types::BasicMetadataTypeEnum,
+    values::{BasicMetadataValueEnum, BasicValueEnum, FloatValue},
+    FloatPredicate, IntPredicate,
+};
 
 use crate::Compiler;
 
 impl<'ctx> Compiler<'ctx> {
+    /// Helper function for the `**` and `**=` operators.
+    /// Because LLVM does not support the pow instruction, the GLIBC `pow` function is used.
+    /// This function will declare the `pow` function if not already done previously.
+    /// The `pow` function is then called using the `lhs` and `rhs` arguments.
+    pub(crate) fn invoke_pow(
+        &mut self,
+        lhs: FloatValue<'ctx>,
+        rhs: FloatValue<'ctx>,
+    ) -> FloatValue<'ctx> {
+        // declare the pow builtin function if not already declared
+        if self.declared_builtins.insert("pow") {
+            let pow_type = self.context.f64_type().fn_type(
+                &[
+                    BasicMetadataTypeEnum::FloatType(self.context.f64_type()),
+                    BasicMetadataTypeEnum::FloatType(self.context.f64_type()),
+                ],
+                false,
+            );
+            self.module
+                .add_function("pow", pow_type, Some(Linkage::External));
+        }
+
+        let args: Vec<BasicMetadataValueEnum> = vec![
+            BasicValueEnum::FloatValue(lhs).into(),
+            BasicValueEnum::FloatValue(rhs).into(),
+        ];
+
+        // call the pow builtin function
+        let res = self
+            .builder
+            .build_call(
+                self.module
+                    .get_function("pow")
+                    .expect("pow is declared above"),
+                &args,
+                "pow",
+            )
+            .try_as_basic_value()
+            .expect_left("pow always returns a value");
+
+        res.into_float_value()
+    }
+
     /// Defines the builtin function responsible for converting a float into a char
     /// If the float is < 0.0, the char is 0.
     /// Otherwise, if the float is > 127.0, the char is 127.

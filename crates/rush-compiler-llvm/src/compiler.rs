@@ -11,8 +11,8 @@ use inkwell::{
     targets::{CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetTriple},
     types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum},
     values::{
-        BasicMetadataValueEnum, BasicValue, BasicValueEnum, FloatValue, FunctionValue,
-        InstructionOpcode, PointerValue,
+        BasicMetadataValueEnum, BasicValue, BasicValueEnum, FunctionValue, InstructionOpcode,
+        PointerValue,
     },
     FloatPredicate, IntPredicate, OptimizationLevel,
 };
@@ -26,7 +26,7 @@ pub struct Compiler<'ctx> {
     // contains information about the current function
     curr_fn: Option<Function<'ctx>>,
     // a set of all builtin functions already declared (`imported`) so far
-    declared_builtins: HashSet<&'ctx str>,
+    pub(crate) declared_builtins: HashSet<&'ctx str>,
     // specifies the target machine
     target_triple: TargetTriple,
     // specifies the optimization level
@@ -405,7 +405,7 @@ impl<'ctx> Compiler<'ctx> {
                     InfixOp::Mul => self.builder.build_float_mul(lhs, rhs, "f_prod"),
                     InfixOp::Div => self.builder.build_float_div(lhs, rhs, "f_prod"),
                     InfixOp::Rem => self.builder.build_float_rem(lhs, rhs, "f_rem"),
-                    InfixOp::Pow => self.pow_helper(lhs, rhs),
+                    InfixOp::Pow => self.invoke_pow(lhs, rhs),
                     // comparison operators (result in bool)
                     op => {
                         let (op, label) = match op {
@@ -448,7 +448,7 @@ impl<'ctx> Compiler<'ctx> {
                         );
 
                         // call the pow builtin function
-                        let pow_res = self.pow_helper(lhs_f64, rhs_f64);
+                        let pow_res = self.invoke_pow(lhs_f64, rhs_f64);
 
                         // convert the result back to i64
                         self.builder.build_float_to_signed_int(
@@ -625,45 +625,6 @@ impl<'ctx> Compiler<'ctx> {
                 self.infix_helper(type_, node.op, lhs, rhs)
             }
         }
-    }
-
-    /// Helper function for the `**` and `**=` operators.
-    /// Because LLVM does not support the pow instruction, the GLIBC `pow` function is used.
-    /// This function will declare the `pow` function if not already done previously.
-    /// The `pow` function is then called using the `lhs` and `rhs` arguments.
-    fn pow_helper(&mut self, lhs: FloatValue<'ctx>, rhs: FloatValue<'ctx>) -> FloatValue<'ctx> {
-        // declare the pow builtin function if not already declared
-        if self.declared_builtins.insert("pow") {
-            let pow_type = self.context.f64_type().fn_type(
-                &[
-                    BasicMetadataTypeEnum::FloatType(self.context.f64_type()),
-                    BasicMetadataTypeEnum::FloatType(self.context.f64_type()),
-                ],
-                false,
-            );
-            self.module
-                .add_function("pow", pow_type, Some(Linkage::External));
-        }
-
-        let args: Vec<BasicMetadataValueEnum> = vec![
-            BasicValueEnum::FloatValue(lhs).into(),
-            BasicValueEnum::FloatValue(rhs).into(),
-        ];
-
-        // call the pow builtin function
-        let res = self
-            .builder
-            .build_call(
-                self.module
-                    .get_function("pow")
-                    .expect("pow is declared above"),
-                &args,
-                "pow",
-            )
-            .try_as_basic_value()
-            .expect_left("pow always returns a value");
-
-        res.into_float_value()
     }
 
     fn compile_prefix_expression(&mut self, node: &AnalyzedPrefixExpr) -> BasicValueEnum<'ctx> {
