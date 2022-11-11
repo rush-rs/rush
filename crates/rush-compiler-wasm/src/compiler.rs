@@ -3,7 +3,7 @@ use std::{collections::HashMap, mem};
 use rush_analyzer::{ast::*, AssignOp, InfixOp, PrefixOp, Type};
 
 use crate::{
-    corelib, instructions, types,
+    instructions, types,
     utils::{self, Leb128},
 };
 
@@ -574,7 +574,7 @@ impl<'src> Compiler<'src> {
             (InfixOp::Div, Type::Int) => instructions::I64_DIV_S,
             (InfixOp::Div, Type::Float) => instructions::F64_DIV,
             (InfixOp::Rem, Type::Int) => instructions::I64_REM_S,
-            (InfixOp::Pow, Type::Int) => return corelib::pow_int(self),
+            (InfixOp::Pow, Type::Int) => return self.__rush_internal_pow_int(),
             (InfixOp::Eq, Type::Int) => instructions::I64_EQ,
             (InfixOp::Eq, Type::Float) => instructions::F64_EQ,
             (InfixOp::Eq, Type::Bool) => instructions::I32_EQ,
@@ -637,7 +637,7 @@ impl<'src> Compiler<'src> {
                     (AssignOp::Div, Type::Float) => instructions::F64_DIV,
                     (AssignOp::Rem, Type::Int) => instructions::I64_REM_S,
                     (AssignOp::Pow, Type::Int) => {
-                        corelib::pow_int(self);
+                        self.__rush_internal_pow_int();
                         break 'op;
                     }
                     (AssignOp::Shl, Type::Int) => instructions::I64_SHL,
@@ -702,7 +702,7 @@ impl<'src> Compiler<'src> {
                 // true if != 0
                 self.function_body.push(instructions::I64_NE);
             }
-            (Type::Int, Type::Char) => corelib::cast_int_to_char(self),
+            (Type::Int, Type::Char) => self.__rush_internal_cast_int_to_char(),
             (Type::Float, Type::Int) => {
                 self.function_body.extend(instructions::I64_TRUNC_SAT_F64_S);
             }
@@ -714,7 +714,7 @@ impl<'src> Compiler<'src> {
                 // true if != 0
                 self.function_body.push(instructions::F64_NE);
             }
-            (Type::Float, Type::Char) => corelib::cast_float_to_char(self),
+            (Type::Float, Type::Char) => self.__rush_internal_cast_float_to_char(),
             (Type::Bool, Type::Int) => self.function_body.push(instructions::I64_EXTEND_I32_U),
             (Type::Bool, Type::Float) => self.function_body.push(instructions::F64_CONVERT_I32_U),
             (Type::Char, Type::Int) => self.function_body.push(instructions::I64_EXTEND_I32_U),
