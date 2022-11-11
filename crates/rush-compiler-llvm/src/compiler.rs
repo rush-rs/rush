@@ -24,16 +24,25 @@ pub struct Compiler<'ctx> {
     pub(crate) module: Module<'ctx>,
     pub(crate) builder: Builder<'ctx>,
     // contains information about the current function
-    curr_fn: Option<Function<'ctx>>,
+    pub(crate) curr_fn: Option<Function<'ctx>>,
+    // contains necessary metadata about the current loop construct
+    pub(crate) curr_loop: Option<Loop<'ctx>>,
     // a set of all builtin functions already declared (`imported`) so far
     pub(crate) declared_builtins: HashSet<&'ctx str>,
     // specifies the target machine
-    target_triple: TargetTriple,
+    pub(crate) target_triple: TargetTriple,
     // specifies the optimization level
-    optimization: OptimizationLevel,
+    pub(crate) optimization: OptimizationLevel,
 }
 
-struct Function<'ctx> {
+pub(crate) struct Loop<'ctx> {
+    // saves the loop_start basic block
+    loop_head: BasicBlock<'ctx>,
+    // saves the after_loop basic block
+    after_loop: BasicBlock<'ctx>,
+}
+
+pub(crate) struct Function<'ctx> {
     // specifies the name of the function
     name: String,
     // saves the declared variables of the function
@@ -60,6 +69,7 @@ impl<'ctx> Compiler<'ctx> {
             module,
             builder: context.create_builder(),
             curr_fn: None,
+            curr_loop: None,
             declared_builtins: HashSet::new(),
             target_triple,
             optimization,
@@ -258,10 +268,10 @@ impl<'ctx> Compiler<'ctx> {
         match node {
             AnalyzedStatement::Let(node) => self.compile_let_statement(node),
             AnalyzedStatement::Return(node) => self.compile_return_statement(node),
-            AnalyzedStatement::Loop(_node) => todo!(),
-            AnalyzedStatement::While(_node) => todo!(),
-            AnalyzedStatement::Break => todo!(),
-            AnalyzedStatement::Continue => todo!(),
+            AnalyzedStatement::Loop(node) => self.compile_loop_statement(node),
+            AnalyzedStatement::While(node) => self.compile_while_statement(node),
+            AnalyzedStatement::Break => self.compile_break_statement(),
+            AnalyzedStatement::Continue => self.compile_continue_statement(),
             AnalyzedStatement::Expr(node) => {
                 self.compile_expression(node);
             }
@@ -291,6 +301,109 @@ impl<'ctx> Compiler<'ctx> {
             }
             None => self.build_return(None),
         };
+    }
+
+    /// Compiles an [`AnalyzedLoopStmt`].
+    /// Generates a start basic block and a after basic block.
+    /// When break / continue is used in the loop, it jumps to the start or end blocks.
+    fn compile_loop_statement(&mut self, node: &AnalyzedLoopStmt) {
+        // create the loop_head block
+        let loop_head = self
+            .context
+            .append_basic_block(self.curr_fn().llvm_value, "loop_head");
+
+        // create the after_loop block
+        let after_loop = self
+            .context
+            .append_basic_block(self.curr_fn().llvm_value, "after_loop");
+
+        // set the loop metadata so that the inner block can use it
+        self.curr_loop = Some(Loop {
+            loop_head,
+            after_loop,
+        });
+
+        // enter the loop from outside
+        self.builder.build_unconditional_branch(loop_head);
+
+        // compile the loop body
+        self.builder.position_at_end(loop_head);
+        self.compile_block(&node.block);
+
+        // jump back to the loop head
+        self.builder.build_unconditional_branch(loop_head);
+
+        // place the builder cursor at the end of the `after_loop`
+        self.builder.position_at_end(after_loop);
+    }
+
+    /// Compiles an [`AnalyzedWhileStmt`].
+    /// Checks the provided condition before attempting a new iteration.
+    fn compile_while_statement(&mut self, node: &AnalyzedWhileStmt) {
+        // create the `while_head` block
+        let while_head = self
+            .context
+            .append_basic_block(self.curr_fn().llvm_value, "while_head");
+
+        // create the `while_body` block
+        let while_body = self
+            .context
+            .append_basic_block(self.curr_fn().llvm_value, "while_body");
+
+        // create the `after_while` block
+        let after_while = self
+            .context
+            .append_basic_block(self.curr_fn().llvm_value, "after_while");
+
+        // set the loop metadata so that the inner block can use it
+        self.curr_loop = Some(Loop {
+            loop_head: while_head,
+            after_loop: after_while,
+        });
+
+        // enter the loop from outside
+        self.builder.build_unconditional_branch(while_head);
+
+        // compile the condition check
+        self.builder.position_at_end(while_head);
+        let cond = self.compile_expression(&node.cond);
+        // if the condition is true, jump into the while body, otherwise, quit the loop
+        self.builder
+            .build_conditional_branch(cond.into_int_value(), while_body, after_while);
+
+        // compile the loop body
+        self.builder.position_at_end(while_body);
+        self.compile_block(&node.block);
+
+        // jump back to the loop head
+        self.builder.build_unconditional_branch(while_head);
+
+        // place the builder cursor at the end of the `after_loop`
+        self.builder.position_at_end(after_while);
+    }
+
+    /// Compiles a break statement.
+    /// The task of the break statement is to jump to the basic block after the loop.
+    /// This basic block is saved under the `curr_loop` field of the compiler.
+    fn compile_break_statement(&mut self) {
+        let after_loop_block = self
+            .curr_loop
+            .as_ref()
+            .expect("break is only called in loop bodies")
+            .after_loop;
+        self.builder.build_unconditional_branch(after_loop_block);
+    }
+
+    /// Compiles a continue statement.
+    /// The task of the continue statement is to jump to the basic block at the start of the loop.
+    /// This basic block is saved under the `curr_loop` field of the compiler.
+    fn compile_continue_statement(&mut self) {
+        let loop_start_block = self
+            .curr_loop
+            .as_ref()
+            .expect("continue is only called in loop bodies")
+            .loop_head;
+        self.builder.build_unconditional_branch(loop_start_block);
     }
 
     /// Compiles an [`AnalyzedExpression`].
@@ -942,7 +1055,9 @@ impl<'ctx> Compiler<'ctx> {
         let instruction = self.curr_block().get_last_instruction();
         matches!(
             instruction.map(|instruction| instruction.get_opcode()),
-            Some(InstructionOpcode::Return | InstructionOpcode::Unreachable)
+            Some(
+                InstructionOpcode::Return | InstructionOpcode::Unreachable | InstructionOpcode::Br
+            )
         )
     }
 
@@ -973,7 +1088,8 @@ mod tests {
 
     #[test]
     fn test_main_fn() {
-        let (ast, _) = rush_analyzer::analyze(include_str!("../test.rush")).unwrap();
+        let file = fs::read_to_string("./test.rush").unwrap();
+        let (ast, _) = rush_analyzer::analyze(&file).unwrap();
 
         let context = Context::create();
         let mut compiler = Compiler::new(
