@@ -735,7 +735,7 @@ impl<'src> Compiler<'src> {
                 self.function_body.extend_from_slice(func);
             }
             None => match node.func {
-                "exit" => self.builtin_exit(),
+                "exit" => self.__wasi_exit(),
                 _ => unreachable!("the analyzer guarantees one of the above to match"),
             },
         }
@@ -790,59 +790,5 @@ impl<'src> Compiler<'src> {
             }
             _ => unreachable!("the analyzer guarantees one of the above to match"),
         }
-    }
-
-    /////////////////////////
-
-    fn builtin_exit(&mut self) {
-        let idx = match self.builtin_functions.get("exit") {
-            Some(idx) => idx,
-            None => {
-                let type_idx = self.type_section.len().to_uleb128();
-
-                // add signature to type section
-                self.type_section.push(vec![
-                    types::FUNC,
-                    1, // num of params
-                    types::I32,
-                    0, // num of return vals
-                ]);
-
-                // save in builtin_functions map
-                let func_idx = self.import_section.len().to_uleb128();
-                self.builtin_functions.insert("exit", func_idx);
-                let func_idx = &self.builtin_functions["exit"];
-
-                // add import from WASI
-                self.import_section.push(
-                    [
-                        &[22][..],                 // module string len
-                        b"wasi_snapshot_preview1", // module name
-                        &[9],                      // func name string len
-                        b"proc_exit",              // func name
-                        &[0],                      // import of type `func`
-                        &type_idx,                 // index of func signature in type section
-                    ]
-                    .concat(),
-                );
-
-                // add name to name section
-                self.imported_function_names.push(
-                    [
-                        &func_idx[..], // function index
-                        &[4],          // string len
-                        b"exit",       // name
-                    ]
-                    .concat(),
-                );
-
-                func_idx
-            }
-        };
-
-        // push call instruction
-        self.function_body.push(instructions::I32_WRAP_I64);
-        self.function_body.push(instructions::CALL);
-        self.function_body.extend_from_slice(idx);
     }
 }

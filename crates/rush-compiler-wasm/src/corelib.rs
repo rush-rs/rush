@@ -249,4 +249,66 @@ impl Compiler<'_> {
             ],
         );
     }
+
+    /////////////////////////
+
+    fn call_wasi(&mut self, name: &'static str, wasi_name: &str, signature: Vec<u8>) {
+        let idx = match self.builtin_functions.get(name) {
+            Some(idx) => idx,
+            None => {
+                let type_idx = self.type_section.len().to_uleb128();
+
+                // add signature to type section
+                self.type_section.push(signature);
+
+                // save in builtin_functions map
+                let func_idx = self.import_section.len().to_uleb128();
+                self.builtin_functions.insert(name, func_idx);
+                let func_idx = &self.builtin_functions[name];
+
+                // add import from WASI
+                self.import_section.push(
+                    [
+                        &[22][..],                     // module string len
+                        b"wasi_snapshot_preview1",     // module name
+                        &wasi_name.len().to_uleb128(), // func name string len
+                        wasi_name.as_bytes(),          // func name
+                        &[0],                          // import of type `func`
+                        &type_idx,                     // index of func signature in type section
+                    ]
+                    .concat(),
+                );
+
+                // add name to name section
+                self.imported_function_names.push(
+                    [
+                        &func_idx[..],            // function index
+                        &name.len().to_uleb128(), // string len
+                        name.as_bytes(),          // name
+                    ]
+                    .concat(),
+                );
+
+                func_idx
+            }
+        };
+
+        // push call instruction
+        self.function_body.push(instructions::CALL);
+        self.function_body.extend_from_slice(idx);
+    }
+
+    pub fn __wasi_exit(&mut self) {
+        self.function_body.push(instructions::I32_WRAP_I64);
+        self.call_wasi(
+            "__wasi_exit",
+            "proc_exit",
+            vec![
+                types::FUNC,
+                1, // num of params
+                types::I32,
+                0, // num of return vals
+            ],
+        );
+    }
 }
