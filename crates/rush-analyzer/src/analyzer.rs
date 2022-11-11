@@ -14,6 +14,7 @@ pub struct Analyzer<'src> {
     scope: Option<Scope<'src>>,
     used_builtins: HashSet<&'src str>,
     pub diagnostics: Vec<Diagnostic>,
+    loop_count: usize,
 }
 
 #[derive(Debug)]
@@ -464,10 +465,10 @@ impl<'src> Analyzer<'src> {
         match node {
             Statement::Let(node) => self.visit_let_stmt(node),
             Statement::Return(node) => self.visit_return_stmt(node),
-            Statement::Loop(_node) => todo!(),
-            Statement::While(_node) => todo!(),
-            Statement::Break(_node) => todo!(),
-            Statement::Continue(_node) => todo!(),
+            Statement::Loop(node) => self.visit_loop_stmt(node),
+            Statement::While(node) => self.visit_while_stmt(node),
+            Statement::Break(node) => self.visit_break_stmt(node),
+            Statement::Continue(node) => self.visit_continue_stmt(node),
             Statement::Expr(node) => AnalyzedStatement::Expr(self.visit_expression(node.expr)),
         }
     }
@@ -580,6 +581,49 @@ impl<'src> Analyzer<'src> {
         }
 
         AnalyzedStatement::Return(expr)
+    }
+
+    fn visit_loop_stmt(&mut self, node: LoopStmt<'src>) -> AnalyzedStatement<'src> {
+        self.loop_count += 1;
+        let block = self.visit_block(node.block);
+        self.loop_count -= 1;
+
+        AnalyzedStatement::Loop(AnalyzedLoopStmt { block })
+    }
+
+    fn visit_while_stmt(&mut self, node: WhileStmt<'src>) -> AnalyzedStatement<'src> {
+        let cond = self.visit_expression(node.cond);
+        self.loop_count += 1;
+        let block = self.visit_block(node.block);
+        self.loop_count -= 1;
+
+        AnalyzedStatement::While(AnalyzedWhileStmt { cond, block })
+    }
+
+    fn visit_break_stmt(&mut self, node: BreakStmt) -> AnalyzedStatement<'src> {
+        if self.loop_count == 0 {
+            self.error(
+                ErrorKind::Semantic,
+                "`break` outside of loop",
+                vec![],
+                node.span,
+            );
+        }
+
+        AnalyzedStatement::Break
+    }
+
+    fn visit_continue_stmt(&mut self, node: ContinueStmt) -> AnalyzedStatement<'src> {
+        if self.loop_count == 0 {
+            self.error(
+                ErrorKind::Semantic,
+                "`continue` outside of loop",
+                vec![],
+                node.span,
+            );
+        }
+
+        AnalyzedStatement::Continue
     }
 
     fn visit_expression(&mut self, node: Expression<'src>) -> AnalyzedExpression<'src> {

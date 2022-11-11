@@ -258,6 +258,10 @@ impl<'ctx> Compiler<'ctx> {
         match node {
             AnalyzedStatement::Let(node) => self.compile_let_statement(node),
             AnalyzedStatement::Return(node) => self.compile_return_statement(node),
+            AnalyzedStatement::Loop(_node) => todo!(),
+            AnalyzedStatement::While(_node) => todo!(),
+            AnalyzedStatement::Break => todo!(),
+            AnalyzedStatement::Continue => todo!(),
             AnalyzedStatement::Expr(node) => {
                 self.compile_expression(node);
             }

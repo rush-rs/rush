@@ -368,6 +368,10 @@ impl<'src> Compiler<'src> {
         match node {
             AnalyzedStatement::Let(node) => self.let_stmt(node),
             AnalyzedStatement::Return(node) => self.return_stmt(node),
+            AnalyzedStatement::Loop(_node) => todo!(),
+            AnalyzedStatement::While(_node) => todo!(),
+            AnalyzedStatement::Break => todo!(),
+            AnalyzedStatement::Continue => todo!(),
             AnalyzedStatement::Expr(expr) => {
                 let expr_type = expr.result_type();
                 self.expression(expr);

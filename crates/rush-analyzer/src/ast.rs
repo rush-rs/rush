@@ -30,6 +30,10 @@ pub struct AnalyzedBlock<'src> {
 pub enum AnalyzedStatement<'src> {
     Let(AnalyzedLetStmt<'src>),
     Return(AnalyzedReturnStmt<'src>),
+    Loop(AnalyzedLoopStmt<'src>),
+    While(AnalyzedWhileStmt<'src>),
+    Break,
+    Continue,
     Expr(AnalyzedExpression<'src>),
 }
 
@@ -38,15 +42,18 @@ impl AnalyzedStatement<'_> {
         match self {
             Self::Let(_) => Type::Unit,
             Self::Return(_) => Type::Never,
+            Self::Loop(_) => Type::Unit, // TODO: maybe detect when it's `!`
+            Self::While(_) => Type::Unit,
+            Self::Break => Type::Never,
+            Self::Continue => Type::Never,
             Self::Expr(expr) => expr.result_type(),
         }
     }
 
     pub fn constant(&self) -> bool {
         match self {
-            Self::Let(_) => false,
-            Self::Return(_) => false,
             Self::Expr(expr) => expr.constant(),
+            _ => false,
         }
     }
 }
@@ -58,6 +65,17 @@ pub struct AnalyzedLetStmt<'src> {
 }
 
 pub type AnalyzedReturnStmt<'src> = Option<AnalyzedExpression<'src>>;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AnalyzedLoopStmt<'src> {
+    pub block: AnalyzedBlock<'src>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AnalyzedWhileStmt<'src> {
+    pub cond: AnalyzedExpression<'src>,
+    pub block: AnalyzedBlock<'src>,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AnalyzedExpression<'src> {
