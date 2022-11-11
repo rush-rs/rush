@@ -585,17 +585,67 @@ impl<'src> Analyzer<'src> {
 
     fn visit_loop_stmt(&mut self, node: LoopStmt<'src>) -> AnalyzedStatement<'src> {
         self.loop_count += 1;
+        let block_result_span = node.block.result_span();
         let block = self.visit_block(node.block);
         self.loop_count -= 1;
+
+        if !matches!(block.result_type, Type::Unit | Type::Never | Type::Unknown) {
+            self.error(
+                ErrorKind::Type,
+                format!(
+                    "loop-statement requires a block of type `()` or `!`, found `{}`",
+                    block.result_type
+                ),
+                vec![],
+                block_result_span,
+            );
+        }
 
         AnalyzedStatement::Loop(AnalyzedLoopStmt { block })
     }
 
     fn visit_while_stmt(&mut self, node: WhileStmt<'src>) -> AnalyzedStatement<'src> {
+        let cond_span = node.cond.span();
         let cond = self.visit_expression(node.cond);
+
+        // check that the condition is of type bool
+        if !matches!(cond.result_type(), Type::Bool | Type::Never | Type::Unknown) {
+            self.error(
+                ErrorKind::Type,
+                format!(
+                    "expected value of type `bool`, found `{}`",
+                    cond.result_type()
+                ),
+                vec!["a condition must have the type `bool`".into()],
+                cond_span,
+            )
+        } else {
+            // check that the condition is non-constant
+            if cond.constant() {
+                self.warn(
+                    "redundant while-statement: condition is constant",
+                    vec!["for unconditional loops use a loop-statement".into()],
+                    cond_span,
+                )
+            }
+        }
+
         self.loop_count += 1;
+        let block_result_span = node.block.result_span();
         let block = self.visit_block(node.block);
         self.loop_count -= 1;
+
+        if !matches!(block.result_type, Type::Unit | Type::Never | Type::Unknown) {
+            self.error(
+                ErrorKind::Type,
+                format!(
+                    "while-statement requires a block of type `()` or `!`, found `{}`",
+                    block.result_type
+                ),
+                vec![],
+                block_result_span,
+            );
+        }
 
         AnalyzedStatement::While(AnalyzedWhileStmt { cond, block })
     }
@@ -651,7 +701,7 @@ impl<'src> Analyzer<'src> {
         let cond = self.visit_expression(node.cond);
 
         // check that the condition is of type bool
-        if !matches!(cond.result_type(), Type::Bool | Type::Unknown) {
+        if !matches!(cond.result_type(), Type::Bool | Type::Never | Type::Unknown) {
             self.error(
                 ErrorKind::Type,
                 format!(
@@ -665,7 +715,7 @@ impl<'src> Analyzer<'src> {
             // check that the condition is non-constant
             if cond.constant() {
                 self.warn(
-                    "redundant if expression: condition is constant",
+                    "redundant if-expression: condition is constant",
                     vec![],
                     cond_span,
                 )

@@ -431,7 +431,6 @@ impl<'src> Compiler<'src> {
         self.function_body.push(instructions::LOOP); // loop to jump to with `continue`
         self.function_body.push(types::VOID); // with result `()`
 
-        // TODO: analyzer needs to guarantee result type `()`
         self.block_expr(node.block);
         self.function_body.push(instructions::BR); // jump
         self.function_body.push(0); // to start of loop
@@ -453,13 +452,11 @@ impl<'src> Compiler<'src> {
         self.function_body.push(instructions::LOOP); // loop to jump to with `continue`
         self.function_body.push(types::VOID); // with result `()`
 
-        // TODO: analyzer needs to guarantee result type `bool`
         self.expression(node.cond); // compile condition
         self.function_body.push(instructions::I32_EQZ); // negate result
         self.function_body.push(instructions::BR_IF); // jump if cond is not true
         self.function_body.push(1); // to end of outer block
 
-        // TODO: analyzer needs to guarantee result type `()`
         self.block_expr(node.block);
         self.function_body.push(instructions::BR); // jump
         self.function_body.push(0); // to start of loop
