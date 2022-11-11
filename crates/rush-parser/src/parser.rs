@@ -289,6 +289,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             TokenKind::Loop => Either::Left(self.loop_stmt()?),
             TokenKind::While => Either::Left(self.while_stmt()?),
             TokenKind::Break => Either::Left(self.break_stmt()?),
+            TokenKind::Continue => Either::Left(self.continue_stmt()?),
             _ => self.expr_stmt()?,
         })
     }
@@ -408,6 +409,23 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         )?;
 
         Ok(Statement::Break(BreakStmt {
+            span: start_loc.until(self.prev_tok.span.end),
+        }))
+    }
+
+    fn continue_stmt(&mut self) -> Result<Statement<'src>> {
+        let start_loc = self.curr_tok.span.start;
+
+        // skip continue token: this function is only called when self.curr_tok.kind == TokenKind::Continue
+        self.next()?;
+
+        self.expect_recoverable(
+            TokenKind::Semicolon,
+            "missing semicolon after statement",
+            self.prev_tok.span,
+        )?;
+
+        Ok(Statement::Continue(ContinueStmt {
             span: start_loc.until(self.prev_tok.span.end),
         }))
     }

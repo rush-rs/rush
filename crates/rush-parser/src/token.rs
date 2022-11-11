@@ -61,6 +61,8 @@ pub enum TokenKind<'src> {
     While,
     /// `break`
     Break,
+    /// `continue`
+    Continue,
     /// `if`
     If,
     /// `else`
@@ -214,6 +216,7 @@ impl Display for TokenKind<'_> {
             Self::Loop => write!(f, "loop"),
             Self::While => write!(f, "while"),
             Self::Break => write!(f, "break"),
+            Self::Continue => write!(f, "continue"),
             Self::If => write!(f, "if"),
             Self::Else => write!(f, "else"),
             Self::As => write!(f, "as"),

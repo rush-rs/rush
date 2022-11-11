@@ -85,6 +85,7 @@ pub enum Statement<'src> {
     Loop(LoopStmt<'src>),
     While(WhileStmt<'src>),
     Break(BreakStmt),
+    Continue(ContinueStmt),
     Expr(ExprStmt<'src>),
 }
 
@@ -96,6 +97,7 @@ impl Statement<'_> {
             Self::Loop(stmt) => stmt.span,
             Self::While(stmt) => stmt.span,
             Self::Break(stmt) => stmt.span,
+            Self::Continue(stmt) => stmt.span,
             Self::Expr(stmt) => stmt.span,
         }
     }
@@ -131,6 +133,11 @@ pub struct WhileStmt<'src> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BreakStmt {
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContinueStmt {
     pub span: Span,
 }
 
