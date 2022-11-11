@@ -68,7 +68,5 @@ fn main() {
 */
 
 fn main() {
-    let a = true as float;
-    exit(a as int);
-    //false || !(1 as char as bool) || !(1.0 as char as bool) || 0 ** 100 as bool || exit(1);
+    exit(12);
 }
