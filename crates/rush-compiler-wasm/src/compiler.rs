@@ -368,10 +368,16 @@ impl<'src> Compiler<'src> {
         match node {
             AnalyzedStatement::Let(node) => self.let_stmt(node),
             AnalyzedStatement::Return(node) => self.return_stmt(node),
-            AnalyzedStatement::Loop(_node) => todo!(),
-            AnalyzedStatement::While(_node) => todo!(),
-            AnalyzedStatement::Break => todo!(),
-            AnalyzedStatement::Continue => todo!(),
+            AnalyzedStatement::Loop(node) => self.loop_stmt(node),
+            AnalyzedStatement::While(node) => self.while_stmt(node),
+            AnalyzedStatement::Break => {
+                self.function_body.push(instructions::BR); // jump
+                self.function_body.push(1); // to end of block around loop
+            }
+            AnalyzedStatement::Continue => {
+                self.function_body.push(instructions::BR); // jump
+                self.function_body.push(0); // to start of loop
+            }
             AnalyzedStatement::Expr(expr) => {
                 let expr_type = expr.result_type();
                 self.expression(expr);
@@ -411,6 +417,38 @@ impl<'src> Compiler<'src> {
             self.expression(expr);
         }
         self.function_body.push(instructions::RETURN);
+    }
+
+    fn loop_stmt(&mut self, node: AnalyzedLoopStmt<'src>) {
+        self.function_body.push(instructions::BLOCK); // outer block to jump to with `break`
+        self.function_body.push(instructions::LOOP); // loop to jump to with `continue`
+
+        // TODO: analyzer needs to guarantee result type `()`
+        self.block_expr(node.block);
+        self.function_body.push(instructions::BR); // jump
+        self.function_body.push(0); // to start of loop
+
+        self.function_body.push(instructions::END); // end of loop
+        self.function_body.push(instructions::END); // end of block
+    }
+
+    fn while_stmt(&mut self, node: AnalyzedWhileStmt<'src>) {
+        self.function_body.push(instructions::BLOCK); // outer block to jump to with `break`
+        self.function_body.push(instructions::LOOP); // loop to jump to with `continue`
+
+        // TODO: analyzer needs to guarantee result type `bool`
+        self.expression(node.cond); // compile condition
+        self.function_body.push(instructions::I32_EQZ); // negate result
+        self.function_body.push(instructions::BR_IF); // jump if cond is not true
+        self.function_body.push(1); // to end of outer block
+
+        // TODO: analyzer needs to guarantee result type `()`
+        self.block_expr(node.block);
+        self.function_body.push(instructions::BR); // jump
+        self.function_body.push(0); // to start of loop
+
+        self.function_body.push(instructions::END); // end of loop
+        self.function_body.push(instructions::END); // end of block
     }
 
     fn expression(&mut self, node: AnalyzedExpression<'src>) {
