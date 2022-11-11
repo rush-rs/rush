@@ -2,6 +2,7 @@ pub use compiler::Compiler;
 use rush_analyzer::Diagnostic;
 
 mod compiler;
+mod corelib;
 mod instructions;
 mod types;
 mod utils;

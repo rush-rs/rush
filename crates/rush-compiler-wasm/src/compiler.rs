@@ -3,49 +3,49 @@ use std::{collections::HashMap, mem};
 use rush_analyzer::{ast::*, AssignOp, InfixOp, PrefixOp, Type};
 
 use crate::{
-    instructions, types,
+    corelib, instructions, types,
     utils::{self, Leb128},
 };
 
 #[derive(Debug, Default)]
 pub struct Compiler<'src> {
     /// The instructions of the currently compiling function
-    function_body: Vec<u8>,
+    pub(crate) function_body: Vec<u8>,
     /// The locals of the currently compiling function
-    locals: Vec<Vec<u8>>,
+    pub(crate) locals: Vec<Vec<u8>>,
     /// The count of parameters the current function takes
-    param_count: usize,
+    pub(crate) param_count: usize,
     /// Function bodies to append to the code section after the user defined functions
-    builtins_code: Vec<Vec<u8>>,
+    pub(crate) builtins_code: Vec<Vec<u8>>,
 
     /// Maps variable names to `Option<local_idx>`, or `None` when of type `()`
-    scope: HashMap<&'src str, Option<Vec<u8>>>,
+    pub(crate) scope: HashMap<&'src str, Option<Vec<u8>>>,
     /// Maps function names to their index encoded as unsigned LEB128
-    functions: HashMap<&'src str, Vec<u8>>,
+    pub(crate) functions: HashMap<&'src str, Vec<u8>>,
     /// Maps builtin function names to their index encoded as unsigned LEB128
-    builtin_functions: HashMap<&'static str, Vec<u8>>,
+    pub(crate) builtin_functions: HashMap<&'static str, Vec<u8>>,
     /// The number of imports this module uses
-    import_count: usize,
+    pub(crate) import_count: usize,
 
-    type_section: Vec<Vec<u8>>,     // 1
-    import_section: Vec<Vec<u8>>,   // 2
-    function_section: Vec<Vec<u8>>, // 3
-    table_section: Vec<Vec<u8>>,    // 4
-    memory_section: Vec<Vec<u8>>,   // 5
-    global_section: Vec<Vec<u8>>,   // 6
-    export_section: Vec<Vec<u8>>,   // 7
-    start_section: Vec<u8>,         // 8
-    element_section: Vec<Vec<u8>>,  // 9
-    code_section: Vec<Vec<u8>>,     // 10
-    data_section: Vec<Vec<u8>>,     // 11
-    data_count_section: Vec<u8>,    // 12
+    pub(crate) type_section: Vec<Vec<u8>>,     // 1
+    pub(crate) import_section: Vec<Vec<u8>>,   // 2
+    pub(crate) function_section: Vec<Vec<u8>>, // 3
+    pub(crate) table_section: Vec<Vec<u8>>,    // 4
+    pub(crate) memory_section: Vec<Vec<u8>>,   // 5
+    pub(crate) global_section: Vec<Vec<u8>>,   // 6
+    pub(crate) export_section: Vec<Vec<u8>>,   // 7
+    pub(crate) start_section: Vec<u8>,         // 8
+    pub(crate) element_section: Vec<Vec<u8>>,  // 9
+    pub(crate) code_section: Vec<Vec<u8>>,     // 10
+    pub(crate) data_section: Vec<Vec<u8>>,     // 11
+    pub(crate) data_count_section: Vec<u8>,    // 12
 
-    function_names: Vec<Vec<u8>>,
-    imported_function_names: Vec<Vec<u8>>,
+    pub(crate) function_names: Vec<Vec<u8>>,
+    pub(crate) imported_function_names: Vec<Vec<u8>>,
     /// List of `(func_idx, list_of_locals)`
-    local_names: Vec<(Vec<u8>, Vec<Vec<u8>>)>,
+    pub(crate) local_names: Vec<(Vec<u8>, Vec<Vec<u8>>)>,
     /// The index of the currently compiling function in the `local_names` vec
-    curr_func_idx: usize,
+    pub(crate) curr_func_idx: usize,
 }
 
 impl<'src> Compiler<'src> {
@@ -574,7 +574,7 @@ impl<'src> Compiler<'src> {
             (InfixOp::Div, Type::Int) => instructions::I64_DIV_S,
             (InfixOp::Div, Type::Float) => instructions::F64_DIV,
             (InfixOp::Rem, Type::Int) => instructions::I64_REM_S,
-            (InfixOp::Pow, Type::Int) => return self.builtin_pow_int(),
+            (InfixOp::Pow, Type::Int) => return corelib::pow_int(self),
             (InfixOp::Eq, Type::Int) => instructions::I64_EQ,
             (InfixOp::Eq, Type::Float) => instructions::F64_EQ,
             (InfixOp::Eq, Type::Bool) => instructions::I32_EQ,
@@ -637,7 +637,7 @@ impl<'src> Compiler<'src> {
                     (AssignOp::Div, Type::Float) => instructions::F64_DIV,
                     (AssignOp::Rem, Type::Int) => instructions::I64_REM_S,
                     (AssignOp::Pow, Type::Int) => {
-                        self.builtin_pow_int();
+                        corelib::pow_int(self);
                         break 'op;
                     }
                     (AssignOp::Shl, Type::Int) => instructions::I64_SHL,
@@ -702,7 +702,7 @@ impl<'src> Compiler<'src> {
                 // true if != 0
                 self.function_body.push(instructions::I64_NE);
             }
-            (Type::Int, Type::Char) => self.builtin_cast_int_to_char(),
+            (Type::Int, Type::Char) => corelib::cast_int_to_char(self),
             (Type::Float, Type::Int) => {
                 self.function_body.extend(instructions::I64_TRUNC_SAT_F64_S);
             }
@@ -714,7 +714,7 @@ impl<'src> Compiler<'src> {
                 // true if != 0
                 self.function_body.push(instructions::F64_NE);
             }
-            (Type::Float, Type::Char) => self.builtin_cast_float_to_char(),
+            (Type::Float, Type::Char) => corelib::cast_float_to_char(self),
             (Type::Bool, Type::Int) => self.function_body.push(instructions::I64_EXTEND_I32_U),
             (Type::Bool, Type::Float) => self.function_body.push(instructions::F64_CONVERT_I32_U),
             (Type::Char, Type::Int) => self.function_body.push(instructions::I64_EXTEND_I32_U),
@@ -732,255 +732,6 @@ impl<'src> Compiler<'src> {
     }
 
     /////////////////////////
-
-    fn call_builtin(
-        &mut self,
-        name: &'static str,
-        signature: Vec<u8>,
-        locals: Vec<u8>,
-        local_names: &[&str],
-        body: &[u8],
-    ) {
-        let idx = match self.builtin_functions.get(name) {
-            Some(idx) => idx,
-            None => {
-                let type_idx = self.type_section.len().to_uleb128();
-
-                // add signature to type section
-                self.type_section.push(signature);
-
-                // add to function section
-                let func_idx = (self.function_section.len() + self.import_count).to_uleb128();
-                self.function_section.push(type_idx);
-
-                // save in builtin_functions map
-                self.builtin_functions.insert(name, func_idx);
-                let func_idx = &self.builtin_functions[name];
-
-                // add to end of code section
-                self.builtins_code
-                    .push([&(body.len() + locals.len()).to_uleb128(), &locals, body].concat());
-
-                // add name to name section
-                self.function_names.push(
-                    [
-                        &func_idx[..],            // function index
-                        &name.len().to_uleb128(), // string len
-                        name.as_bytes(),          // name
-                    ]
-                    .concat(),
-                );
-
-                // add local names to name section
-                self.local_names.push((
-                    func_idx.clone(),
-                    local_names
-                        .iter()
-                        .enumerate()
-                        .map(|(idx, name)| {
-                            [
-                                &idx.to_uleb128()[..],    // local index
-                                &name.len().to_uleb128(), // string len
-                                name.as_bytes(),          // local name
-                            ]
-                            .concat()
-                        })
-                        .collect(),
-                ));
-
-                func_idx
-            }
-        };
-
-        // push call instruction
-        self.function_body.push(instructions::CALL);
-        self.function_body.extend_from_slice(idx);
-    }
-
-    fn builtin_cast_int_to_char(&mut self) {
-        self.call_builtin(
-            "__rush_internal_cast_int_to_char",
-            vec![
-                types::FUNC,
-                1, // num of params
-                types::I64,
-                1, // num of return vals
-                types::I32,
-            ],
-            vec![0],  // no locals
-            &["int"], // name of param
-            &[
-                // get param
-                instructions::LOCAL_GET,
-                0,
-                // if > 0x7F
-                instructions::I64_CONST,
-                0xFF, // 0x7F in signed LEB128 is [0xFF, 0x00]
-                0x00,
-                instructions::I64_GT_S,
-                instructions::IF,
-                types::I32,
-                // then return 0x7F
-                instructions::I32_CONST,
-                0xFF, // 0x7F in signed LEB128 is [0xFF, 0x00]
-                0x00,
-                // else if < 0x00
-                instructions::ELSE,
-                instructions::LOCAL_GET,
-                0,
-                instructions::I64_CONST,
-                0,
-                instructions::I64_LT_S,
-                instructions::IF,
-                types::I32,
-                // then return 0x00
-                instructions::I32_CONST,
-                0x00,
-                // else convert to i32
-                instructions::ELSE,
-                instructions::LOCAL_GET,
-                0,
-                instructions::I32_WRAP_I64,
-                // end if
-                instructions::END,
-                instructions::END,
-                // end function body
-                instructions::END,
-            ],
-        );
-    }
-
-    fn builtin_cast_float_to_char(&mut self) {
-        self.call_builtin(
-            "__rush_internal_cast_float_to_char",
-            vec![
-                types::FUNC,
-                1, // num of params
-                types::F64,
-                1, // num of return vals
-                types::I32,
-            ],
-            vec![1, 1, types::I32],
-            &["float", "tmp"], // names of params and locals
-            &[
-                // get param
-                instructions::LOCAL_GET,
-                0,
-                // convert to i32
-                instructions::I32_TRUNC_SAT_F64_U[0],
-                instructions::I32_TRUNC_SAT_F64_U[1],
-                // set local to result
-                instructions::LOCAL_TEE,
-                1,
-                // if > 0x7F
-                instructions::I32_CONST,
-                0xFF, // 0x7F in signed LEB128 is [0xFF, 0x00]
-                0x00,
-                instructions::I32_GT_U,
-                instructions::IF,
-                types::I32,
-                // then return 0x7F
-                instructions::I32_CONST,
-                0xFF, // 0x7F in signed LEB128 is [0xFF, 0x00]
-                0x00,
-                // else use value
-                instructions::ELSE,
-                instructions::LOCAL_GET,
-                1,
-                // end if
-                instructions::END,
-                // end function body
-                instructions::END,
-            ],
-        );
-    }
-
-    fn builtin_pow_int(&mut self) {
-        self.call_builtin(
-            "__rush_internal_pow_int",
-            vec![
-                types::FUNC,
-                2,          // num of params
-                types::I64, // base
-                types::I64, // exponent
-                1,          // num of return vals
-                types::I64,
-            ],
-            vec![1, 1, types::I64],               // 1 local i64: accumulator
-            &["base", "exponent", "accumulator"], // names of params and locals
-            &[
-                // if exponent < 0
-                instructions::LOCAL_GET,
-                1,
-                instructions::I64_CONST,
-                0,
-                instructions::I64_LT_S,
-                instructions::IF,
-                types::I64,
-                // then return 0
-                instructions::I64_CONST,
-                0,
-                // else if exponent == 0
-                instructions::ELSE,
-                instructions::LOCAL_GET,
-                1,
-                instructions::I64_EQZ,
-                instructions::IF,
-                types::I64,
-                // then return 1
-                instructions::I64_CONST,
-                1,
-                // else calculate with loop
-                instructions::ELSE,
-                // -- set accumulator to base
-                instructions::LOCAL_GET,
-                0,
-                instructions::LOCAL_SET,
-                2,
-                // -- begin loop
-                instructions::LOOP,
-                types::VOID,
-                // -- begin block
-                instructions::BLOCK,
-                types::VOID,
-                // -- subtract 1 from exponent
-                instructions::LOCAL_GET,
-                1,
-                instructions::I64_CONST,
-                1,
-                instructions::I64_SUB,
-                instructions::LOCAL_TEE,
-                1,
-                // -- break if exponent is 0
-                instructions::I64_EQZ,
-                instructions::BR_IF,
-                0, // branch depth, 0 = end of block
-                // -- multiply accumulator with base
-                instructions::LOCAL_GET,
-                2,
-                instructions::LOCAL_GET,
-                0,
-                instructions::I64_MUL,
-                instructions::LOCAL_SET,
-                2,
-                // -- continue loop
-                instructions::BR,
-                1, // branch depth, 1 = start of loop
-                // -- end block
-                instructions::END,
-                // -- end loop
-                instructions::END,
-                // -- get result in accumulator
-                instructions::LOCAL_GET,
-                2,
-                // end if
-                instructions::END,
-                instructions::END,
-                // end function body
-                instructions::END,
-            ],
-        );
-    }
 
     fn builtin_exit(&mut self) {
         let idx = match self.builtin_functions.get("exit") {
