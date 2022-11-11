@@ -83,7 +83,7 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     /// Compiles the given [`AnalyzedProgram`] to object code and the LLVM IR.
-    /// Errors can occur if the target triple is invalid or the code generation failes
+    /// Errors can occur if the target triple is invalid or the code generation fails
     pub fn compile(&mut self, program: AnalyzedProgram) -> Result<(MemoryBuffer, String)> {
         // compile all defined functions which are later used
         for func in program.functions.iter().filter(|func| func.used) {
@@ -856,7 +856,7 @@ impl<'ctx> Compiler<'ctx> {
         // compile the if condition
         let cond = self.compile_expression(&node.cond);
 
-        // TODO: is this conversion nessecary?
+        // TODO: is this conversion required?
         let cond_bool =
             self.builder
                 .build_int_cast(cond.into_int_value(), self.context.bool_type(), "if_cond");
