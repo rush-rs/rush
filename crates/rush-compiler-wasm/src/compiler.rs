@@ -17,6 +17,8 @@ pub struct Compiler<'src> {
     pub(crate) param_count: usize,
     /// Function bodies to append to the code section after the user defined functions
     pub(crate) builtins_code: Vec<Vec<u8>>,
+    /// The count of currently nested blocks since the last loop
+    pub(crate) block_count: usize,
 
     /// Maps variable names to `Option<local_idx>`, or `None` when of type `()`
     pub(crate) scope: HashMap<&'src str, Option<Vec<u8>>>,
@@ -372,11 +374,11 @@ impl<'src> Compiler<'src> {
             AnalyzedStatement::While(node) => self.while_stmt(node),
             AnalyzedStatement::Break => {
                 self.function_body.push(instructions::BR); // jump
-                self.function_body.push(1); // to end of block around loop
+                (self.block_count + 1).write_uleb128(&mut self.function_body); // to end of block around loop
             }
             AnalyzedStatement::Continue => {
                 self.function_body.push(instructions::BR); // jump
-                self.function_body.push(0); // to start of loop
+                self.block_count.write_uleb128(&mut self.function_body); // to start of loop
             }
             AnalyzedStatement::Expr(expr) => {
                 let expr_type = expr.result_type();
@@ -420,6 +422,10 @@ impl<'src> Compiler<'src> {
     }
 
     fn loop_stmt(&mut self, node: AnalyzedLoopStmt<'src>) {
+        // store current block count
+        let prev_block_count = self.block_count;
+        self.block_count = 0;
+
         self.function_body.push(instructions::BLOCK); // outer block to jump to with `break`
         self.function_body.push(types::VOID); // with result `()`
         self.function_body.push(instructions::LOOP); // loop to jump to with `continue`
@@ -432,9 +438,16 @@ impl<'src> Compiler<'src> {
 
         self.function_body.push(instructions::END); // end of loop
         self.function_body.push(instructions::END); // end of block
+
+        // restore block count
+        self.block_count = prev_block_count;
     }
 
     fn while_stmt(&mut self, node: AnalyzedWhileStmt<'src>) {
+        // store current block count
+        let prev_block_count = self.block_count;
+        self.block_count = 0;
+
         self.function_body.push(instructions::BLOCK); // outer block to jump to with `break`
         self.function_body.push(types::VOID); // with result `()`
         self.function_body.push(instructions::LOOP); // loop to jump to with `continue`
@@ -453,6 +466,9 @@ impl<'src> Compiler<'src> {
 
         self.function_body.push(instructions::END); // end of loop
         self.function_body.push(instructions::END); // end of block
+
+        // restore block count
+        self.block_count = prev_block_count;
     }
 
     fn expression(&mut self, node: AnalyzedExpression<'src>) {
@@ -519,6 +535,7 @@ impl<'src> Compiler<'src> {
             None => self.function_body.push(types::VOID),
         }
 
+        self.block_count += 1;
         self.block_expr(node.then_block);
 
         if let Some(else_block) = node.else_block {
@@ -526,6 +543,7 @@ impl<'src> Compiler<'src> {
             self.block_expr(else_block);
         }
 
+        self.block_count -= 1;
         self.function_body.push(instructions::END);
     }
 
