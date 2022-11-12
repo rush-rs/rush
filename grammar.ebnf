@@ -9,13 +9,15 @@ Block = '{' , { Statement } , [ Expression ] , '}' ;
 Type  = ident
       | '(' , ')' ;
 
-Statement    = LetStmt | ReturnStmt | LoopStmt | WhileStmt | BreakStmt
-             | ContinueStmt | ExprStmt ;
+Statement    = LetStmt | ReturnStmt | LoopStmt | WhileStmt | ForStmt
+             | BreakStmt | ContinueStmt | ExprStmt ;
 LetStmt      = 'let' , [ 'mut' ] , ident , [ ':' , Type ] , '='
              , Expression , ';' ;
 ReturnStmt   = 'return' , [ Expression ] , ';' ;
 LoopStmt     = 'loop' , Block , [ ';' ] ;
 WhileStmt    = 'while' , Expression , Block , [ ';' ] ;
+ForStmt      = 'for' , ident , '=' , Expression , ';' , Expression
+             , ';' , Expression , Block , [ ';' ] ;
 BreakStmt    = 'break' , ';' ;
 ContinueStmt = 'continue' , ';' ;
 ExprStmt     = ExprWithoutBlock , ';'
