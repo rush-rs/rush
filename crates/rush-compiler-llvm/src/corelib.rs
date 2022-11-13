@@ -27,7 +27,7 @@ impl<'ctx> Compiler<'ctx> {
                 false,
             );
             self.module
-                .add_function("pow", pow_type, Some(Linkage::External));
+                .add_function("pow", pow_type, Some(Linkage::Internal));
         }
 
         let args: Vec<BasicMetadataValueEnum> = vec![
@@ -67,7 +67,7 @@ impl<'ctx> Compiler<'ctx> {
         let signature = self.context.i8_type().fn_type(&params, false);
         let function =
             self.module
-                .add_function("core_float_to_char", signature, Some(Linkage::External));
+                .add_function("core_float_to_char", signature, Some(Linkage::Internal));
 
         // create a new basic block for the function
         let basic_block = self.context.append_basic_block(function, "entry");
@@ -149,7 +149,7 @@ impl<'ctx> Compiler<'ctx> {
         let signature = self.context.i8_type().fn_type(&params, false);
         let function =
             self.module
-                .add_function("core_int_to_char", signature, Some(Linkage::External));
+                .add_function("core_int_to_char", signature, Some(Linkage::Internal));
 
         // create a new basic block for the function
         let basic_block = self.context.append_basic_block(function, "entry");
