@@ -67,6 +67,29 @@ fn main() {
 }
 */
 
+
+fn pow(base: int, mut exponent: int) -> int {
+    if exponent == 0 {
+        return 1;
+    }
+    if exponent < 1 {
+        return 0;
+    }
+    let mut res = base;
+    loop {
+        exponent -= 1;
+        if exponent == 0 {
+            break;
+        }
+        res = res * base;
+    }
+    return res;
+}
+
 fn main() {
-    exit(12);
+    let mut last = 0 ;
+    for i = 0; i < 10; i += 1 {
+        last = i;
+    }
+    exit(last);
 }
