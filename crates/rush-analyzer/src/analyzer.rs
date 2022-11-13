@@ -16,6 +16,11 @@ pub struct Analyzer<'src> {
     used_builtins: HashSet<&'src str>,
     pub diagnostics: Vec<Diagnostic>,
     loop_count: usize,
+    // saves any allocations made by the `let` keywoard
+    // used to include allocations into the loop AST nodes (for the LLVM compiler) (for the LLVM
+    // compiler)
+    // only needed when examining loops
+    allocations: Option<Vec<(&'src str, Type)>>,
 }
 
 #[derive(Debug)]
@@ -241,11 +246,6 @@ impl<'src> Analyzer<'src> {
         }
     }
 
-    /// Returns a reference to the current scope
-    fn scope(&self) -> &Scope<'src> {
-        self.scopes.last().as_ref().expect("only called in scopes")
-    }
-
     // Returns a mutable reference to the current scope
     fn scope_mut(&mut self) -> &mut Scope<'src> {
         let len = self.scopes.len();
@@ -273,6 +273,9 @@ impl<'src> Analyzer<'src> {
     ) -> AnalyzedFunctionDefinition<'src> {
         // check if the function is the main function
         let is_main_fn = node.name.inner == "main";
+
+        // set the function name
+        self.curr_fn = node.name.inner;
 
         if is_main_fn {
             // the main function must have 0 parameters
@@ -516,6 +519,11 @@ impl<'src> Analyzer<'src> {
                     node.name.span,
                 );
             }
+        } else {
+            // if the variable was not shadowed, create an allocation
+            if let Some(allocations) = self.allocations.as_mut() {
+                allocations.push((node.name.inner, expr.result_type()));
+            }
         }
 
         AnalyzedStatement::Let(AnalyzedLetStmt {
@@ -576,6 +584,13 @@ impl<'src> Analyzer<'src> {
     }
 
     fn visit_loop_stmt(&mut self, node: LoopStmt<'src>) -> AnalyzedStatement<'src> {
+        // begin tracking the allocations made by the loop
+        // only track allocations if this is an outer loop (loop_count == 0)
+        let is_outer_loop = self.loop_count == 0;
+        if is_outer_loop {
+            self.allocations = Some(vec![]);
+        }
+
         self.loop_count += 1;
         self.scopes.push(Scope::default());
         let block_result_span = node.block.result_span();
@@ -595,7 +610,16 @@ impl<'src> Analyzer<'src> {
             );
         }
 
-        AnalyzedStatement::Loop(AnalyzedLoopStmt { block })
+        // only include allocations if this was an outer loop
+        let allocations = if is_outer_loop {
+            self.allocations
+                .take()
+                .expect("allocations is set to Some(_) above")
+        } else {
+            vec![]
+        };
+
+        AnalyzedStatement::Loop(AnalyzedLoopStmt { block, allocations })
     }
 
     fn visit_while_stmt(&mut self, node: WhileStmt<'src>) -> AnalyzedStatement<'src> {
@@ -624,6 +648,13 @@ impl<'src> Analyzer<'src> {
             }
         }
 
+        // begin tracking the allocations made by the loop
+        // only track allocations if this is an outer loop (loop_count == 0)
+        let is_outer_loop = self.loop_count == 0;
+        if is_outer_loop {
+            self.allocations = Some(vec![]);
+        }
+
         self.loop_count += 1;
         self.scopes.push(Scope::default());
         let block_result_span = node.block.result_span();
@@ -643,7 +674,20 @@ impl<'src> Analyzer<'src> {
             );
         }
 
-        AnalyzedStatement::While(AnalyzedWhileStmt { cond, block })
+        // only include allocations if this was an outer loop
+        let allocations = if is_outer_loop {
+            self.allocations
+                .take()
+                .expect("allocations is set to Some(_) above")
+        } else {
+            vec![]
+        };
+
+        AnalyzedStatement::While(AnalyzedWhileStmt {
+            cond,
+            block,
+            allocations,
+        })
     }
 
     fn visit_for_stmt(&mut self, node: ForStmt<'src>) -> AnalyzedStatement<'src> {
@@ -703,6 +747,13 @@ impl<'src> Analyzer<'src> {
             )
         }
 
+        // begin tracking the allocations made by the loop
+        // only track allocations if this is an outer loop (loop_count == 0)
+        let is_outer_loop = self.loop_count == 0;
+        if is_outer_loop {
+            self.allocations = Some(vec![]);
+        }
+
         self.loop_count += 1;
         self.scopes.push(Scope::default());
         let block_result_span = node.block.result_span();
@@ -722,11 +773,21 @@ impl<'src> Analyzer<'src> {
             );
         }
 
+        // only include allocations if this was an outer loop
+        let allocations = if is_outer_loop {
+            self.allocations
+                .take()
+                .expect("allocations is set to Some(_) above")
+        } else {
+            vec![]
+        };
+
         AnalyzedStatement::For(AnalyzedForStmt {
             init_assignment: (node.init_assignment.0.inner, init_expr),
             cond,
             update,
             block,
+            allocations,
         })
     }
 
@@ -1070,7 +1131,11 @@ impl<'src> Analyzer<'src> {
     }
 
     fn visit_assign_expr(&mut self, node: AssignExpr<'src>) -> AnalyzedExpression<'src> {
-        let var_type = match self.scope().vars.get(node.assignee.inner) {
+        let var_type = match self
+            .scopes
+            .iter()
+            .find_map(|scope| scope.vars.get(node.assignee.inner))
+        {
             Some(var) => {
                 let type_ = var.type_;
                 if !var.mutable {

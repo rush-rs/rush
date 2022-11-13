@@ -71,12 +71,16 @@ pub type AnalyzedReturnStmt<'src> = Option<AnalyzedExpression<'src>>;
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnalyzedLoopStmt<'src> {
     pub block: AnalyzedBlock<'src>,
+    // specifies the allocations performed by the current loop
+    pub allocations: Vec<(&'src str, Type)>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnalyzedWhileStmt<'src> {
     pub cond: AnalyzedExpression<'src>,
     pub block: AnalyzedBlock<'src>,
+    // specifies the allocations performed by the current loop
+    pub allocations: Vec<(&'src str, Type)>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -85,6 +89,8 @@ pub struct AnalyzedForStmt<'src> {
     pub cond: AnalyzedExpression<'src>,
     pub update: AnalyzedExpression<'src>,
     pub block: AnalyzedBlock<'src>,
+    // specifies the allocations performed by the current loop
+    pub allocations: Vec<(&'src str, Type)>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
