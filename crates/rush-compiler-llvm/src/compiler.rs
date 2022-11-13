@@ -289,7 +289,7 @@ impl<'ctx> Compiler<'ctx> {
             AnalyzedStatement::Return(node) => self.compile_return_statement(node),
             AnalyzedStatement::Loop(node) => self.compile_loop_statement(node),
             AnalyzedStatement::While(node) => self.compile_while_statement(node),
-            AnalyzedStatement::For(_node) => todo!(),
+            AnalyzedStatement::For(node) => self.compile_for_statement(node),
             AnalyzedStatement::Break => self.compile_break_statement(),
             AnalyzedStatement::Continue => self.compile_continue_statement(),
             AnalyzedStatement::Expr(node) => {
@@ -412,8 +412,82 @@ impl<'ctx> Compiler<'ctx> {
         // jump back to the loop head
         self.builder.build_unconditional_branch(while_head);
 
+        // drop the loop scope
+        self.scopes.pop();
+
         // place the builder cursor at the end of the `after_loop`
         self.builder.position_at_end(after_while);
+    }
+
+    /// Compiles an [`AnalyzedForStmt`].
+    /// The init expression is compiled at the beginning.
+    /// Each iteration will only take place if the condition expression evaluates to `true`.
+    /// At the beginning of each iteration, the update expression is invoked.
+    fn compile_for_statement(&mut self, node: &AnalyzedForStmt) {
+        // create the `for_head` block
+        let for_head = self
+            .context
+            .append_basic_block(self.curr_fn().llvm_value, "for_head");
+
+        // create the `for_body` block
+        let for_body = self
+            .context
+            .append_basic_block(self.curr_fn().llvm_value, "for_body");
+
+        // create the `after_for` block
+        let after_for = self
+            .context
+            .append_basic_block(self.curr_fn().llvm_value, "after_for");
+
+        // set the loop metadata so that the inner block can use it
+        self.curr_loop = Some(Loop {
+            loop_head: for_head,
+            after_loop: after_for,
+        });
+
+        // insert the initialization variable into the current scope
+        let init_value = self.compile_expression(&node.init_assignment.1);
+
+        // allocate a pointer for the variable
+        let ptr = self
+            .builder
+            .build_alloca(init_value.get_type(), node.init_assignment.0);
+
+        // store the value in the pointer
+        self.builder.build_store(ptr, init_value);
+
+        // add the pointer to the loop's scope
+        self.scope_mut()
+            .insert(node.init_assignment.0.to_string(), ptr);
+
+        // enter the loop from outside
+        self.builder.build_unconditional_branch(for_head);
+
+        // compile the condition check
+        self.builder.position_at_end(for_head);
+        let cond = self.compile_expression(&node.cond);
+        // if the condition is true, jump into the for body, otherwise, quit the loop
+        self.builder
+            .build_conditional_branch(cond.into_int_value(), for_body, after_for);
+
+        // compile the update expression
+        self.builder.position_at_end(for_body);
+        self.compile_expression(&node.update);
+
+        // push a new scope for the loop
+        self.scopes.push(HashMap::new());
+
+        // compile the loop body
+        self.compile_block(&node.block);
+
+        // drop the scope
+        self.scopes.pop();
+
+        // jump back to the loop head
+        self.builder.build_unconditional_branch(for_head);
+
+        // place the builder cursor at the end of the `after_loop`
+        self.builder.position_at_end(after_for);
     }
 
     /// Compiles a break statement.
