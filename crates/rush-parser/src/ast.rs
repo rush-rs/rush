@@ -84,6 +84,7 @@ pub enum Statement<'src> {
     Return(ReturnStmt<'src>),
     Loop(LoopStmt<'src>),
     While(WhileStmt<'src>),
+    For(ForStmt<'src>),
     Break(BreakStmt),
     Continue(ContinueStmt),
     Expr(ExprStmt<'src>),
@@ -96,6 +97,7 @@ impl Statement<'_> {
             Self::Return(stmt) => stmt.span,
             Self::Loop(stmt) => stmt.span,
             Self::While(stmt) => stmt.span,
+            Self::For(stmt) => stmt.span,
             Self::Break(stmt) => stmt.span,
             Self::Continue(stmt) => stmt.span,
             Self::Expr(stmt) => stmt.span,
@@ -128,6 +130,15 @@ pub struct LoopStmt<'src> {
 pub struct WhileStmt<'src> {
     pub span: Span,
     pub cond: Expression<'src>,
+    pub block: Block<'src>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ForStmt<'src> {
+    pub span: Span,
+    pub init_assignment: (Spanned<&'src str>, Expression<'src>),
+    pub cond: Expression<'src>,
+    pub update: Expression<'src>,
     pub block: Block<'src>,
 }
 

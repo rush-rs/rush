@@ -288,6 +288,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             TokenKind::Return => Either::Left(self.return_stmt()?),
             TokenKind::Loop => Either::Left(self.loop_stmt()?),
             TokenKind::While => Either::Left(self.while_stmt()?),
+            TokenKind::For => Either::Left(self.for_stmt()?),
             TokenKind::Break => Either::Left(self.break_stmt()?),
             TokenKind::Continue => Either::Left(self.continue_stmt()?),
             _ => self.expr_stmt()?,
@@ -392,6 +393,53 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         Ok(Statement::While(WhileStmt {
             span: start_loc.until(self.prev_tok.span.end),
             cond,
+            block,
+        }))
+    }
+
+    fn for_stmt(&mut self) -> Result<Statement<'src>> {
+        let start_loc = self.curr_tok.span.start;
+
+        // skip for token: this function is only called when self.curr_tok.kind == TokenKind::For
+        self.next()?;
+
+        // parse the initialization assignment
+        let init_ident = self.expect_ident()?;
+        self.expect_recoverable(
+            TokenKind::Assign,
+            format!("expected `=`, found `{}`", self.curr_tok.kind),
+            self.curr_tok.span,
+        )?;
+        let init_expr = self.expression(0)?;
+
+        // parse the condition expression
+        self.expect_recoverable(
+            TokenKind::Semicolon,
+            format!("expected semicolon, found `{}`", self.curr_tok.kind),
+            self.curr_tok.span,
+        )?;
+        let cond = self.expression(0)?;
+
+        // parse the update expression
+        self.expect_recoverable(
+            TokenKind::Semicolon,
+            format!("expected semicolon, found `{}`", self.curr_tok.kind),
+            self.curr_tok.span,
+        )?;
+        let update = self.expression(0)?;
+
+        let block = self.block()?;
+
+        // skip optional semicolon
+        if self.curr_tok.kind == TokenKind::Semicolon {
+            self.next()?;
+        }
+
+        Ok(Statement::For(ForStmt {
+            span: start_loc.until(self.prev_tok.span.end),
+            init_assignment: (init_ident, init_expr),
+            cond,
+            update,
             block,
         }))
     }
