@@ -446,19 +446,16 @@ impl<'ctx> Compiler<'ctx> {
         });
 
         // insert the initialization variable into the current scope
-        let init_value = self.compile_expression(&node.init_assignment.1);
+        let init_value = self.compile_expression(&node.initializer);
 
         // allocate a pointer for the variable
-        let ptr = self
-            .builder
-            .build_alloca(init_value.get_type(), node.init_assignment.0);
+        let ptr = self.builder.build_alloca(init_value.get_type(), node.ident);
 
         // store the value in the pointer
         self.builder.build_store(ptr, init_value);
 
         // add the pointer to the loop's scope
-        self.scope_mut()
-            .insert(node.init_assignment.0.to_string(), ptr);
+        self.scope_mut().insert(node.ident.to_string(), ptr);
 
         // enter the loop from outside
         self.builder.build_unconditional_branch(for_head);

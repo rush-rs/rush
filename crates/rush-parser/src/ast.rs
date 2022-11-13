@@ -136,7 +136,8 @@ pub struct WhileStmt<'src> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ForStmt<'src> {
     pub span: Span,
-    pub init_assignment: (Spanned<&'src str>, Expression<'src>),
+    pub ident: Spanned<&'src str>,
+    pub initializer: Expression<'src>,
     pub cond: Expression<'src>,
     pub update: Expression<'src>,
     pub block: Block<'src>,

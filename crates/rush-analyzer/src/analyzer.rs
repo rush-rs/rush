@@ -11,7 +11,7 @@ use crate::{ast::*, Diagnostic, DiagnosticLevel, ErrorKind};
 pub struct Analyzer<'src> {
     pub functions: HashMap<&'src str, Function<'src>>,
     builtin_functions: HashMap<&'static str, BuiltinFunction>,
-    scopes: Vec<Scope<'src>>,
+    scopes: Vec<HashMap<&'src str, Variable>>,
     curr_fn: &'src str,
     used_builtins: HashSet<&'src str>,
     pub diagnostics: Vec<Diagnostic>,
@@ -39,11 +39,6 @@ impl BuiltinFunction {
             return_type,
         }
     }
-}
-
-#[derive(Debug, Default)]
-pub struct Scope<'src> {
-    pub vars: HashMap<&'src str, Variable>,
 }
 
 #[derive(Debug)]
@@ -154,7 +149,7 @@ impl<'src> Analyzer<'src> {
         let mut functions = vec![];
         let mut main_fn = None;
         for func in program.functions {
-            let func = self.visit_function_definition(func);
+            let func = self.function_definition(func);
             match func.name {
                 "main" => {
                     main_fn = Some(func.block);
@@ -219,14 +214,18 @@ impl<'src> Analyzer<'src> {
         }
     }
 
+    fn push_scope(&mut self) {
+        self.scopes.push(HashMap::new());
+    }
+
     /// Removes the current scope of the function and checks whether the
     /// variables in the scope have been used.
-    fn drop_scope(&mut self) {
+    fn pop_scope(&mut self) {
         // consume / drop the scope
         let scope = self.scopes.pop().expect("is only called after a scope");
 
         // analyze its values for their use
-        for (name, var) in scope.vars {
+        for (name, var) in scope {
             // allow unused values if they start with `_`
             if !name.starts_with('_') && !var.used {
                 self.warn(
@@ -242,14 +241,13 @@ impl<'src> Analyzer<'src> {
     }
 
     /// Returns a reference to the current scope
-    fn scope(&self) -> &Scope<'src> {
-        self.scopes.last().as_ref().expect("only called in scopes")
+    fn scope(&self) -> &HashMap<&'src str, Variable> {
+        self.scopes.last().expect("only called in scopes")
     }
 
     // Returns a mutable reference to the current scope
-    fn scope_mut(&mut self) -> &mut Scope<'src> {
-        let len = self.scopes.len();
-        &mut self.scopes[len - 1]
+    fn scope_mut(&mut self) -> &mut HashMap<&'src str, Variable> {
+        self.scopes.last_mut().expect("only called in scopes")
     }
 
     fn warn_unreachable(&mut self, unreachable_span: Span, causing_span: Span, expr: bool) {
@@ -267,7 +265,7 @@ impl<'src> Analyzer<'src> {
         );
     }
 
-    fn visit_function_definition(
+    fn function_definition(
         &mut self,
         node: FunctionDefinition<'src>,
     ) -> AnalyzedFunctionDefinition<'src> {
@@ -282,10 +280,9 @@ impl<'src> Analyzer<'src> {
                     format!(
                         "the `main` function must have 0 parameters, however {} {} defined",
                         node.params.inner.len(),
-                        if node.params.inner.len() == 1 {
-                            "is"
-                        } else {
-                            "are"
+                        match node.params.inner.len() {
+                            1 => "is",
+                            _ => "are",
                         },
                     ),
                     vec!["remove the parameters: `fn main() { ... }`".into()],
@@ -325,7 +322,8 @@ impl<'src> Analyzer<'src> {
             );
         }
 
-        let mut vars = HashMap::new();
+        // push a new scope for the new function
+        self.push_scope();
 
         // check the function parameters
         let mut params = vec![];
@@ -343,7 +341,7 @@ impl<'src> Analyzer<'src> {
                         param.name.span,
                     );
                 }
-                vars.insert(
+                self.scope_mut().insert(
                     param.name.inner,
                     Variable {
                         type_: param.type_.inner,
@@ -356,12 +354,9 @@ impl<'src> Analyzer<'src> {
             }
         }
 
-        // push a new scope for the new function
-        self.scopes.push(Scope { vars });
-
         // analyze the function body
         let block_result_span = node.block.result_span();
-        let block = self.visit_block(node.block);
+        let block = self.block(node.block);
 
         // check that the block results in the expected type
         if block.result_type != node.return_type.inner.unwrap_or(Type::Unit)
@@ -395,7 +390,7 @@ impl<'src> Analyzer<'src> {
         }
 
         // drop the scope when finished
-        self.drop_scope();
+        self.pop_scope();
 
         AnalyzedFunctionDefinition {
             used: true, // is modified in Self::analyze()
@@ -406,7 +401,7 @@ impl<'src> Analyzer<'src> {
         }
     }
 
-    fn visit_block(&mut self, node: Block<'src>) -> AnalyzedBlock<'src> {
+    fn block(&mut self, node: Block<'src>) -> AnalyzedBlock<'src> {
         let mut stmts = vec![];
 
         let mut never_type_span = None;
@@ -421,7 +416,7 @@ impl<'src> Analyzer<'src> {
                 }
             }
             let stmt_span = stmt.span();
-            let stmt = self.visit_statement(stmt);
+            let stmt = self.statement(stmt);
             if stmt.result_type() == Type::Never {
                 never_type_span = Some(stmt_span);
             }
@@ -435,7 +430,7 @@ impl<'src> Analyzer<'src> {
         }
 
         // analyze the expression
-        let expr = node.expr.map(|expr| self.visit_expression(expr));
+        let expr = node.expr.map(|expr| self.expression(expr));
 
         // result type is `!` when any statement had type `!`, otherwise the type of the expr
         let result_type = match never_type_span {
@@ -452,25 +447,25 @@ impl<'src> Analyzer<'src> {
         }
     }
 
-    fn visit_statement(&mut self, node: Statement<'src>) -> AnalyzedStatement<'src> {
+    fn statement(&mut self, node: Statement<'src>) -> AnalyzedStatement<'src> {
         match node {
-            Statement::Let(node) => self.visit_let_stmt(node),
-            Statement::Return(node) => self.visit_return_stmt(node),
-            Statement::Loop(node) => self.visit_loop_stmt(node),
-            Statement::While(node) => self.visit_while_stmt(node),
-            Statement::For(node) => self.visit_for_stmt(node),
-            Statement::Break(node) => self.visit_break_stmt(node),
-            Statement::Continue(node) => self.visit_continue_stmt(node),
-            Statement::Expr(node) => AnalyzedStatement::Expr(self.visit_expression(node.expr)),
+            Statement::Let(node) => self.let_stmt(node),
+            Statement::Return(node) => self.return_stmt(node),
+            Statement::Loop(node) => self.loop_stmt(node),
+            Statement::While(node) => self.while_stmt(node),
+            Statement::For(node) => self.for_stmt(node),
+            Statement::Break(node) => self.break_stmt(node),
+            Statement::Continue(node) => self.continue_stmt(node),
+            Statement::Expr(node) => AnalyzedStatement::Expr(self.expression(node.expr)),
         }
     }
 
-    fn visit_let_stmt(&mut self, node: LetStmt<'src>) -> AnalyzedStatement<'src> {
+    fn let_stmt(&mut self, node: LetStmt<'src>) -> AnalyzedStatement<'src> {
         // save the expression's span for later use
         let expr_span = node.expr.span();
 
         // analyze the right hand side first
-        let expr = self.visit_expression(node.expr);
+        let expr = self.expression(node.expr);
 
         // check if the optional type conflicts with the rhs
         // if the type of the rhs is unknown, do not return an error
@@ -491,7 +486,7 @@ impl<'src> Analyzer<'src> {
         }
 
         // insert and do additional checks if variable is shadowed
-        if let Some(old) = self.scope_mut().vars.insert(
+        if let Some(old) = self.scope_mut().insert(
             node.name.inner,
             Variable {
                 type_: node.type_.map_or(expr.result_type(), |type_| type_.inner),
@@ -524,10 +519,10 @@ impl<'src> Analyzer<'src> {
         })
     }
 
-    fn visit_return_stmt(&mut self, node: ReturnStmt<'src>) -> AnalyzedStatement<'src> {
+    fn return_stmt(&mut self, node: ReturnStmt<'src>) -> AnalyzedStatement<'src> {
         // if there is an expression, visit it
         let expr_span = node.expr.as_ref().map(|expr| expr.span());
-        let expr = node.expr.map(|expr| self.visit_expression(expr));
+        let expr = node.expr.map(|expr| self.expression(expr));
 
         // get the return type based on the expr (Unit as fallback)
         let return_type = expr.as_ref().map_or(Type::Unit, |expr| expr.result_type());
@@ -540,10 +535,7 @@ impl<'src> Analyzer<'src> {
             );
         }
 
-        let curr_fn = self
-            .functions
-            .get(self.curr_fn)
-            .expect("return is only legal in fn");
+        let curr_fn = &self.functions[self.curr_fn];
 
         // test if the return type is correct
         if curr_fn.return_type.inner.unwrap_or(Type::Unit) != return_type
@@ -575,12 +567,12 @@ impl<'src> Analyzer<'src> {
         AnalyzedStatement::Return(expr)
     }
 
-    fn visit_loop_stmt(&mut self, node: LoopStmt<'src>) -> AnalyzedStatement<'src> {
+    fn loop_stmt(&mut self, node: LoopStmt<'src>) -> AnalyzedStatement<'src> {
         self.loop_count += 1;
-        self.scopes.push(Scope::default());
+        self.push_scope();
         let block_result_span = node.block.result_span();
-        let block = self.visit_block(node.block);
-        self.drop_scope();
+        let block = self.block(node.block);
+        self.pop_scope();
         self.loop_count -= 1;
 
         if !matches!(block.result_type, Type::Unit | Type::Never | Type::Unknown) {
@@ -598,9 +590,9 @@ impl<'src> Analyzer<'src> {
         AnalyzedStatement::Loop(AnalyzedLoopStmt { block })
     }
 
-    fn visit_while_stmt(&mut self, node: WhileStmt<'src>) -> AnalyzedStatement<'src> {
+    fn while_stmt(&mut self, node: WhileStmt<'src>) -> AnalyzedStatement<'src> {
         let cond_span = node.cond.span();
-        let cond = self.visit_expression(node.cond);
+        let cond = self.expression(node.cond);
 
         // check that the condition is of type bool
         if !matches!(cond.result_type(), Type::Bool | Type::Never | Type::Unknown) {
@@ -625,10 +617,10 @@ impl<'src> Analyzer<'src> {
         }
 
         self.loop_count += 1;
-        self.scopes.push(Scope::default());
+        self.push_scope();
         let block_result_span = node.block.result_span();
-        let block = self.visit_block(node.block);
-        self.drop_scope();
+        let block = self.block(node.block);
+        self.pop_scope();
         self.loop_count -= 1;
 
         if !matches!(block.result_type, Type::Unit | Type::Never | Type::Unknown) {
@@ -646,14 +638,14 @@ impl<'src> Analyzer<'src> {
         AnalyzedStatement::While(AnalyzedWhileStmt { cond, block })
     }
 
-    fn visit_for_stmt(&mut self, node: ForStmt<'src>) -> AnalyzedStatement<'src> {
+    fn for_stmt(&mut self, node: ForStmt<'src>) -> AnalyzedStatement<'src> {
         // analyze the type of the init variable
-        let init_expr = self.visit_expression(node.init_assignment.1);
-        self.scope_mut().vars.insert(
-            node.init_assignment.0.inner,
+        let initializer = self.expression(node.initializer);
+        self.scope_mut().insert(
+            node.ident.inner,
             Variable {
-                type_: init_expr.result_type(),
-                span: node.init_assignment.0.span,
+                type_: initializer.result_type(),
+                span: node.ident.span,
                 used: false,
                 mutable: true,
             },
@@ -661,7 +653,7 @@ impl<'src> Analyzer<'src> {
 
         // check that the condition is of type bool
         let cond_span = node.cond.span();
-        let cond = self.visit_expression(node.cond);
+        let cond = self.expression(node.cond);
 
         if !matches!(cond.result_type(), Type::Bool | Type::Never | Type::Unknown) {
             self.error(
@@ -677,7 +669,7 @@ impl<'src> Analyzer<'src> {
             // check that the condition is non-constant
             if cond.constant() {
                 self.warn(
-                    "redundant while-statement: condition is constant",
+                    "redundant for-statement: condition is constant",
                     vec!["for unconditional loops use a loop-statement".into()],
                     cond_span,
                 )
@@ -686,7 +678,7 @@ impl<'src> Analyzer<'src> {
 
         // check that the update expr results in `()`, `!` or `{unknown}`
         let upd_span = node.update.span();
-        let update = self.visit_expression(node.update);
+        let update = self.expression(node.update);
 
         if !matches!(
             update.result_type(),
@@ -696,18 +688,18 @@ impl<'src> Analyzer<'src> {
                 ErrorKind::Type,
                 format!(
                     "expected value of type `()`, found `{}`",
-                    cond.result_type()
+                    update.result_type()
                 ),
-                vec!["an update expression must have the type `()`".into()],
+                vec!["an update expression must have the type `()` or `!`".into()],
                 upd_span,
             )
         }
 
         self.loop_count += 1;
-        self.scopes.push(Scope::default());
+        self.push_scope();
         let block_result_span = node.block.result_span();
-        let block = self.visit_block(node.block);
-        self.drop_scope();
+        let block = self.block(node.block);
+        self.pop_scope();
         self.loop_count -= 1;
 
         if !matches!(block.result_type, Type::Unit | Type::Never | Type::Unknown) {
@@ -723,14 +715,15 @@ impl<'src> Analyzer<'src> {
         }
 
         AnalyzedStatement::For(AnalyzedForStmt {
-            init_assignment: (node.init_assignment.0.inner, init_expr),
+            ident: node.ident.inner,
+            initializer,
             cond,
             update,
             block,
         })
     }
 
-    fn visit_break_stmt(&mut self, node: BreakStmt) -> AnalyzedStatement<'src> {
+    fn break_stmt(&mut self, node: BreakStmt) -> AnalyzedStatement<'src> {
         if self.loop_count == 0 {
             self.error(
                 ErrorKind::Semantic,
@@ -743,7 +736,7 @@ impl<'src> Analyzer<'src> {
         AnalyzedStatement::Break
     }
 
-    fn visit_continue_stmt(&mut self, node: ContinueStmt) -> AnalyzedStatement<'src> {
+    fn continue_stmt(&mut self, node: ContinueStmt) -> AnalyzedStatement<'src> {
         if self.loop_count == 0 {
             self.error(
                 ErrorKind::Semantic,
@@ -756,36 +749,37 @@ impl<'src> Analyzer<'src> {
         AnalyzedStatement::Continue
     }
 
-    fn visit_expression(&mut self, node: Expression<'src>) -> AnalyzedExpression<'src> {
+    fn expression(&mut self, node: Expression<'src>) -> AnalyzedExpression<'src> {
         match node {
-            Expression::Block(node) => self.visit_block_expression(*node),
-            Expression::If(node) => self.visit_if_expression(*node),
+            Expression::Block(node) => self.block_expr(*node),
+            Expression::If(node) => self.if_expr(*node),
             Expression::Int(node) => AnalyzedExpression::Int(node.inner),
             Expression::Float(node) => AnalyzedExpression::Float(node.inner),
             Expression::Bool(node) => AnalyzedExpression::Bool(node.inner),
             Expression::Char(node) => AnalyzedExpression::Char(node.inner),
-            Expression::Ident(node) => self.visit_ident_expr(node),
-            Expression::Prefix(node) => self.visit_prefix_expr(*node),
-            Expression::Infix(node) => self.visit_infix_expr(*node),
-            Expression::Assign(node) => self.visit_assign_expr(*node),
-            Expression::Call(node) => self.visit_call_expr(*node),
-            Expression::Cast(node) => self.visit_cast_expr(*node),
+            Expression::Ident(node) => self.ident_expr(node),
+            Expression::Prefix(node) => self.prefix_expr(*node),
+            Expression::Infix(node) => self.infix_expr(*node),
+            Expression::Assign(node) => self.assign_expr(*node),
+            Expression::Call(node) => self.call_expr(*node),
+            Expression::Cast(node) => self.cast_expr(*node),
             Expression::Grouped(node) => {
-                AnalyzedExpression::Grouped(self.visit_expression(*node.inner).into())
+                AnalyzedExpression::Grouped(self.expression(*node.inner).into())
             }
         }
     }
 
-    fn visit_block_expression(&mut self, node: Block<'src>) -> AnalyzedExpression<'src> {
-        self.scopes.push(Scope::default());
-        let res = AnalyzedExpression::Block(self.visit_block(node).into());
-        self.drop_scope();
-        res
+    fn block_expr(&mut self, node: Block<'src>) -> AnalyzedExpression<'src> {
+        self.push_scope();
+        let block = self.block(node);
+        self.pop_scope();
+
+        AnalyzedExpression::Block(block.into())
     }
 
-    fn visit_if_expression(&mut self, node: IfExpr<'src>) -> AnalyzedExpression<'src> {
+    fn if_expr(&mut self, node: IfExpr<'src>) -> AnalyzedExpression<'src> {
         let cond_span = node.cond.span();
-        let cond = self.visit_expression(node.cond);
+        let cond = self.expression(node.cond);
 
         // check that the condition is of type bool
         if !matches!(cond.result_type(), Type::Bool | Type::Never | Type::Unknown) {
@@ -810,19 +804,19 @@ impl<'src> Analyzer<'src> {
         }
 
         // analyze then_block
-        self.scopes.push(Scope::default());
+        self.push_scope();
         let then_result_span = node.then_block.result_span();
-        let then_block = self.visit_block(node.then_block);
-        self.drop_scope();
+        let then_block = self.block(node.then_block);
+        self.pop_scope();
 
         // analyze else_block if it exists
         let result_type;
         let else_block = match node.else_block {
             Some(else_block) => {
-                self.scopes.push(Scope::default());
+                self.push_scope();
                 let else_result_span = else_block.result_span();
-                let else_block = self.visit_block(else_block);
-                self.drop_scope();
+                let else_block = self.block(else_block);
+                self.pop_scope();
 
                 // check type equality of the `then` and `else` branches
                 result_type = match (then_block.result_type, else_block.result_type) {
@@ -892,9 +886,9 @@ impl<'src> Analyzer<'src> {
 
     /// Searches all scopes for the requested variable.
     /// Starts at the current scope (last) and works its way down to the root scope (first).
-    fn visit_ident_expr(&mut self, node: Spanned<&'src str>) -> AnalyzedExpression<'src> {
-        for scope in &mut self.scopes.iter_mut().rev() {
-            if let Some(var) = scope.vars.get_mut(node.inner) {
+    fn ident_expr(&mut self, node: Spanned<&'src str>) -> AnalyzedExpression<'src> {
+        for scope in self.scopes.iter_mut().rev() {
+            if let Some(var) = scope.get_mut(node.inner) {
                 var.used = true;
                 return AnalyzedExpression::Ident(AnalyzedIdentExpr {
                     result_type: var.type_,
@@ -914,9 +908,9 @@ impl<'src> Analyzer<'src> {
         })
     }
 
-    fn visit_prefix_expr(&mut self, node: PrefixExpr<'src>) -> AnalyzedExpression<'src> {
+    fn prefix_expr(&mut self, node: PrefixExpr<'src>) -> AnalyzedExpression<'src> {
         let expr_span = node.expr.span();
-        let expr = self.visit_expression(node.expr);
+        let expr = self.expression(node.expr);
 
         let result_type = match node.op {
             PrefixOp::Not => {
@@ -966,11 +960,11 @@ impl<'src> Analyzer<'src> {
         )
     }
 
-    fn visit_infix_expr(&mut self, node: InfixExpr<'src>) -> AnalyzedExpression<'src> {
+    fn infix_expr(&mut self, node: InfixExpr<'src>) -> AnalyzedExpression<'src> {
         let lhs_span = node.lhs.span();
         let rhs_span = node.rhs.span();
-        let lhs = self.visit_expression(node.lhs);
-        let rhs = self.visit_expression(node.rhs);
+        let lhs = self.expression(node.lhs);
+        let rhs = self.expression(node.rhs);
 
         let allowed_types: &[Type];
         let mut override_result_type = None;
@@ -1069,8 +1063,8 @@ impl<'src> Analyzer<'src> {
         Type::Unknown
     }
 
-    fn visit_assign_expr(&mut self, node: AssignExpr<'src>) -> AnalyzedExpression<'src> {
-        let var_type = match self.scope().vars.get(node.assignee.inner) {
+    fn assign_expr(&mut self, node: AssignExpr<'src>) -> AnalyzedExpression<'src> {
+        let var_type = match self.scope().get(node.assignee.inner) {
             Some(var) => {
                 let type_ = var.type_;
                 if !var.mutable {
@@ -1111,7 +1105,7 @@ impl<'src> Analyzer<'src> {
         };
 
         let expr_span = node.expr.span();
-        let expr = self.visit_expression(node.expr);
+        let expr = self.expression(node.expr);
         let result_type = match (node.op, var_type, expr.result_type()) {
             (_, Type::Unknown, _) | (_, _, Type::Unknown) => Type::Unknown,
             (_, _, Type::Never) => {
@@ -1160,7 +1154,7 @@ impl<'src> Analyzer<'src> {
         )
     }
 
-    fn visit_call_expr(&mut self, node: CallExpr<'src>) -> AnalyzedExpression<'src> {
+    fn call_expr(&mut self, node: CallExpr<'src>) -> AnalyzedExpression<'src> {
         // saves the name of the current function (not the callee!)
         let func = match (
             self.functions.get_mut(node.func.inner),
@@ -1199,7 +1193,7 @@ impl<'src> Analyzer<'src> {
                         .into_iter()
                         .zip(builtin.param_types)
                         .map(|(arg, param_type)| {
-                            self.visit_arg(arg, param_type, node.span, &mut result_type)
+                            self.arg(arg, param_type, node.span, &mut result_type)
                         })
                         .collect();
                     (result_type, args)
@@ -1258,7 +1252,7 @@ impl<'src> Analyzer<'src> {
                         .into_iter()
                         .zip(func_params.inner)
                         .map(|(arg, param)| {
-                            self.visit_arg(arg, param.type_.inner, node.span, &mut result_type)
+                            self.arg(arg, param.type_.inner, node.span, &mut result_type)
                         })
                         .collect();
                     (result_type, args)
@@ -1270,7 +1264,7 @@ impl<'src> Analyzer<'src> {
                     .args
                     .into_iter()
                     .map(|arg| {
-                        let arg = self.visit_expression(arg);
+                        let arg = self.expression(arg);
                         if arg.result_type() == Type::Never {
                             result_type = Type::Never;
                         }
@@ -1291,7 +1285,7 @@ impl<'src> Analyzer<'src> {
         )
     }
 
-    fn visit_arg(
+    fn arg(
         &mut self,
         arg: Expression<'src>,
         param_type: Type,
@@ -1299,7 +1293,7 @@ impl<'src> Analyzer<'src> {
         result_type: &mut Type,
     ) -> AnalyzedExpression<'src> {
         let arg_span = arg.span();
-        let arg = self.visit_expression(arg);
+        let arg = self.expression(arg);
 
         match (arg.result_type(), param_type) {
             (Type::Unknown, _) | (_, Type::Unknown) => {}
@@ -1319,9 +1313,9 @@ impl<'src> Analyzer<'src> {
         arg
     }
 
-    fn visit_cast_expr(&mut self, node: CastExpr<'src>) -> AnalyzedExpression<'src> {
+    fn cast_expr(&mut self, node: CastExpr<'src>) -> AnalyzedExpression<'src> {
         let expr_span = node.expr.span();
-        let expr = self.visit_expression(node.expr);
+        let expr = self.expression(node.expr);
 
         let result_type = match (expr.result_type(), node.type_.inner) {
             (Type::Unknown, _) => Type::Unknown,

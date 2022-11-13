@@ -403,14 +403,14 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         // skip for token: this function is only called when self.curr_tok.kind == TokenKind::For
         self.next()?;
 
-        // parse the initialization assignment
-        let init_ident = self.expect_ident()?;
+        // parse the initializer
+        let ident = self.expect_ident()?;
         self.expect_recoverable(
             TokenKind::Assign,
             format!("expected `=`, found `{}`", self.curr_tok.kind),
             self.curr_tok.span,
         )?;
-        let init_expr = self.expression(0)?;
+        let initializer = self.expression(0)?;
 
         // parse the condition expression
         self.expect_recoverable(
@@ -428,6 +428,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         )?;
         let update = self.expression(0)?;
 
+        // parse the block
         let block = self.block()?;
 
         // skip optional semicolon
@@ -437,7 +438,8 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
 
         Ok(Statement::For(ForStmt {
             span: start_loc.until(self.prev_tok.span.end),
-            init_assignment: (init_ident, init_expr),
+            ident,
+            initializer,
             cond,
             update,
             block,
