@@ -160,7 +160,7 @@ impl<'ctx> Compiler<'ctx> {
         let fn_type = self.context.i8_type().fn_type(&[], false);
         let main_fn = self
             .module
-            .add_function("main", fn_type, Some(Linkage::Internal));
+            .add_function("main", fn_type, Some(Linkage::External));
 
         // create basic block for the main function
         let main_basic_block = self.context.append_basic_block(main_fn, "entry");
