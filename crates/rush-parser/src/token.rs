@@ -59,6 +59,8 @@ pub enum TokenKind<'src> {
     Loop,
     /// `while`
     While,
+    /// `for`
+    For,
     /// `break`
     Break,
     /// `continue`
@@ -215,6 +217,7 @@ impl Display for TokenKind<'_> {
             Self::Return => write!(f, "return"),
             Self::Loop => write!(f, "loop"),
             Self::While => write!(f, "while"),
+            Self::For => write!(f, "for"),
             Self::Break => write!(f, "break"),
             Self::Continue => write!(f, "continue"),
             Self::If => write!(f, "if"),
