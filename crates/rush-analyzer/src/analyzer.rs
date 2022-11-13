@@ -890,25 +890,26 @@ impl<'src> Analyzer<'src> {
         )
     }
 
+    /// Searches all scopes for the requested variable.
+    /// Starts at the current scope (last) and works its way down to the root scope (first).
     fn visit_ident_expr(&mut self, node: Spanned<&'src str>) -> AnalyzedExpression<'src> {
-        let result_type = match self.scope_mut().vars.get_mut(node.inner) {
-            Some(var) => {
+        for scope in &mut self.scopes.iter_mut().rev() {
+            if let Some(var) = scope.vars.get_mut(node.inner) {
                 var.used = true;
-                var.type_
-            }
-            None => {
-                self.error(
-                    ErrorKind::Reference,
-                    format!("use of undeclared variable `{}`", node.inner),
-                    vec![],
-                    node.span,
-                );
-                Type::Unknown
-            }
-        };
-
+                return AnalyzedExpression::Ident(AnalyzedIdentExpr {
+                    result_type: var.type_,
+                    ident: node.inner,
+                });
+            };
+        }
+        self.error(
+            ErrorKind::Reference,
+            format!("use of undeclared variable `{}`", node.inner),
+            vec![],
+            node.span,
+        );
         AnalyzedExpression::Ident(AnalyzedIdentExpr {
-            result_type,
+            result_type: Type::Unknown,
             ident: node.inner,
         })
     }
