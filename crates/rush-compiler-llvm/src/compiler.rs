@@ -18,8 +18,6 @@ use inkwell::{
 };
 use rush_analyzer::{ast::*, AssignOp, InfixOp, PrefixOp, Type};
 
-pub(crate) type Scope<'ctx> = HashMap<String, PointerValue<'ctx>>;
-
 pub struct Compiler<'ctx> {
     // inkwell components
     pub(crate) context: &'ctx Context,
@@ -30,7 +28,7 @@ pub struct Compiler<'ctx> {
     // contains necessary metadata about the current loop construct
     pub(crate) curr_loop: Option<Loop<'ctx>>,
     // the scope stack (first is the root / function scope, last is the current scope)
-    pub(crate) scopes: Vec<Scope<'ctx>>,
+    pub(crate) scopes: Vec<HashMap<String, Variable<'ctx>>>,
     // global variables
     #[allow(dead_code)] // TODO: remove this rule
     pub(crate) globals: HashMap<String, PointerValue<'ctx>>,
@@ -56,6 +54,14 @@ pub(crate) struct Function<'ctx> {
     name: String,
     // holds the LLVM function value
     llvm_value: FunctionValue<'ctx>,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum Variable<'ctx> {
+    /// A mutable variable which is assigned to
+    Mut(PointerValue<'ctx>),
+    /// A static variable which is only declared and used
+    Const(BasicValueEnum<'ctx>),
 }
 
 impl<'ctx> Compiler<'ctx> {
@@ -87,13 +93,13 @@ impl<'ctx> Compiler<'ctx> {
 
     /// Returns a reference to the current scope
     /// Panics if there are no scopes.
-    fn scope(&self) -> &Scope<'ctx> {
+    fn scope(&self) -> &HashMap<String, Variable<'ctx>> {
         self.scopes.last().as_ref().expect("only called in scopes")
     }
 
     // Returns a mutable reference to the current scope
     /// Panics if there are no scopes.
-    fn scope_mut(&mut self) -> &mut Scope<'ctx> {
+    fn scope_mut(&mut self) -> &mut HashMap<String, Variable<'ctx>> {
         let len = self.scopes.len();
         &mut self.scopes[len - 1]
     }
@@ -251,32 +257,44 @@ impl<'ctx> Compiler<'ctx> {
         self.scopes.push(HashMap::new());
 
         // bind each parameter to the original value (for later reference)
-        for (i, param) in node.params.iter().enumerate() {
-            // allocate a pointer for each parameter (allows mutability)
-            let ptr = self.builder.build_alloca(
-                match param.1 {
-                    Type::Int => self.context.i64_type().as_basic_type_enum(),
-                    Type::Float => self.context.f64_type().as_basic_type_enum(),
-                    Type::Char => self.context.i8_type().as_basic_type_enum(),
-                    Type::Bool => self.context.bool_type().as_basic_type_enum(),
-                    Type::Unit => self.context.i8_type().as_basic_type_enum(),
-                    Type::Never | Type::Unknown => {
-                        unreachable!("such function params cannot exist")
-                    }
-                },
-                param.0,
-            );
+        for (i, (ident, type_, mutable)) in node.params.iter().enumerate() {
+            match mutable {
+                true => {
+                    // allocate a pointer for each parameter (allows mutability)
+                    let ptr = self.builder.build_alloca(
+                        match type_ {
+                            Type::Int => self.context.i64_type().as_basic_type_enum(),
+                            Type::Float => self.context.f64_type().as_basic_type_enum(),
+                            Type::Char => self.context.i8_type().as_basic_type_enum(),
+                            Type::Bool => self.context.bool_type().as_basic_type_enum(),
+                            Type::Unit => self.context.i8_type().as_basic_type_enum(),
+                            Type::Never | Type::Unknown => {
+                                unreachable!("such function params cannot exist")
+                            }
+                        },
+                        ident,
+                    );
+                    // get the param's value from the function
+                    let value = function
+                        .get_nth_param(i as u32)
+                        .expect("this parameter exists");
 
-            // get the param's value from the function
-            let value = function
-                .get_nth_param(i as u32)
-                .expect("this parameter exists");
-
-            // store the param value in the pointer
-            self.builder.build_store(ptr, value);
-
-            // insert the pointer / parameter into the current scope
-            self.scope_mut().insert(param.0.to_string(), ptr);
+                    // store the param value in the pointer
+                    self.builder.build_store(ptr, value);
+                    // insert the pointer / parameter into the current scope
+                    self.scope_mut()
+                        .insert(ident.to_string(), Variable::Mut(ptr));
+                }
+                false => {
+                    // get the param's value from the function
+                    let value = function
+                        .get_nth_param(i as u32)
+                        .expect("this parameter exists");
+                    // insert the pointer / parameter into the current scope
+                    self.scope_mut()
+                        .insert(ident.to_string(), Variable::Const(value));
+                }
+            }
         }
 
         // build the result value of the function's body
@@ -321,34 +339,46 @@ impl<'ctx> Compiler<'ctx> {
     fn compile_let_statement(&mut self, node: &AnalyzedLetStmt) {
         let rhs = self.compile_expression(&node.expr);
 
-        // if there is already a pointer in the CURRENT scope, use it and skip allocation
-        if let Some(shadowed_ptr) = self.scope().get(node.name) {
-            self.builder.build_store(*shadowed_ptr, rhs);
-            return;
-        }
-
-        // if there is a loop, use it's allocations
-        if let Some(curr_loop) = &mut self.curr_loop {
-            for (idx, (alloc_ident, alloc_type, alloc_ptr)) in
-                curr_loop.allocations.iter_mut().enumerate()
-            {
-                // todo: remove this String allocation?
-                if *alloc_ident == node.name && *alloc_type == node.expr.result_type() {
-                    // store the value in the allocated pointer
-                    self.builder.build_store(*alloc_ptr, rhs);
-                    // remove this allocation from the vec
-                    curr_loop.allocations.remove(idx);
+        // if the variable is mutable, no pointer allocations are required
+        match node.mutable {
+            true => {
+                // if there is already a pointer in the CURRENT scope, use it and skip allocation
+                if let Some(Variable::Mut(shadowed_ptr)) = self.scope().get(node.name) {
+                    self.builder.build_store(*shadowed_ptr, rhs);
                     return;
                 }
-            }
-        }
 
-        // allocate a pointer for value
-        let ptr = self.builder.build_alloca(rhs.get_type(), node.name);
-        // store the rhs value in the pointer
-        self.builder.build_store(ptr, rhs);
-        // insert the pointer into the current scope (for later reference)
-        self.scope_mut().insert(node.name.to_string(), ptr);
+                // if there is a loop, use it's allocations
+                if let Some(curr_loop) = &mut self.curr_loop {
+                    for (idx, (alloc_ident, alloc_type, alloc_ptr)) in
+                        curr_loop.allocations.iter_mut().enumerate()
+                    {
+                        // todo: remove this String allocation?
+                        if *alloc_ident == node.name && *alloc_type == node.expr.result_type() {
+                            // store the value in the allocated pointer
+                            self.builder.build_store(*alloc_ptr, rhs);
+                            // remove this allocation from the vec
+                            curr_loop.allocations.remove(idx);
+                            return;
+                        }
+                    }
+                }
+
+                // allocate a pointer for value
+                let ptr = self.builder.build_alloca(rhs.get_type(), node.name);
+
+                // store the rhs value in the pointer
+                self.builder.build_store(ptr, rhs);
+
+                // insert the pointer into the current scope (for later reference)
+                self.scope_mut()
+                    .insert(node.name.to_string(), Variable::Mut(ptr));
+            }
+            false => {
+                self.scope_mut()
+                    .insert(node.name.to_string(), Variable::Const(rhs));
+            }
+        };
     }
 
     /// Compiles a return statement with an optional expression as it's value.
@@ -513,7 +543,8 @@ impl<'ctx> Compiler<'ctx> {
         self.builder.build_store(ptr, init_value);
 
         // add the pointer to the loop's scope
-        self.scope_mut().insert(node.ident.to_string(), ptr);
+        self.scope_mut()
+            .insert(node.ident.to_string(), Variable::Mut(ptr));
 
         // enter the loop from outside
         self.builder.build_unconditional_branch(for_head);
@@ -601,8 +632,11 @@ impl<'ctx> Compiler<'ctx> {
                     .as_basic_value_enum()
             }
             AnalyzedExpression::Ident(name) => {
-                let ptr = self.resolve_name(name.ident);
-                self.builder.build_load(ptr, name.ident)
+                let variable = self.resolve_name(name.ident);
+                match variable {
+                    Variable::Const(value) => value,
+                    Variable::Mut(ptr) => self.builder.build_load(ptr, name.ident),
+                }
             }
             AnalyzedExpression::Call(node) => self.compile_call_expression(node),
             AnalyzedExpression::Grouped(node) => self.compile_expression(node),
@@ -621,14 +655,14 @@ impl<'ctx> Compiler<'ctx> {
 
     /// Helper function for resolving identifier names.
     /// Searches the scopes first. If no match was found, the fitting global variable is returned.
-    fn resolve_name(&self, name: &str) -> PointerValue<'ctx> {
+    fn resolve_name(&self, name: &str) -> Variable<'ctx> {
         for scope in self.scopes.iter().rev() {
-            if let Some(&ptr) = scope.get(name) {
-                return ptr;
+            if let Some(&variable) = scope.get(name) {
+                return variable;
             }
         }
         match self.module.get_global(name) {
-            Some(global) => global.as_pointer_value(),
+            Some(global) => Variable::Mut(global.as_pointer_value()),
             None => unreachable!("every name used is either a var or global"),
         }
     }
@@ -1072,7 +1106,10 @@ impl<'ctx> Compiler<'ctx> {
     /// Compiles an [`AnalyzedAssignExpr`] by performing its operation and assignment.
     fn compile_assign_expression(&mut self, node: &AnalyzedAssignExpr) {
         // get the pointer of the assignee
-        let ptr = self.resolve_name(node.assignee);
+        let ptr = match self.resolve_name(node.assignee) {
+            Variable::Mut(ptr) => ptr,
+            Variable::Const(_) => unreachable!("can only assign to mutable variables"),
+        };
 
         match (node.op, node.expr.result_type()) {
             (AssignOp::Basic, _) => {
