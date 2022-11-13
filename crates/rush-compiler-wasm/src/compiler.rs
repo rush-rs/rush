@@ -372,6 +372,7 @@ impl<'src> Compiler<'src> {
             AnalyzedStatement::Return(node) => self.return_stmt(node),
             AnalyzedStatement::Loop(node) => self.loop_stmt(node),
             AnalyzedStatement::While(node) => self.while_stmt(node),
+            AnalyzedStatement::For(_node) => todo!(),
             AnalyzedStatement::Break => {
                 self.function_body.push(instructions::BR); // jump
                 (self.block_count + 1).write_uleb128(&mut self.function_body); // to end of block around loop
