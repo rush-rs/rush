@@ -372,7 +372,7 @@ impl<'src> Compiler<'src> {
             AnalyzedStatement::Return(node) => self.return_stmt(node),
             AnalyzedStatement::Loop(node) => self.loop_stmt(node),
             AnalyzedStatement::While(node) => self.while_stmt(node),
-            AnalyzedStatement::For(_node) => todo!(),
+            AnalyzedStatement::For(node) => self.for_stmt(node),
             AnalyzedStatement::Break => {
                 self.function_body.push(instructions::BR); // jump
                 (self.block_count + 1).write_uleb128(&mut self.function_body); // to end of block around loop
@@ -459,6 +459,57 @@ impl<'src> Compiler<'src> {
         self.function_body.push(1); // to end of outer block
 
         self.block_expr(node.block);
+        self.function_body.push(instructions::BR); // jump
+        self.function_body.push(0); // to start of loop
+
+        self.function_body.push(instructions::END); // end of loop
+        self.function_body.push(instructions::END); // end of block
+
+        // restore block count
+        self.block_count = prev_block_count;
+    }
+
+    fn for_stmt(&mut self, node: AnalyzedForStmt<'src>) {
+        // store current block count
+        let prev_block_count = self.block_count;
+        self.block_count = 0;
+
+        // compile the initializer
+        let wasm_type = utils::type_to_byte(node.initializer.result_type());
+        let local_idx = (self.locals.len() + self.param_count).to_uleb128();
+        if let Some(byte) = wasm_type {
+            self.locals.push(vec![1, byte]);
+        }
+        self.scope
+            .insert(node.ident, wasm_type.map(|_| local_idx.clone()));
+
+        self.expression(node.initializer);
+        self.function_body.push(instructions::LOCAL_SET);
+        self.function_body.extend_from_slice(&local_idx);
+
+        // add init variable name to name section
+        self.local_names[self.curr_func_idx].1.push(
+            [
+                &local_idx[..],                 // local index
+                &node.ident.len().to_uleb128(), // string len
+                node.ident.as_bytes(),
+            ]
+            .concat(),
+        );
+
+        self.function_body.push(instructions::BLOCK); // outer block to jump to with `break`
+        self.function_body.push(types::VOID); // with result `()`
+        self.function_body.push(instructions::LOOP); // loop to jump to with `continue`
+        self.function_body.push(types::VOID); // with result `()`
+
+        self.expression(node.cond); // compile condition
+        self.function_body.push(instructions::I32_EQZ); // negate result
+        self.function_body.push(instructions::BR_IF); // jump if cond is not true
+        self.function_body.push(1); // to end of outer block
+
+        self.block_expr(node.block); // the loop body
+        self.expression(node.update); // loop update expression
+
         self.function_body.push(instructions::BR); // jump
         self.function_body.push(0); // to start of loop
 
