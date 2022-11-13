@@ -1,0 +1,47 @@
+fn main() {
+    let a = 'a';
+    {
+        let a = 3.14;
+    }
+    let a = 1;
+    exit(a);
+}
+
+fn fib(mut n: int) -> int {
+    if n == 0 {
+        return 0;
+    }
+
+    let mut prev = 1;
+    let mut curr = 1;
+    while n > 2 {
+        n -= 1;
+        let tmp = curr + prev;
+        prev = curr;
+        curr = tmp;
+    }
+    curr
+}
+
+fn pow(base: int, mut exponent: int) -> int {
+    if exponent < 0 {
+        0
+    } else if exponent == 0 {
+        1
+    } else {
+        let mut accumulator = base;
+        while exponent != 1 {
+            exponent -= 1;
+            accumulator *= base;
+        }
+        accumulator
+    }
+}
+
+fn fib_recursive(n: int) -> int {
+    if n < 2 {
+        n
+    } else {
+        fib_recursive(n - 1) + fib_recursive(n - 2)
+    }
+}
