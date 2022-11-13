@@ -32,6 +32,7 @@ pub enum AnalyzedStatement<'src> {
     Return(AnalyzedReturnStmt<'src>),
     Loop(AnalyzedLoopStmt<'src>),
     While(AnalyzedWhileStmt<'src>),
+    For(AnalyzedForStmt<'src>),
     Break,
     Continue,
     Expr(AnalyzedExpression<'src>),
@@ -44,6 +45,7 @@ impl AnalyzedStatement<'_> {
             Self::Return(_) => Type::Never,
             Self::Loop(_) => Type::Unit, // TODO: maybe detect when it's `!`
             Self::While(_) => Type::Unit,
+            Self::For(_) => Type::Unit,
             Self::Break => Type::Never,
             Self::Continue => Type::Never,
             Self::Expr(expr) => expr.result_type(),
@@ -74,6 +76,14 @@ pub struct AnalyzedLoopStmt<'src> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnalyzedWhileStmt<'src> {
     pub cond: AnalyzedExpression<'src>,
+    pub block: AnalyzedBlock<'src>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AnalyzedForStmt<'src> {
+    pub init_assignment: (&'src str, AnalyzedExpression<'src>),
+    pub cond: AnalyzedExpression<'src>,
+    pub update: AnalyzedExpression<'src>,
     pub block: AnalyzedBlock<'src>,
 }
 

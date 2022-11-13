@@ -458,6 +458,7 @@ impl<'src> Analyzer<'src> {
             Statement::Return(node) => self.visit_return_stmt(node),
             Statement::Loop(node) => self.visit_loop_stmt(node),
             Statement::While(node) => self.visit_while_stmt(node),
+            Statement::For(node) => self.visit_for_stmt(node),
             Statement::Break(node) => self.visit_break_stmt(node),
             Statement::Continue(node) => self.visit_continue_stmt(node),
             Statement::Expr(node) => AnalyzedStatement::Expr(self.visit_expression(node.expr)),
@@ -643,6 +644,93 @@ impl<'src> Analyzer<'src> {
         }
 
         AnalyzedStatement::While(AnalyzedWhileStmt { cond, block })
+    }
+
+    fn visit_for_stmt(&mut self, node: ForStmt<'src>) -> AnalyzedStatement<'src> {
+        // analyze the type of the init variable
+        let init_expr = self.visit_expression(node.init_assignment.1);
+        let mut vars = HashMap::new();
+        vars.insert(
+            node.init_assignment.0.inner,
+            Variable {
+                type_: init_expr.result_type(),
+                span: node.init_assignment.0.span,
+                used: false,
+                mutable: true,
+            },
+        );
+
+        // push a new scope containing the init variable
+        self.scopes.push(Scope { vars });
+
+        // check that the condition is of type bool
+        let cond_span = node.cond.span();
+        let cond = self.visit_expression(node.cond);
+
+        if !matches!(cond.result_type(), Type::Bool | Type::Never | Type::Unknown) {
+            self.error(
+                ErrorKind::Type,
+                format!(
+                    "expected value of type `bool`, found `{}`",
+                    cond.result_type()
+                ),
+                vec!["a condition must have the type `bool`".into()],
+                cond_span,
+            )
+        } else {
+            // check that the condition is non-constant
+            if cond.constant() {
+                self.warn(
+                    "redundant while-statement: condition is constant",
+                    vec!["for unconditional loops use a loop-statement".into()],
+                    cond_span,
+                )
+            }
+        }
+
+        // check that the update expr results in `()`, `!` or `{unknown}`
+        let upd_span = node.update.span();
+        let update = self.visit_expression(node.update);
+
+        if !matches!(
+            update.result_type(),
+            Type::Unit | Type::Never | Type::Unknown
+        ) {
+            self.error(
+                ErrorKind::Type,
+                format!(
+                    "expected value of type `()`, found `{}`",
+                    cond.result_type()
+                ),
+                vec!["an update expression must have the type `()`".into()],
+                upd_span,
+            )
+        }
+
+        self.loop_count += 1;
+        let block_result_span = node.block.result_span();
+        let block = self.visit_block(node.block);
+        self.drop_scope();
+        self.loop_count -= 1;
+
+        if !matches!(block.result_type, Type::Unit | Type::Never | Type::Unknown) {
+            self.error(
+                ErrorKind::Type,
+                format!(
+                    "for-statement requires a block of type `()` or `!`, found `{}`",
+                    block.result_type
+                ),
+                vec![],
+                block_result_span,
+            );
+        }
+
+        AnalyzedStatement::For(AnalyzedForStmt {
+            init_assignment: (node.init_assignment.0.inner, init_expr),
+            cond,
+            update,
+            block,
+        })
     }
 
     fn visit_break_stmt(&mut self, node: BreakStmt) -> AnalyzedStatement<'src> {
