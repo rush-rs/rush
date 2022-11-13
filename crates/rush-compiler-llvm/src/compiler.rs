@@ -303,12 +303,17 @@ impl<'ctx> Compiler<'ctx> {
     /// Also inserts the pointer into the functions's [`HashMap`] for later use.
     fn compile_let_statement(&mut self, node: &AnalyzedLetStmt) {
         let rhs = self.compile_expression(&node.expr);
+        // if there is already a pointer in the CURRENT scope, use it and skip allocation
+        if let Some(shadowed_ptr) = self.scope().get(node.name) {
+            self.builder.build_store(*shadowed_ptr, rhs);
+            return;
+        }
         // allocate a pointer for value
         let ptr = self.builder.build_alloca(rhs.get_type(), node.name);
         // store the rhs value in the pointer
         self.builder.build_store(ptr, rhs);
-        // insert the pointer into function vars (for later reference)
-        self.curr_fn_mut().vars.insert(node.name.to_string(), ptr);
+        // insert the pointer into the current scope (for later reference)
+        self.scope_mut().insert(node.name.to_string(), ptr);
     }
 
     /// Compiles a return statement with an optional expression as it's value.
