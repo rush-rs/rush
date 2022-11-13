@@ -21,7 +21,7 @@ pub struct Compiler<'src> {
     pub(crate) block_count: usize,
 
     /// Maps variable names to `Option<local_idx>`, or `None` when of type `()`
-    pub(crate) scope: HashMap<&'src str, Option<Vec<u8>>>,
+    pub(crate) scopes: Vec<HashMap<&'src str, Option<Vec<u8>>>>,
     /// Maps function names to their index encoded as unsigned LEB128
     pub(crate) functions: HashMap<&'src str, Vec<u8>>,
     /// Maps builtin function names to their index encoded as unsigned LEB128
@@ -168,6 +168,27 @@ impl<'src> Compiler<'src> {
         .concat()
     }
 
+    fn push_scope(&mut self) {
+        self.scopes.push(HashMap::new());
+    }
+
+    fn pop_scope(&mut self) -> Option<HashMap<&'src str, Option<Vec<u8>>>> {
+        self.scopes.pop()
+    }
+
+    fn curr_scope(&mut self) -> &mut HashMap<&'src str, Option<Vec<u8>>> {
+        self.scopes.last_mut().unwrap()
+    }
+
+    fn find_var(&self, name: &'src str) -> &Option<Vec<u8>> {
+        for scope in self.scopes.iter().rev() {
+            if let Some(idx) = scope.get(name) {
+                return idx;
+            }
+        }
+        panic!("the analyzer guarantees valid variable references");
+    }
+
     /////////////////////////
 
     fn program(&mut self, node: AnalyzedProgram<'src>) {
@@ -243,7 +264,9 @@ impl<'src> Compiler<'src> {
         self.param_count = 0;
 
         // function body
+        self.push_scope();
         self.function_body(body);
+        self.pop_scope();
     }
 
     fn function_signature(&mut self, node: &AnalyzedFunctionDefinition<'src>) {
@@ -317,15 +340,13 @@ impl<'src> Compiler<'src> {
             return;
         }
 
-        // clear variable scope
-        self.scope.clear();
-
         // reset param count
         self.param_count = 0;
 
-        // add params to scope
+        // add params to new scope
+        let mut scope = HashMap::new();
         for (idx, param) in node.params.into_iter().enumerate() {
-            self.scope.insert(
+            scope.insert(
                 param.name,
                 utils::type_to_byte(param.type_).map(|_| {
                     self.param_count += 1;
@@ -335,7 +356,9 @@ impl<'src> Compiler<'src> {
         }
 
         // function body
+        self.scopes.push(scope);
         self.function_body(node.block);
+        self.pop_scope();
     }
 
     fn function_body(&mut self, node: AnalyzedBlock<'src>) {
@@ -397,7 +420,7 @@ impl<'src> Compiler<'src> {
         if let Some(byte) = wasm_type {
             self.locals.push(vec![1, byte]);
         }
-        self.scope
+        self.curr_scope()
             .insert(node.name, wasm_type.map(|_| local_idx.clone()));
 
         self.expression(node.expr);
@@ -480,7 +503,7 @@ impl<'src> Compiler<'src> {
         if let Some(byte) = wasm_type {
             self.locals.push(vec![1, byte]);
         }
-        self.scope
+        self.curr_scope()
             .insert(node.ident, wasm_type.map(|_| local_idx.clone()));
 
         self.expression(node.initializer);
@@ -545,14 +568,13 @@ impl<'src> Compiler<'src> {
                 self.function_body.push(instructions::I32_CONST);
                 value.write_sleb128(&mut self.function_body);
             }
-            AnalyzedExpression::Ident(ident) => match &self.scope[ident.ident] {
-                Some(local_idx) => {
-                    self.function_body.push(instructions::LOCAL_GET);
-                    self.function_body.extend_from_slice(local_idx);
-                }
+            AnalyzedExpression::Ident(ident) => {
                 // unit type requires no instructions
-                None => {}
-            },
+                if let Some(local_idx) = self.find_var(ident.ident).clone() {
+                    self.function_body.push(instructions::LOCAL_GET);
+                    self.function_body.extend_from_slice(&local_idx);
+                }
+            }
             AnalyzedExpression::Prefix(node) => self.prefix_expr(*node),
             AnalyzedExpression::Infix(node) => self.infix_expr(*node),
             AnalyzedExpression::Assign(node) => self.assign_expr(*node),
@@ -566,12 +588,14 @@ impl<'src> Compiler<'src> {
     }
 
     fn block_expr(&mut self, node: AnalyzedBlock<'src>) {
+        self.push_scope();
         for stmt in node.stmts {
             self.statement(stmt);
         }
         if let Some(expr) = node.expr {
             self.expression(expr);
         }
+        self.pop_scope();
     }
 
     fn if_expr(&mut self, node: AnalyzedIfExpr<'src>) {
@@ -718,7 +742,7 @@ impl<'src> Compiler<'src> {
     }
 
     fn assign_expr(&mut self, node: AnalyzedAssignExpr<'src>) {
-        let Some(local_idx) = &self.scope[node.assignee] else {
+        let Some(local_idx) = self.find_var(node.assignee).clone() else {
             self.expression(node.expr);
             return;
         };
@@ -726,7 +750,7 @@ impl<'src> Compiler<'src> {
         // get the current value if assignment is more than just `=`
         if node.op != AssignOp::Basic {
             self.function_body.push(instructions::LOCAL_GET);
-            self.function_body.extend_from_slice(local_idx);
+            self.function_body.extend_from_slice(&local_idx);
         }
 
         // save expr_type
@@ -769,11 +793,7 @@ impl<'src> Compiler<'src> {
 
         // set local to new value
         self.function_body.push(instructions::LOCAL_SET);
-        self.function_body.extend_from_slice(
-            self.scope[node.assignee]
-                .as_ref()
-                .expect("we checked this at the top of the function"),
-        );
+        self.function_body.extend_from_slice(&local_idx);
     }
 
     fn call_expr(&mut self, node: AnalyzedCallExpr<'src>) {
