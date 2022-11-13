@@ -353,7 +353,11 @@ impl<'src> Analyzer<'src> {
                         mutable: param.mutable,
                     },
                 );
-                params.push((param.name.inner, param.type_.inner, param.mutable));
+                params.push(AnalyzedParameter {
+                    mutable: param.mutable,
+                    name: param.name.inner,
+                    type_: param.type_.inner,
+                });
             }
         }
 
@@ -1484,8 +1488,14 @@ mod tests {
                             used: false,
                             name: "add",
                             params: [
-                                ("left", Type::Int),
-                                ("right", Type::Int)],
+                                (Parameter,
+                                    mutable: false,
+                                    name: "left",
+                                    type: Type::Int),
+                                (Parameter,
+                                    mutable: false,
+                                    name: "right",
+                                    type: Type::Int)],
                             return_type: Type::Int,
                             block: (Block -> Type::Never,
                                 constant: false,

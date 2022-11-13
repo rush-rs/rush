@@ -19,16 +19,28 @@ macro_rules! analyzed_tree {
         FunctionDefinition,
         used: $used:expr,
         name: $name:expr,
-        params: [$(($param:expr, $type:expr)),* $(,)?],
+        params: [$($param:tt),* $(,)?],
         return_type: $return_type:expr,
         block: $block:tt $(,)?
     )) => {
         AnalyzedFunctionDefinition {
             used: $used,
             name: $name,
-            params: vec![$(($param, $type)),*],
+            params: vec![$(analyzed_tree!($param)),*],
             return_type: $return_type,
             block: analyzed_tree!($block),
+        }
+    };
+    ((
+        Parameter,
+        mutable: $mutable:expr,
+        name: $name:expr,
+        type: $type:expr $(,)?
+    )) => {
+        AnalyzedParameter {
+            mutable: $mutable,
+            name: $name,
+            type_: $type,
         }
     };
 

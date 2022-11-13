@@ -264,16 +264,16 @@ impl<'src> Compiler<'src> {
         let mut params: Vec<_> = node
             .params
             .iter()
-            .filter_map(|(name, type_)| {
+            .filter_map(|param| {
                 param_names.push(
                     [
                         &param_names.len().to_uleb128()[..], // local index
-                        &name.len().to_uleb128(),            // string len
-                        name.as_bytes(),                     // param name
+                        &param.name.len().to_uleb128(),      // string len
+                        param.name.as_bytes(),               // param name
                     ]
                     .concat(),
                 );
-                utils::type_to_byte(*type_)
+                utils::type_to_byte(param.type_)
             })
             .collect();
         params.len().write_uleb128(&mut buf);
@@ -324,10 +324,10 @@ impl<'src> Compiler<'src> {
         self.param_count = 0;
 
         // add params to scope
-        for (idx, (name, type_)) in node.params.into_iter().enumerate() {
+        for (idx, param) in node.params.into_iter().enumerate() {
             self.scope.insert(
-                name,
-                utils::type_to_byte(type_).map(|_| {
+                param.name,
+                utils::type_to_byte(param.type_).map(|_| {
                     self.param_count += 1;
                     idx.to_uleb128()
                 }),

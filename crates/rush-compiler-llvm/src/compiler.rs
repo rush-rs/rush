@@ -214,7 +214,7 @@ impl<'ctx> Compiler<'ctx> {
         let params: Vec<BasicMetadataTypeEnum> = node
             .params
             .iter()
-            .map(|param| match param.1 {
+            .map(|param| match param.type_ {
                 Type::Int => BasicMetadataTypeEnum::IntType(self.context.i64_type()),
                 Type::Float => BasicMetadataTypeEnum::FloatType(self.context.f64_type()),
                 Type::Bool => BasicMetadataTypeEnum::IntType(self.context.bool_type()),
@@ -257,12 +257,12 @@ impl<'ctx> Compiler<'ctx> {
         self.scopes.push(HashMap::new());
 
         // bind each parameter to the original value (for later reference)
-        for (i, (ident, type_, mutable)) in node.params.iter().enumerate() {
-            match mutable {
+        for (i, param) in node.params.iter().enumerate() {
+            match param.mutable {
                 true => {
                     // allocate a pointer for each parameter (allows mutability)
                     let ptr = self.builder.build_alloca(
-                        match type_ {
+                        match param.type_ {
                             Type::Int => self.context.i64_type().as_basic_type_enum(),
                             Type::Float => self.context.f64_type().as_basic_type_enum(),
                             Type::Char => self.context.i8_type().as_basic_type_enum(),
@@ -272,7 +272,7 @@ impl<'ctx> Compiler<'ctx> {
                                 unreachable!("such function params cannot exist")
                             }
                         },
-                        ident,
+                        param.name,
                     );
                     // get the param's value from the function
                     let value = function
@@ -283,7 +283,7 @@ impl<'ctx> Compiler<'ctx> {
                     self.builder.build_store(ptr, value);
                     // insert the pointer / parameter into the current scope
                     self.scope_mut()
-                        .insert(ident.to_string(), Variable::Mut(ptr));
+                        .insert(param.name.to_string(), Variable::Mut(ptr));
                 }
                 false => {
                     // get the param's value from the function
@@ -292,7 +292,7 @@ impl<'ctx> Compiler<'ctx> {
                         .expect("this parameter exists");
                     // insert the pointer / parameter into the current scope
                     self.scope_mut()
-                        .insert(ident.to_string(), Variable::Const(value));
+                        .insert(param.name.to_string(), Variable::Const(value));
                 }
             }
         }

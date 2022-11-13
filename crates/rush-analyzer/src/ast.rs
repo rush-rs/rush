@@ -13,9 +13,16 @@ pub struct AnalyzedProgram<'src> {
 pub struct AnalyzedFunctionDefinition<'src> {
     pub used: bool,
     pub name: &'src str,
-    pub params: Vec<(&'src str, Type, bool)>,
+    pub params: Vec<AnalyzedParameter<'src>>,
     pub return_type: Type,
     pub block: AnalyzedBlock<'src>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AnalyzedParameter<'src> {
+    pub mutable: bool,
+    pub name: &'src str,
+    pub type_: Type,
 }
 
 #[derive(Debug, Clone, PartialEq)]
