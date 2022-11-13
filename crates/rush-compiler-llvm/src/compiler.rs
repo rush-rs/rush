@@ -18,6 +18,8 @@ use inkwell::{
 };
 use rush_analyzer::{ast::*, AssignOp, InfixOp, PrefixOp, Type};
 
+pub(crate) type Scope<'ctx> = HashMap<String, PointerValue<'ctx>>;
+
 pub struct Compiler<'ctx> {
     // inkwell components
     pub(crate) context: &'ctx Context,
@@ -27,6 +29,8 @@ pub struct Compiler<'ctx> {
     pub(crate) curr_fn: Option<Function<'ctx>>,
     // contains necessary metadata about the current loop construct
     pub(crate) curr_loop: Option<Loop<'ctx>>,
+    // the scope stack (first is the root / function scope, last is the current scope)
+    pub(crate) scopes: Vec<Scope<'ctx>>,
     // a set of all builtin functions already declared (`imported`) so far
     pub(crate) declared_builtins: HashSet<&'ctx str>,
     // specifies the target machine
@@ -45,8 +49,6 @@ pub(crate) struct Loop<'ctx> {
 pub(crate) struct Function<'ctx> {
     // specifies the name of the function
     name: String,
-    // saves the declared variables of the function
-    vars: HashMap<String, PointerValue<'ctx>>,
     // holds the LLVM function value
     llvm_value: FunctionValue<'ctx>,
 }
@@ -69,6 +71,7 @@ impl<'ctx> Compiler<'ctx> {
             module,
             builder: context.create_builder(),
             curr_fn: None,
+            scopes: vec![],
             curr_loop: None,
             declared_builtins: HashSet::new(),
             target_triple,
@@ -76,19 +79,24 @@ impl<'ctx> Compiler<'ctx> {
         }
     }
 
+    /// Returns a reference to the current scope
+    /// Panics if there are no scopes.
+    fn scope(&self) -> &Scope<'ctx> {
+        self.scopes.last().as_ref().expect("only called in scopes")
+    }
+
+    // Returns a mutable reference to the current scope
+    /// Panics if there are no scopes.
+    fn scope_mut(&mut self) -> &mut Scope<'ctx> {
+        let len = self.scopes.len();
+        &mut self.scopes[len - 1]
+    }
+
     /// Helper function for accessing the current function
     /// Can panic when called from outside of functions
     fn curr_fn(&self) -> &Function<'ctx> {
         self.curr_fn
             .as_ref()
-            .expect("this is only called from functions")
-    }
-
-    /// Helper function for accessing the current function as mut.
-    /// Can panic when called from outside of functions
-    fn curr_fn_mut(&mut self) -> &mut Function<'ctx> {
-        self.curr_fn
-            .as_mut()
             .expect("this is only called from functions")
     }
 
@@ -156,15 +164,20 @@ impl<'ctx> Compiler<'ctx> {
         let main_basic_block = self.context.append_basic_block(main_fn, "entry");
         self.builder.position_at_end(main_basic_block);
 
-        // create a new scope for the main function
+        // set the current function to `main`
         self.curr_fn = Some(Function {
             name: "main".to_string(),
-            vars: HashMap::new(),
             llvm_value: main_fn,
         });
 
+        // create a new scope for the main function
+        self.scopes.push(HashMap::new());
+
         // compile the function's body
         self.compile_block(node);
+
+        // drop the function's scope
+        self.scopes.pop();
 
         // return exit-code 0
         let success = self.context.i8_type().const_zero().as_basic_value_enum();
@@ -211,12 +224,14 @@ impl<'ctx> Compiler<'ctx> {
         let basic_block = self.context.append_basic_block(function, "entry");
         self.builder.position_at_end(basic_block);
 
-        // create new scope for the function
+        // set the current function environment
         self.curr_fn = Some(Function {
             name: node.name.to_string(),
-            vars: HashMap::new(),
             llvm_value: function,
         });
+
+        // create new scope for the function
+        self.scopes.push(HashMap::new());
 
         // bind each parameter to the original value (for later reference)
         for (i, param) in node.params.iter().enumerate() {
@@ -243,12 +258,16 @@ impl<'ctx> Compiler<'ctx> {
             // store the param value in the pointer
             self.builder.build_store(ptr, value);
 
-            // insert the pointer into the functions' vars
-            self.curr_fn_mut().vars.insert(param.0.to_string(), ptr);
+            // insert the pointer / parameter into the current scope
+            self.scope_mut().insert(param.0.to_string(), ptr);
         }
 
         // build the result value of the function's body
         let return_value = self.compile_block(&node.block);
+
+        // drop the function's scope
+        self.scopes.pop();
+
         self.build_return(Some(return_value));
     }
 
@@ -324,6 +343,9 @@ impl<'ctx> Compiler<'ctx> {
             after_loop,
         });
 
+        // push a new scope for the loop
+        self.scopes.push(HashMap::new());
+
         // enter the loop from outside
         self.builder.build_unconditional_branch(loop_head);
 
@@ -333,6 +355,9 @@ impl<'ctx> Compiler<'ctx> {
 
         // jump back to the loop head
         self.builder.build_unconditional_branch(loop_head);
+
+        // drop the scope
+        self.scopes.pop();
 
         // place the builder cursor at the end of the `after_loop`
         self.builder.position_at_end(after_loop);
@@ -361,6 +386,9 @@ impl<'ctx> Compiler<'ctx> {
             loop_head: while_head,
             after_loop: after_while,
         });
+
+        // push a new scope for the loop
+        self.scopes.push(HashMap::new());
 
         // enter the loop from outside
         self.builder.build_unconditional_branch(while_head);
@@ -437,13 +465,13 @@ impl<'ctx> Compiler<'ctx> {
                     .as_basic_value_enum()
             }
             AnalyzedExpression::Ident(name) => {
-                let ptr = self
-                    .curr_fn()
-                    .vars
-                    .get(name.ident)
-                    .expect("this variable was declared beforehand");
-                // load the value from the pointer
-                self.builder.build_load(*ptr, name.ident)
+                for scope in self.scopes.iter().rev() {
+                    if let Some(ptr) = scope.get(name.ident) {
+                        // load the value from the pointer
+                        return self.builder.build_load(*ptr, name.ident);
+                    }
+                }
+                unreachable!("every used variable was declared beforehand");
             }
             AnalyzedExpression::Call(node) => self.compile_call_expression(node),
             AnalyzedExpression::Grouped(node) => self.compile_expression(node),
@@ -902,13 +930,13 @@ impl<'ctx> Compiler<'ctx> {
             (AssignOp::Basic, _) => {
                 let rhs = self.compile_expression(&node.expr);
                 // get the pointer from the scope
-                let ptr = self.curr_fn().vars[node.assignee];
+                let ptr = self.scope()[node.assignee];
                 // store the rhs value in the pointer
                 self.builder.build_store(ptr, rhs);
             }
             (op, Type::Int | Type::Float | Type::Bool) => {
                 // get the pointer from the scope
-                let ptr = self.curr_fn().vars[node.assignee];
+                let ptr = self.scope()[node.assignee];
                 // load the value from the pointer
                 let assignee = self.builder.build_load(ptr, node.assignee);
                 // compile the value of the rhs for later use
@@ -998,6 +1026,7 @@ impl<'ctx> Compiler<'ctx> {
     /// Compiles a branch in an [`AnalyzedIfExpr`].
     /// Automatically jumps to the correct merge block when done.
     /// Handles the edge case when the block uses `return`
+    /// Automatically pushes and pops the branch's scopes
     fn compile_branch(
         &mut self,
         node: &AnalyzedBlock,
@@ -1006,8 +1035,14 @@ impl<'ctx> Compiler<'ctx> {
         BasicTypeEnum<'ctx>,
         Option<(BasicValueEnum<'ctx>, BasicBlock<'ctx>)>,
     ) {
+        // push a new scope for the branch
+        self.scopes.push(HashMap::new());
+
         // compile the block
         let branch_value = self.compile_block(node);
+
+        // pop the branch scope
+        self.scopes.pop();
 
         // if the block was terminated using a `return`, do not return the branch block
         if self.current_instruction_is_block_terminator() {
