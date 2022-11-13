@@ -85,7 +85,8 @@ pub struct AnalyzedWhileStmt<'src> {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnalyzedForStmt<'src> {
-    pub init_assignment: (&'src str, AnalyzedExpression<'src>),
+    pub ident: &'src str,
+    pub initializer: AnalyzedExpression<'src>,
     pub cond: AnalyzedExpression<'src>,
     pub update: AnalyzedExpression<'src>,
     pub block: AnalyzedBlock<'src>,
