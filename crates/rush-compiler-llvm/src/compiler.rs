@@ -270,6 +270,7 @@ impl<'ctx> Compiler<'ctx> {
             AnalyzedStatement::Return(node) => self.compile_return_statement(node),
             AnalyzedStatement::Loop(node) => self.compile_loop_statement(node),
             AnalyzedStatement::While(node) => self.compile_while_statement(node),
+            AnalyzedStatement::For(_node) => todo!(),
             AnalyzedStatement::Break => self.compile_break_statement(),
             AnalyzedStatement::Continue => self.compile_continue_statement(),
             AnalyzedStatement::Expr(node) => {

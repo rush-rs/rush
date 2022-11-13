@@ -649,8 +649,7 @@ impl<'src> Analyzer<'src> {
     fn visit_for_stmt(&mut self, node: ForStmt<'src>) -> AnalyzedStatement<'src> {
         // analyze the type of the init variable
         let init_expr = self.visit_expression(node.init_assignment.1);
-        let mut vars = HashMap::new();
-        vars.insert(
+        self.scope_mut().vars.insert(
             node.init_assignment.0.inner,
             Variable {
                 type_: init_expr.result_type(),
@@ -659,9 +658,6 @@ impl<'src> Analyzer<'src> {
                 mutable: true,
             },
         );
-
-        // push a new scope containing the init variable
-        self.scopes.push(Scope { vars });
 
         // check that the condition is of type bool
         let cond_span = node.cond.span();
@@ -708,6 +704,7 @@ impl<'src> Analyzer<'src> {
         }
 
         self.loop_count += 1;
+        self.scopes.push(Scope::default());
         let block_result_span = node.block.result_span();
         let block = self.visit_block(node.block);
         self.drop_scope();
