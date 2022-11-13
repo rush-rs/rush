@@ -31,6 +31,9 @@ pub struct Compiler<'ctx> {
     pub(crate) curr_loop: Option<Loop<'ctx>>,
     // the scope stack (first is the root / function scope, last is the current scope)
     pub(crate) scopes: Vec<Scope<'ctx>>,
+    // global variables
+    #[allow(dead_code)] // TODO: remove this rule
+    pub(crate) globals: HashMap<String, PointerValue<'ctx>>,
     // a set of all builtin functions already declared (`imported`) so far
     pub(crate) declared_builtins: HashSet<&'ctx str>,
     // specifies the target machine
@@ -74,6 +77,7 @@ impl<'ctx> Compiler<'ctx> {
             builder: context.create_builder(),
             curr_fn: None,
             scopes: vec![],
+            globals: HashMap::new(),
             curr_loop: None,
             declared_builtins: HashSet::new(),
             target_triple,
@@ -184,6 +188,17 @@ impl<'ctx> Compiler<'ctx> {
         // return exit-code 0
         let success = self.context.i8_type().const_zero().as_basic_value_enum();
         self.build_return(Some(success));
+    }
+
+    /// Defines a new global variable with the given name and initializes it using the expression
+    fn _define_global(&mut self, ident: String, expression: &AnalyzedExpression) {
+        let global = self
+            .module
+            .add_global(self.context.i64_type(), None, &ident);
+        let init_value = self.compile_expression(expression);
+        global.set_initializer(&init_value);
+        // store the global variable in the globals vec
+        self.globals.insert(ident, global.as_pointer_value());
     }
 
     /// Defines a new function in the module and compiles it's body.
@@ -586,13 +601,8 @@ impl<'ctx> Compiler<'ctx> {
                     .as_basic_value_enum()
             }
             AnalyzedExpression::Ident(name) => {
-                for scope in self.scopes.iter().rev() {
-                    if let Some(ptr) = scope.get(name.ident) {
-                        // load the value from the pointer
-                        return self.builder.build_load(*ptr, name.ident);
-                    }
-                }
-                unreachable!("every used variable was declared beforehand");
+                let ptr = self.resolve_name(name.ident);
+                self.builder.build_load(ptr, name.ident)
             }
             AnalyzedExpression::Call(node) => self.compile_call_expression(node),
             AnalyzedExpression::Grouped(node) => self.compile_expression(node),
@@ -606,6 +616,20 @@ impl<'ctx> Compiler<'ctx> {
                 self.unit_value()
             }
             AnalyzedExpression::If(node) => self.compile_if_expression(node),
+        }
+    }
+
+    /// Helper function for resolving identifier names.
+    /// Searches the scopes first. If no match was found, the fitting global variable is returned.
+    fn resolve_name(&self, name: &str) -> PointerValue<'ctx> {
+        for scope in self.scopes.iter().rev() {
+            if let Some(&ptr) = scope.get(name) {
+                return ptr;
+            }
+        }
+        match self.module.get_global(name) {
+            Some(global) => global.as_pointer_value(),
+            None => unreachable!("every name used is either a var or global"),
         }
     }
 
@@ -1048,11 +1072,7 @@ impl<'ctx> Compiler<'ctx> {
     /// Compiles an [`AnalyzedAssignExpr`] by performing its operation and assignment.
     fn compile_assign_expression(&mut self, node: &AnalyzedAssignExpr) {
         // get the pointer of the assignee
-        let ptr = *self
-            .scopes
-            .iter()
-            .find_map(|scope| scope.get(node.assignee))
-            .expect("an assignee always exists");
+        let ptr = self.resolve_name(node.assignee);
 
         match (node.op, node.expr.result_type()) {
             (AssignOp::Basic, _) => {
@@ -1246,8 +1266,9 @@ mod tests {
             inkwell::OptimizationLevel::None,
         );
 
-        let (_, ir) = compiler.compile(ast).unwrap();
+        let (obj, ir) = compiler.compile(ast).unwrap();
         fs::write("./main.ll", &ir).unwrap();
+        fs::write("./main.o", obj.as_slice()).unwrap();
         println!("{ir}");
     }
 }
