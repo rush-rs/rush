@@ -11,7 +11,8 @@ use crate::{ast::*, Diagnostic, DiagnosticLevel, ErrorKind};
 pub struct Analyzer<'src> {
     pub functions: HashMap<&'src str, Function<'src>>,
     builtin_functions: HashMap<&'static str, BuiltinFunction>,
-    scope: Option<Scope<'src>>,
+    scopes: Vec<Scope<'src>>,
+    curr_fn: &'src str,
     used_builtins: HashSet<&'src str>,
     pub diagnostics: Vec<Diagnostic>,
     loop_count: usize,
@@ -40,9 +41,8 @@ impl BuiltinFunction {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Scope<'src> {
-    pub fn_name: &'src str,
     pub vars: HashMap<&'src str, Variable>,
 }
 
@@ -223,10 +223,7 @@ impl<'src> Analyzer<'src> {
     /// variables in the scope have been used.
     fn drop_scope(&mut self) {
         // consume / drop the scope
-        let scope = self
-            .scope
-            .take()
-            .expect("drop_scope should only be called from a scope");
+        let scope = self.scopes.pop().expect("is only called after a scope");
 
         // analyze its values for their use
         for (name, var) in scope.vars {
@@ -244,18 +241,15 @@ impl<'src> Analyzer<'src> {
         }
     }
 
-    /// Unwrap the current scope
+    /// Returns a reference to the current scope
     fn scope(&self) -> &Scope<'src> {
-        self.scope
-            .as_ref()
-            .expect("statements and expressions only exist in function bodies")
+        self.scopes.last().as_ref().expect("only called in scopes")
     }
 
-    /// Unwrap the current scope mutably
+    // Returns a mutable reference to the current scope
     fn scope_mut(&mut self) -> &mut Scope<'src> {
-        self.scope
-            .as_mut()
-            .expect("statements and expressions only exist in function bodies")
+        let len = self.scopes.len();
+        &mut self.scopes[len - 1]
     }
 
     fn warn_unreachable(&mut self, unreachable_span: Span, causing_span: Span, expr: bool) {
@@ -331,7 +325,7 @@ impl<'src> Analyzer<'src> {
             );
         }
 
-        let mut scope_vars = HashMap::new();
+        let mut vars = HashMap::new();
 
         // check the function parameters
         let mut params = vec![];
@@ -349,7 +343,7 @@ impl<'src> Analyzer<'src> {
                         param.name.span,
                     );
                 }
-                scope_vars.insert(
+                vars.insert(
                     param.name.inner,
                     Variable {
                         type_: param.type_.inner,
@@ -362,11 +356,8 @@ impl<'src> Analyzer<'src> {
             }
         }
 
-        // set the scope to a new blank scope
-        self.scope = Some(Scope {
-            fn_name: node.name.inner,
-            vars: scope_vars,
-        });
+        // push a new scope for the new function
+        self.scopes.push(Scope { vars });
 
         // analyze the function body
         let block_result_span = node.block.result_span();
@@ -550,8 +541,8 @@ impl<'src> Analyzer<'src> {
 
         let curr_fn = self
             .functions
-            .get(self.scope().fn_name)
-            .expect("a scope's function always exists");
+            .get(self.curr_fn)
+            .expect("return is only legal in fn");
 
         // test if the return type is correct
         if curr_fn.return_type.inner.unwrap_or(Type::Unit) != return_type
@@ -585,8 +576,10 @@ impl<'src> Analyzer<'src> {
 
     fn visit_loop_stmt(&mut self, node: LoopStmt<'src>) -> AnalyzedStatement<'src> {
         self.loop_count += 1;
+        self.scopes.push(Scope::default());
         let block_result_span = node.block.result_span();
         let block = self.visit_block(node.block);
+        self.drop_scope();
         self.loop_count -= 1;
 
         if !matches!(block.result_type, Type::Unit | Type::Never | Type::Unknown) {
@@ -631,8 +624,10 @@ impl<'src> Analyzer<'src> {
         }
 
         self.loop_count += 1;
+        self.scopes.push(Scope::default());
         let block_result_span = node.block.result_span();
         let block = self.visit_block(node.block);
+        self.drop_scope();
         self.loop_count -= 1;
 
         if !matches!(block.result_type, Type::Unit | Type::Never | Type::Unknown) {
@@ -678,7 +673,7 @@ impl<'src> Analyzer<'src> {
 
     fn visit_expression(&mut self, node: Expression<'src>) -> AnalyzedExpression<'src> {
         match node {
-            Expression::Block(node) => AnalyzedExpression::Block(self.visit_block(*node).into()),
+            Expression::Block(node) => self.visit_block_expression(*node),
             Expression::If(node) => self.visit_if_expression(*node),
             Expression::Int(node) => AnalyzedExpression::Int(node.inner),
             Expression::Float(node) => AnalyzedExpression::Float(node.inner),
@@ -694,6 +689,13 @@ impl<'src> Analyzer<'src> {
                 AnalyzedExpression::Grouped(self.visit_expression(*node.inner).into())
             }
         }
+    }
+
+    fn visit_block_expression(&mut self, node: Block<'src>) -> AnalyzedExpression<'src> {
+        self.scopes.push(Scope::default());
+        let res = AnalyzedExpression::Block(self.visit_block(node).into());
+        self.drop_scope();
+        res
     }
 
     fn visit_if_expression(&mut self, node: IfExpr<'src>) -> AnalyzedExpression<'src> {
@@ -723,15 +725,19 @@ impl<'src> Analyzer<'src> {
         }
 
         // analyze then_block
+        self.scopes.push(Scope::default());
         let then_result_span = node.then_block.result_span();
         let then_block = self.visit_block(node.then_block);
+        self.drop_scope();
 
         // analyze else_block if it exists
         let result_type;
         let else_block = match node.else_block {
             Some(else_block) => {
+                self.scopes.push(Scope::default());
                 let else_result_span = else_block.result_span();
                 let else_block = self.visit_block(else_block);
+                self.drop_scope();
 
                 // check type equality of the `then` and `else` branches
                 result_type = match (then_block.result_type, else_block.result_type) {
@@ -1070,14 +1076,13 @@ impl<'src> Analyzer<'src> {
 
     fn visit_call_expr(&mut self, node: CallExpr<'src>) -> AnalyzedExpression<'src> {
         // saves the name of the current function (not the callee!)
-        let curr_fn_name = self.scope().fn_name;
         let func = match (
             self.functions.get_mut(node.func.inner),
             self.builtin_functions.get(node.func.inner),
         ) {
             (Some(func), _) => {
                 // only mark the function as used if it is called from outside of its body
-                if curr_fn_name != node.func.inner {
+                if self.curr_fn != node.func.inner {
                     func.used = true;
                 }
                 Some((
