@@ -44,6 +44,8 @@ pub(crate) struct Loop<'ctx> {
     loop_head: BasicBlock<'ctx>,
     // saves the after_loop basic block
     after_loop: BasicBlock<'ctx>,
+    // contains the allocations available for the loop
+    allocations: Vec<(String, Type, PointerValue<'ctx>)>,
 }
 
 pub(crate) struct Function<'ctx> {
@@ -303,11 +305,29 @@ impl<'ctx> Compiler<'ctx> {
     /// Also inserts the pointer into the functions's [`HashMap`] for later use.
     fn compile_let_statement(&mut self, node: &AnalyzedLetStmt) {
         let rhs = self.compile_expression(&node.expr);
+
         // if there is already a pointer in the CURRENT scope, use it and skip allocation
         if let Some(shadowed_ptr) = self.scope().get(node.name) {
             self.builder.build_store(*shadowed_ptr, rhs);
             return;
         }
+
+        // if there is a loop, use it's allocations
+        if let Some(curr_loop) = &mut self.curr_loop {
+            for (idx, (alloc_ident, alloc_type, alloc_ptr)) in
+                curr_loop.allocations.iter_mut().enumerate()
+            {
+                // todo: remove this String allocation?
+                if *alloc_ident == node.name && *alloc_type == node.expr.result_type() {
+                    // store the value in the allocated pointer
+                    self.builder.build_store(*alloc_ptr, rhs);
+                    // remove this allocation from the vec
+                    curr_loop.allocations.remove(idx);
+                    return;
+                }
+            }
+        }
+
         // allocate a pointer for value
         let ptr = self.builder.build_alloca(rhs.get_type(), node.name);
         // store the rhs value in the pointer
@@ -328,6 +348,21 @@ impl<'ctx> Compiler<'ctx> {
         };
     }
 
+    /// Transforms a vector containing allocations tracked by the analyzer into a vector conainting
+    /// allocated pointers. For each element, a new LLVM pointer allocation is made.
+    /// Used in loop statements in order to perform allocations upfront.
+    fn do_loop_allocations(&self, src: &[(&str, Type)]) -> Vec<(String, Type, PointerValue<'ctx>)> {
+        src.iter()
+            .map(|(ident, type_)| {
+                (
+                    ident.to_string(),
+                    *type_,
+                    self.builder.build_alloca(self.to_llvm_type(*type_), ident),
+                )
+            })
+            .collect()
+    }
+
     /// Compiles an [`AnalyzedLoopStmt`].
     /// Generates a start basic block and a after basic block.
     /// When break / continue is used in the loop, it jumps to the start or end blocks.
@@ -346,6 +381,7 @@ impl<'ctx> Compiler<'ctx> {
         self.curr_loop = Some(Loop {
             loop_head,
             after_loop,
+            allocations: self.do_loop_allocations(&node.allocations),
         });
 
         // push a new scope for the loop
@@ -390,6 +426,7 @@ impl<'ctx> Compiler<'ctx> {
         self.curr_loop = Some(Loop {
             loop_head: while_head,
             after_loop: after_while,
+            allocations: self.do_loop_allocations(&node.allocations),
         });
 
         // push a new scope for the loop
@@ -434,6 +471,11 @@ impl<'ctx> Compiler<'ctx> {
             .context
             .append_basic_block(self.curr_fn().llvm_value, "for_body");
 
+        // create the `for_update` block
+        let for_update = self
+            .context
+            .append_basic_block(self.curr_fn().llvm_value, "for_update");
+
         // create the `after_for` block
         let after_for = self
             .context
@@ -443,6 +485,7 @@ impl<'ctx> Compiler<'ctx> {
         self.curr_loop = Some(Loop {
             loop_head: for_head,
             after_loop: after_for,
+            allocations: self.do_loop_allocations(&node.allocations),
         });
 
         // insert the initialization variable into the current scope
@@ -470,21 +513,23 @@ impl<'ctx> Compiler<'ctx> {
         self.builder
             .build_conditional_branch(cond.into_int_value(), for_body, after_for);
 
-        // compile the update expression
-        self.builder.position_at_end(for_body);
-        self.compile_expression(&node.update);
-
         // push a new scope for the loop
         self.scopes.push(HashMap::new());
 
         // compile the loop body
+        self.builder.position_at_end(for_body);
         self.compile_block(&node.block);
+        // jump to the update block
+        self.builder.build_unconditional_branch(for_update);
+
+        // compile the update expression
+        self.builder.position_at_end(for_update);
+        self.compile_expression(&node.update);
+        // jump back to the loop head
+        self.builder.build_unconditional_branch(for_head);
 
         // drop the scope
         self.scopes.pop();
-
-        // jump back to the loop head
-        self.builder.build_unconditional_branch(for_head);
 
         // place the builder cursor at the end of the `after_loop`
         self.builder.position_at_end(after_for);
@@ -1005,22 +1050,25 @@ impl<'ctx> Compiler<'ctx> {
 
     /// Compiles an [`AnalyzedAssignExpr`] by performing its operation and assignment.
     fn compile_assign_expression(&mut self, node: &AnalyzedAssignExpr) {
+        // get the pointer of the assignee
+        let ptr = *self
+            .scopes
+            .iter()
+            .find_map(|scope| scope.get(node.assignee))
+            .expect("an assignee always exists");
+
         match (node.op, node.expr.result_type()) {
             (AssignOp::Basic, _) => {
                 let rhs = self.compile_expression(&node.expr);
-                // get the pointer from the scope
-                let ptr = self.scope()[node.assignee];
                 // store the rhs value in the pointer
                 self.builder.build_store(ptr, rhs);
             }
             (op, Type::Int | Type::Float | Type::Bool) => {
-                // get the pointer from the scope
-                let ptr = self.scope()[node.assignee];
-                // load the value from the pointer
-                let assignee = self.builder.build_load(ptr, node.assignee);
                 // compile the value of the rhs for later use
                 let rhs = self.compile_expression(&node.expr);
-                // perform the operation on the pointer value and the rhs
+                // load the value from the pointer
+                let assignee = self.builder.build_load(ptr, node.assignee);
+                // perform the assign op operation on the pointer value and the rhs
                 let res = self.infix_helper(Type::Int, InfixOp::from(op), assignee, rhs);
                 // store the resulting value in the pointer
                 self.builder.build_store(ptr, res);
@@ -1164,6 +1212,19 @@ impl<'ctx> Compiler<'ctx> {
                 }
                 (None, _) => self.builder.build_return(None),
             };
+        }
+    }
+
+    fn to_llvm_type(&self, type_: Type) -> BasicTypeEnum<'ctx> {
+        match type_ {
+            Type::Int => self.context.i64_type().as_basic_type_enum(),
+            Type::Bool => self.context.bool_type().as_basic_type_enum(),
+            Type::Float => self.context.f64_type().as_basic_type_enum(),
+            Type::Char => self.context.i8_type().as_basic_type_enum(),
+            Type::Unit => self.context.bool_type().as_basic_type_enum(),
+            Type::Never | Type::Unknown => {
+                unreachable!("cannot convert these types")
+            }
         }
     }
 }
