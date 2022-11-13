@@ -13,7 +13,7 @@ pub struct AnalyzedProgram<'src> {
 pub struct AnalyzedFunctionDefinition<'src> {
     pub used: bool,
     pub name: &'src str,
-    pub params: Vec<(&'src str, Type)>,
+    pub params: Vec<(&'src str, Type, bool)>,
     pub return_type: Type,
     pub block: AnalyzedBlock<'src>,
 }
@@ -64,6 +64,7 @@ impl AnalyzedStatement<'_> {
 pub struct AnalyzedLetStmt<'src> {
     pub name: &'src str,
     pub expr: AnalyzedExpression<'src>,
+    pub mutable: bool,
 }
 
 pub type AnalyzedReturnStmt<'src> = Option<AnalyzedExpression<'src>>;

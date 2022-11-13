@@ -353,7 +353,7 @@ impl<'src> Analyzer<'src> {
                         mutable: param.mutable,
                     },
                 );
-                params.push((param.name.inner, param.type_.inner));
+                params.push((param.name.inner, param.type_.inner, param.mutable));
             }
         }
 
@@ -515,15 +515,18 @@ impl<'src> Analyzer<'src> {
                 );
             }
         } else {
-            // if the variable was not shadowed, create an allocation
-            if let Some(allocations) = self.allocations.as_mut() {
-                allocations.push((node.name.inner, expr.result_type()));
+            // if the variable was not shadowed and is mutable, create an allocation
+            if node.mutable {
+                if let Some(allocations) = self.allocations.as_mut() {
+                    allocations.push((node.name.inner, expr.result_type()));
+                }
             }
         }
 
         AnalyzedStatement::Let(AnalyzedLetStmt {
             name: node.name.inner,
             expr,
+            mutable: node.mutable,
         })
     }
 
