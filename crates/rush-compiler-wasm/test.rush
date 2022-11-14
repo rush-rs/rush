@@ -25,17 +25,14 @@ fn fib(mut n: int) -> int {
 
 fn pow(base: int, mut exponent: int) -> int {
     if exponent < 0 {
-        0
-    } else if exponent == 0 {
-        1
-    } else {
-        let mut accumulator = base;
-        while exponent != 1 {
-            exponent -= 1;
-            accumulator *= base;
-        }
-        accumulator
+        return 0;
     }
+    let mut accumulator = 1;
+    while exponent != 0 {
+        exponent -= 1;
+        accumulator *= base;
+    }
+    accumulator
 }
 
 fn fib_recursive(n: int) -> int {

@@ -178,71 +178,62 @@ impl Compiler<'_> {
             &["base", "exponent", "accumulator"], // names of params and locals
             &[
                 // if exponent < 0
-                instructions::LOCAL_GET,
-                1,
+                instructions::LOCAL_GET, // get
+                1,                       // exponent
                 instructions::I64_CONST,
                 0,
                 instructions::I64_LT_S,
-                instructions::IF,
-                types::I64,
+                instructions::IF, // if
+                types::I64,       // with result `int`
                 // then return 0
                 instructions::I64_CONST,
                 0,
-                // else if exponent == 0
-                instructions::ELSE,
-                instructions::LOCAL_GET,
-                1,
-                instructions::I64_EQZ,
-                instructions::IF,
-                types::I64,
-                // then return 1
-                instructions::I64_CONST,
-                1,
                 // else calculate with loop
                 instructions::ELSE,
-                // -- set accumulator to base
-                instructions::LOCAL_GET,
-                0,
-                instructions::LOCAL_SET,
-                2,
-                // -- begin loop
-                instructions::LOOP,
-                types::VOID,
-                // -- begin block
-                instructions::BLOCK,
-                types::VOID,
-                // -- subtract 1 from exponent
-                instructions::LOCAL_GET,
-                1,
+                // -- set accumulator to 1
                 instructions::I64_CONST,
                 1,
-                instructions::I64_SUB,
-                instructions::LOCAL_TEE,
-                1,
-                // -- break if exponent is 0
-                instructions::I64_EQZ,
-                instructions::BR_IF,
-                0, // branch depth, 0 = end of block
-                // -- multiply accumulator with base
-                instructions::LOCAL_GET,
-                2,
-                instructions::LOCAL_GET,
-                0,
-                instructions::I64_MUL,
                 instructions::LOCAL_SET,
                 2,
-                // -- continue loop
+                // -- begin block around loop
+                instructions::BLOCK,
+                types::VOID, // with result `()`
+                // -- begin loop
+                instructions::LOOP,
+                types::VOID, // with result `()`
+                // -- break if exponent == 0
+                instructions::LOCAL_GET, // get
+                1,                       // exponent
+                instructions::I64_EQZ,   // == 0
+                instructions::BR_IF,     // conditional jump
+                1,                       // to end of outer block
+                // -- decrement exponent
+                instructions::LOCAL_GET, // get
+                1,                       // exponent
+                instructions::I64_CONST,
+                1,
+                instructions::I64_SUB,   // subtract 1
+                instructions::LOCAL_SET, // set
+                1,                       // exponent
+                // -- multiply accumulator with base
+                instructions::LOCAL_GET, // get
+                2,                       // accumulator
+                instructions::LOCAL_GET, // get
+                0,                       // base
+                instructions::I64_MUL,   // multiply
+                instructions::LOCAL_SET, // set
+                2,                       // accumulator
+                // -- jump to start of loop
                 instructions::BR,
-                1, // branch depth, 1 = start of loop
-                // -- end block
-                instructions::END,
+                0,
                 // -- end loop
                 instructions::END,
-                // -- get result in accumulator
+                // -- end block
+                instructions::END,
+                // -- return accumulator
                 instructions::LOCAL_GET,
                 2,
                 // end if
-                instructions::END,
                 instructions::END,
                 // end function body
                 instructions::END,
