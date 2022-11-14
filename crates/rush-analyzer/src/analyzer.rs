@@ -304,6 +304,16 @@ impl<'src> Analyzer<'src> {
         let expr_span = node.expr.span();
         let expr = self.expression(node.expr);
 
+        // check if the expression is constant
+        if !expr.constant() {
+            self.error(
+                ErrorKind::Semantic,
+                "global initializer is not constant",
+                vec!["global variables must have a constant initializer".into()],
+                expr_span,
+            );
+        }
+
         // check if the optional type conflicts with the rhs
         if let Some(declared) = &node.type_ {
             if declared.inner != expr.result_type()
