@@ -1,5 +1,4 @@
 use inkwell::{
-    module::Linkage,
     types::BasicMetadataTypeEnum,
     values::{BasicMetadataValueEnum, BasicValueEnum, FloatValue},
     FloatPredicate, IntPredicate,
@@ -26,8 +25,7 @@ impl<'ctx> Compiler<'ctx> {
                 ],
                 false,
             );
-            self.module
-                .add_function("pow", pow_type, Some(Linkage::Internal));
+            self.module.add_function("pow", pow_type, None);
         }
 
         let args: Vec<BasicMetadataValueEnum> = vec![
@@ -65,9 +63,9 @@ impl<'ctx> Compiler<'ctx> {
         // define the function signature
         let params = vec![BasicMetadataTypeEnum::FloatType(self.context.f64_type())];
         let signature = self.context.i8_type().fn_type(&params, false);
-        let function =
-            self.module
-                .add_function("core_float_to_char", signature, Some(Linkage::Internal));
+        let function = self
+            .module
+            .add_function("core_float_to_char", signature, None);
 
         // create a new basic block for the function
         let basic_block = self.context.append_basic_block(function, "entry");
@@ -147,9 +145,9 @@ impl<'ctx> Compiler<'ctx> {
         // define the function signature
         let params = vec![BasicMetadataTypeEnum::IntType(self.context.i64_type())];
         let signature = self.context.i8_type().fn_type(&params, false);
-        let function =
-            self.module
-                .add_function("core_int_to_char", signature, Some(Linkage::Internal));
+        let function = self
+            .module
+            .add_function("core_int_to_char", signature, None);
 
         // create a new basic block for the function
         let basic_block = self.context.append_basic_block(function, "entry");
