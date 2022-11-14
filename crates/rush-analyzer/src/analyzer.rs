@@ -52,6 +52,7 @@ pub struct Variable {
     pub span: Span,
     pub used: bool,
     pub mutable: bool,
+    pub mutated: bool,
 }
 
 impl<'src> Analyzer<'src> {
@@ -241,6 +242,12 @@ impl<'src> Analyzer<'src> {
                     .into()],
                     var.span,
                 );
+            } else if var.mutable && !var.mutated {
+                self.info(
+                    format!("variable `{name}` does not need to be mutable"),
+                    vec![],
+                    var.span,
+                );
             }
         }
     }
@@ -351,6 +358,7 @@ impl<'src> Analyzer<'src> {
                         span: param.name.span,
                         used: false,
                         mutable: param.mutable,
+                        mutated: false,
                     },
                 );
                 params.push(AnalyzedParameter {
@@ -500,6 +508,7 @@ impl<'src> Analyzer<'src> {
                 span: node.name.span,
                 used: false,
                 mutable: node.mutable,
+                mutated: false,
             },
         ) {
             // a previous variable is shadowed by this declaration, analyze its use
@@ -516,6 +525,12 @@ impl<'src> Analyzer<'src> {
                 self.hint(
                     format!("variable `{}` shadowed here", node.name.inner),
                     node.name.span,
+                );
+            } else if old.mutable && !old.mutated {
+                self.info(
+                    format!("variable `{}` does not need to be mutable", node.name.inner),
+                    vec![],
+                    old.span,
                 );
             }
         } else {
@@ -699,6 +714,8 @@ impl<'src> Analyzer<'src> {
                 span: node.ident.span,
                 used: false,
                 mutable: true,
+                // always set mutated = true, even if it is not mutated, to prevent weird warnings
+                mutated: true,
             },
         );
 
@@ -1134,10 +1151,12 @@ impl<'src> Analyzer<'src> {
     fn assign_expr(&mut self, node: AssignExpr<'src>) -> AnalyzedExpression<'src> {
         let var_type = match self
             .scopes
-            .iter()
-            .find_map(|scope| scope.get(node.assignee.inner))
+            .iter_mut()
+            .rev()
+            .find_map(|scope| scope.get_mut(node.assignee.inner))
         {
             Some(var) => {
+                var.mutated = true;
                 let type_ = var.type_;
                 if !var.mutable {
                     let span = var.span;
