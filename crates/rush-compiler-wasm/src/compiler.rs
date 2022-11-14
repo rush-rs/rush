@@ -22,6 +22,8 @@ pub struct Compiler<'src> {
 
     /// Maps variable names to `Option<local_idx>`, or `None` when of type `()`
     pub(crate) scopes: Vec<HashMap<&'src str, Option<Vec<u8>>>>,
+    /// Maps global variable names to `global_idx`
+    pub(crate) global_scope: HashMap<&'src str, Vec<u8>>,
     /// Maps function names to their index encoded as unsigned LEB128
     pub(crate) functions: HashMap<&'src str, Vec<u8>>,
     /// Maps builtin function names to their index encoded as unsigned LEB128
@@ -48,6 +50,12 @@ pub struct Compiler<'src> {
     pub(crate) local_names: Vec<(Vec<u8>, Vec<Vec<u8>>)>,
     /// The index of the currently compiling function in the `local_names` vec
     pub(crate) curr_func_idx: usize,
+    pub(crate) global_names: Vec<Vec<u8>>,
+}
+
+enum Variable<'compiler> {
+    Global(&'compiler Vec<u8>),
+    Local(&'compiler Option<Vec<u8>>),
 }
 
 impl<'src> Compiler<'src> {
@@ -98,7 +106,11 @@ impl<'src> Compiler<'src> {
             &Self::section(10, self.code_section),
             &Self::section(11, self.data_section),
             &self.data_count_section,
-            &Self::name_section(self.imported_function_names, self.local_names),
+            &Self::name_section(
+                self.imported_function_names,
+                self.local_names,
+                self.global_names,
+            ),
         ]
         .concat()
     }
@@ -145,6 +157,7 @@ impl<'src> Compiler<'src> {
     fn name_section(
         function_names: Vec<Vec<u8>>,
         local_names: Vec<(Vec<u8>, Vec<Vec<u8>>)>,
+        global_names: Vec<Vec<u8>>,
     ) -> Vec<u8> {
         let contents = [
             &[4][..],                          // string len
@@ -158,6 +171,7 @@ impl<'src> Compiler<'src> {
                     .map(|(func_idx, locals)| [func_idx, Self::vector(locals, false)].concat())
                     .collect(),
             ),
+            &Self::section(7, global_names), // global names subsection
         ]
         .concat();
         [
@@ -180,11 +194,14 @@ impl<'src> Compiler<'src> {
         self.scopes.last_mut().unwrap()
     }
 
-    fn find_var(&self, name: &'src str) -> &Option<Vec<u8>> {
+    fn find_var(&self, name: &'src str) -> Variable<'_> {
         for scope in self.scopes.iter().rev() {
             if let Some(idx) = scope.get(name) {
-                return idx;
+                return Variable::Local(idx);
             }
+        }
+        if let Some(idx) = self.global_scope.get(name) {
+            return Variable::Global(idx);
         }
         panic!("the analyzer guarantees valid variable references");
     }
@@ -192,6 +209,48 @@ impl<'src> Compiler<'src> {
     /////////////////////////
 
     fn program(&mut self, node: AnalyzedProgram<'src>) {
+        // add globals
+        for global in &node.globals {
+            // get index
+            let global_idx = self.global_scope.len().to_uleb128();
+
+            // add name to name section
+            self.global_names.push(
+                [
+                    &global_idx[..],                 // function index
+                    &global.name.len().to_uleb128(), // string len
+                    global.name.as_bytes(),          // name
+                ]
+                .concat(),
+            );
+
+            // save index in global scope
+            self.global_scope.insert(global.name, global_idx);
+
+            let mut buf = vec![
+                utils::type_to_byte(global.expr.result_type())
+                    .expect("globals cannot be `()` or `!`"), // type of global
+                1, // always mutable (for now), TODO: constant globals
+            ];
+            match global.expr.result_type() {
+                Type::Int => {
+                    buf.push(instructions::I64_CONST);
+                    buf.push(0); // dummy 0 (for now), TODO: constant globals
+                }
+                Type::Float => {
+                    buf.push(instructions::F64_CONST);
+                    buf.extend_from_slice(&0_f64.to_le_bytes()); // dummy 0 (for now), TODO: constant globals
+                }
+                Type::Bool | Type::Char => {
+                    buf.push(instructions::I32_CONST);
+                    buf.push(0); // dummy 0 (for now), TODO: constant globals
+                }
+                _ => panic!("globals cannot be `()` or `!`"),
+            }
+            buf.push(instructions::END);
+            self.global_section.push(buf);
+        }
+
         // add main fn signature
         {
             // add to self.functions map
@@ -228,7 +287,7 @@ impl<'src> Compiler<'src> {
         }
 
         // compile functions
-        self.main_fn(node.main_fn);
+        self.main_fn(node.main_fn, node.globals);
         for (idx, func) in node
             .functions
             .into_iter()
@@ -243,7 +302,7 @@ impl<'src> Compiler<'src> {
         self.code_section.append(&mut self.builtins_code);
     }
 
-    fn main_fn(&mut self, body: AnalyzedBlock<'src>) {
+    fn main_fn(&mut self, body: AnalyzedBlock<'src>, globals: Vec<AnalyzedLetStmt<'src>>) {
         let main_idx = self.import_count.to_uleb128();
 
         // export main func as WASI `_start` func
@@ -267,6 +326,14 @@ impl<'src> Compiler<'src> {
 
         // set param_count to 0
         self.param_count = 0;
+
+        // set globals to initial values, TODO: constant globals
+        for global in globals {
+            self.expression(global.expr);
+            self.function_body.push(instructions::GLOBAL_SET);
+            self.function_body
+                .extend_from_slice(&self.global_scope[global.name]);
+        }
 
         // function body
         self.push_scope();
@@ -568,13 +635,20 @@ impl<'src> Compiler<'src> {
                 self.function_body.push(instructions::I32_CONST);
                 value.write_sleb128(&mut self.function_body);
             }
-            AnalyzedExpression::Ident(ident) => {
-                // unit type requires no instructions
-                if let Some(local_idx) = self.find_var(ident.ident).clone() {
+            AnalyzedExpression::Ident(ident) => match self.find_var(ident.ident) {
+                Variable::Global(global_idx) => {
+                    let global_idx = global_idx.clone();
+                    self.function_body.push(instructions::GLOBAL_GET);
+                    self.function_body.extend_from_slice(&global_idx);
+                }
+                Variable::Local(Some(local_idx)) => {
+                    let local_idx = local_idx.clone();
                     self.function_body.push(instructions::LOCAL_GET);
                     self.function_body.extend_from_slice(&local_idx);
                 }
-            }
+                // unit type requires no instructions
+                Variable::Local(None) => {}
+            },
             AnalyzedExpression::Prefix(node) => self.prefix_expr(*node),
             AnalyzedExpression::Infix(node) => self.infix_expr(*node),
             AnalyzedExpression::Assign(node) => self.assign_expr(*node),
@@ -742,15 +816,27 @@ impl<'src> Compiler<'src> {
     }
 
     fn assign_expr(&mut self, node: AnalyzedAssignExpr<'src>) {
-        let Some(local_idx) = self.find_var(node.assignee).clone() else {
-            self.expression(node.expr);
-            return;
+        let (get_instr, set_instr, idx) = match self.find_var(node.assignee) {
+            Variable::Global(idx) => (
+                instructions::GLOBAL_GET,
+                instructions::GLOBAL_SET,
+                idx.clone(),
+            ),
+            Variable::Local(Some(idx)) => (
+                instructions::LOCAL_GET,
+                instructions::LOCAL_SET,
+                idx.clone(),
+            ),
+            Variable::Local(None) => {
+                self.expression(node.expr);
+                return;
+            }
         };
 
         // get the current value if assignment is more than just `=`
         if node.op != AssignOp::Basic {
-            self.function_body.push(instructions::LOCAL_GET);
-            self.function_body.extend_from_slice(&local_idx);
+            self.function_body.push(get_instr);
+            self.function_body.extend_from_slice(&idx);
         }
 
         // save expr_type
@@ -792,8 +878,8 @@ impl<'src> Compiler<'src> {
         }
 
         // set local to new value
-        self.function_body.push(instructions::LOCAL_SET);
-        self.function_body.extend_from_slice(&local_idx);
+        self.function_body.push(set_instr);
+        self.function_body.extend_from_slice(&idx);
     }
 
     fn call_expr(&mut self, node: AnalyzedCallExpr<'src>) {

@@ -1,9 +1,11 @@
+let mut a = 234;
+
+fn set() {
+    a += 2;
+}
+
 fn main() {
-    let a = 'a';
-    {
-        let a = 3.14;
-    }
-    let a = 1;
+    set();
     exit(a);
 }
 
