@@ -1160,6 +1160,7 @@ impl<'src> Analyzer<'src> {
             InfixOp::Rem | InfixOp::Shl | InfixOp::Shr => {
                 allowed_types = &[Type::Int];
             }
+            // TODO: make this constant again (after the optimizer is introduced)
             InfixOp::Pow => {
                 allows_constant = false;
                 allowed_types = &[Type::Int];
