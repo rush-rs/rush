@@ -92,12 +92,6 @@ impl<'ctx> Compiler<'ctx> {
         }
     }
 
-    /// Returns a reference to the current scope
-    /// Panics if there are no scopes.
-    fn scope(&self) -> &HashMap<String, Variable<'ctx>> {
-        self.scopes.last().as_ref().expect("only called in scopes")
-    }
-
     // Returns a mutable reference to the current scope
     /// Panics if there are no scopes.
     fn scope_mut(&mut self) -> &mut HashMap<String, Variable<'ctx>> {
@@ -347,35 +341,8 @@ impl<'ctx> Compiler<'ctx> {
         // if the variable is mutable, no pointer allocations are required
         match node.mutable {
             true => {
-                // if there is already a pointer in the CURRENT scope, use it and skip allocation
-                if let Some(Variable::Mut(shadowed_ptr)) = self.scope().get(node.name) {
-                    self.builder.build_store(*shadowed_ptr, rhs);
-                    return;
-                }
-
-                // if there is a (root) loop, use its allocations
-                if let Some(curr_loop) = self.loops.first_mut() {
-                    for (idx, (alloc_ident, alloc_type, alloc_ptr)) in
-                        curr_loop.allocations.iter_mut().enumerate()
-                    {
-                        // todo: remove this String allocation?
-                        if *alloc_ident == node.name && *alloc_type == node.expr.result_type() {
-                            // store the value in the allocated pointer
-                            self.builder.build_store(*alloc_ptr, rhs);
-                            // remove this allocation from the vec
-                            curr_loop.allocations.remove(idx);
-                            return;
-                        }
-                    }
-                    unreachable!(
-                        "every loop allocation exists: {}: {}",
-                        node.name,
-                        node.expr.result_type()
-                    );
-                }
-
-                // allocate a pointer for value
-                let ptr = self.builder.build_alloca(rhs.get_type(), node.name);
+                // allocate a pointer for the value
+                let ptr = self.alloc_ptr(node.name, node.expr.result_type(), rhs.get_type());
 
                 // store the rhs value in the pointer
                 self.builder.build_store(ptr, rhs);
@@ -389,6 +356,36 @@ impl<'ctx> Compiler<'ctx> {
                     .insert(node.name.to_string(), Variable::Const(rhs));
             }
         };
+    }
+
+    fn alloc_ptr(
+        &mut self,
+        name: &str,
+        type_: Type,
+        llvm_type: BasicTypeEnum<'ctx>,
+    ) -> PointerValue<'ctx> {
+        // if there is a (root) loop, use its allocations
+        match self.loops.first_mut() {
+            Some(curr_loop) => {
+                let mut ptr = None;
+                for (idx, (alloc_ident, alloc_type, alloc_ptr)) in
+                    curr_loop.allocations.iter_mut().enumerate()
+                {
+                    // todo: remove this String allocation?
+                    if *alloc_ident == name && *alloc_type == type_ {
+                        ptr = Some(*alloc_ptr);
+                        // remove this allocation from the vec
+                        curr_loop.allocations.remove(idx);
+                        break;
+                    }
+                }
+                ptr.expect("every loop allocation exists")
+            }
+            None => {
+                // if there is no loop with allocations, allocate a pointer
+                self.builder.build_alloca(llvm_type, name)
+            }
+        }
     }
 
     /// Compiles a return statement with an optional expression as it's value.
@@ -546,14 +543,29 @@ impl<'ctx> Compiler<'ctx> {
             .context
             .append_basic_block(self.curr_fn().llvm_value, "after_for");
 
-        // insert the initialization variable into the current scope
-        let init_value = self.compile_expression(&node.initializer);
+        // insert the induction variable into the current scope
+        let induction_var = self.compile_expression(&node.initializer);
 
-        // allocate a pointer for the variable
-        let ptr = self.builder.build_alloca(init_value.get_type(), node.ident);
+        // allocate a pointer for the induction variable
+        let ptr = self.alloc_ptr(
+            node.ident,
+            node.initializer.result_type(),
+            induction_var.get_type(),
+        );
 
         // store the value in the pointer
-        self.builder.build_store(ptr, init_value);
+        self.builder.build_store(ptr, induction_var);
+
+        // push a new scope for the loop
+        self.scopes.push(HashMap::new());
+
+        // set the loop metadata so that the inner block can use it
+        let allocations = self.do_loop_allocations(&node.allocations);
+        self.loops.push(Loop {
+            loop_head: for_head,
+            after_loop: after_for,
+            allocations,
+        });
 
         // add the pointer to the loop's scope
         self.scope_mut()
@@ -568,17 +580,6 @@ impl<'ctx> Compiler<'ctx> {
         // if the condition is true, jump into the for body, otherwise, quit the loop
         self.builder
             .build_conditional_branch(cond.into_int_value(), for_body, after_for);
-
-        // push a new scope for the loop
-        self.scopes.push(HashMap::new());
-
-        // set the loop metadata so that the inner block can use it
-        let allocations = self.do_loop_allocations(&node.allocations);
-        self.loops.push(Loop {
-            loop_head: for_head,
-            after_loop: after_for,
-            allocations,
-        });
 
         // compile the loop body
         self.builder.position_at_end(for_body);
@@ -1285,6 +1286,6 @@ mod tests {
         let (obj, ir) = compiler.compile(ast).unwrap();
         fs::write("./main.ll", &ir).unwrap();
         fs::write("./main.o", obj.as_slice()).unwrap();
-        println!("{ir}");
+        //println!("{ir}");
     }
 }
