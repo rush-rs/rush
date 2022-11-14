@@ -123,6 +123,9 @@ impl<'ctx> Compiler<'ctx> {
         // compile the main function
         self.compile_main_fn(&program.main_fn);
 
+        #[cfg(test)]
+        self.module.print_to_stderr();
+
         // verify the LLVM module when using debug
         #[cfg(debug_assertions)]
         self.module.verify().unwrap();
