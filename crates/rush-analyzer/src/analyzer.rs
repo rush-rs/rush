@@ -799,6 +799,9 @@ impl<'src> Analyzer<'src> {
     }
 
     fn for_stmt(&mut self, node: ForStmt<'src>) -> AnalyzedStatement<'src> {
+        // push the scope here so that the initializer is in the new scope
+        self.push_scope();
+
         // analyze the type of the init variable
         let initializer = self.expression(node.initializer);
         self.scope_mut().insert(
@@ -870,7 +873,6 @@ impl<'src> Analyzer<'src> {
         }
 
         self.loop_count += 1;
-        self.push_scope();
         let block_result_span = node.block.result_span();
         let block = self.block(node.block);
         self.pop_scope();
