@@ -1259,7 +1259,7 @@ mod tests {
 
     #[test]
     fn test_main_fn() {
-        let filename = "./test.rush";
+        let filename = "./main.rush";
         let file = fs::read_to_string(filename).unwrap();
         let ast = match rush_analyzer::analyze(&file, filename) {
             Ok(res) => {
@@ -1286,6 +1286,6 @@ mod tests {
         let (obj, ir) = compiler.compile(ast).unwrap();
         fs::write("./main.ll", &ir).unwrap();
         fs::write("./main.o", obj.as_slice()).unwrap();
-        //println!("{ir}");
+        println!("{ir}");
     }
 }
