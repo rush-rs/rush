@@ -17,8 +17,11 @@ use rush_parser::{Lexer, Parser};
 /// Analyzes rush source code and returns an analyzed (annotated) AST.
 /// The `Ok(_)` variant also returns non-error diagnostics.
 /// However, the `Err(_)` variant returns a `Vec<Diagnostic>` which contains at least one error
-pub fn analyze(text: &str) -> Result<(AnalyzedProgram, Vec<Diagnostic>), Vec<Diagnostic>> {
-    let lexer = Lexer::new(text);
+pub fn analyze<'src>(
+    text: &'src str,
+    path: &'src str,
+) -> Result<(AnalyzedProgram<'src>, Vec<Diagnostic<'src>>), Vec<Diagnostic<'src>>> {
+    let lexer = Lexer::new(text, path);
 
     let parser = Parser::new(lexer);
     let (ast, errs) = parser.parse();

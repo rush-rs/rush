@@ -3,13 +3,13 @@ use std::{mem, str::Chars};
 use crate::{Error, Location, Result, Token, TokenKind};
 
 pub trait Lex<'src> {
-    fn next_token(&mut self) -> Result<Token<'src>>;
+    fn next_token(&mut self) -> Result<'src, Token<'src>>;
 }
 
 pub struct Lexer<'src> {
     input: &'src str,
     reader: Chars<'src>,
-    location: Location,
+    location: Location<'src>,
     curr_char: Option<char>,
     next_char: Option<char>,
 }
@@ -28,7 +28,7 @@ macro_rules! char_construct {
 }
 
 impl<'src> Lex<'src> for Lexer<'src> {
-    fn next_token(&mut self) -> Result<Token<'src>> {
+    fn next_token(&mut self) -> Result<'src, Token<'src>> {
         // skip comments, whitespaces and newlines
         loop {
             match (self.curr_char, self.next_char) {
@@ -81,11 +81,11 @@ impl<'src> Lex<'src> for Lexer<'src> {
 }
 
 impl<'src> Lexer<'src> {
-    pub fn new(text: &'src str) -> Self {
+    pub fn new(text: &'src str, path: &'src str) -> Self {
         let mut lexer = Self {
             input: text,
             reader: text.chars(),
-            location: Location::default(),
+            location: Location::new(path),
             curr_char: None,
             next_char: None,
         };
@@ -180,7 +180,7 @@ impl<'src> Lexer<'src> {
         }
     }
 
-    fn make_char(&mut self) -> Result<Token<'src>> {
+    fn make_char(&mut self) -> Result<'src, Token<'src>> {
         let start_loc = self.location;
         self.next();
 
@@ -277,7 +277,7 @@ impl<'src> Lexer<'src> {
         }
     }
 
-    fn make_number(&mut self) -> Result<Token<'src>> {
+    fn make_number(&mut self) -> Result<'src, Token<'src>> {
         let start_loc = self.location;
 
         if self.curr_char == Some('0') && self.next_char == Some('x') {
@@ -508,7 +508,7 @@ mod tests {
         ];
         println!();
         for (input, expected) in tests {
-            let mut lexer = Lexer::new(input);
+            let mut lexer = Lexer::new(input, "");
             let res = lexer.next_token();
             match (res, expected) {
                 (Ok(_), Err(expected)) => panic!("Expected error: {:?}, got none", expected),
@@ -528,7 +528,7 @@ mod tests {
     }
 
     impl<'src> Iterator for Lexer<'src> {
-        type Item = Result<Token<'src>>;
+        type Item = Result<'src, Token<'src>>;
 
         fn next(&mut self) -> Option<Self::Item> {
             match self.next_token() {
@@ -543,7 +543,7 @@ mod tests {
 
     #[test]
     fn call_expr() {
-        let lexer = Lexer::new("exit(1 + 3);");
+        let lexer = Lexer::new("exit(1 + 3);", "");
         assert_eq!(
             lexer.collect::<Result<Vec<_>>>(),
             Ok(vec![

@@ -8,7 +8,7 @@ pub struct Parser<'src, Lexer: Lex<'src>> {
     lexer: Lexer,
     prev_tok: Token<'src>,
     curr_tok: Token<'src>,
-    errors: Vec<Error>,
+    errors: Vec<Error<'src>>,
 }
 
 impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
@@ -17,8 +17,8 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         Self {
             lexer,
             // initialize with dummy Eof tokens
-            prev_tok: Token::default(),
-            curr_tok: Token::default(),
+            prev_tok: Token::dummy(),
+            curr_tok: Token::dummy(),
             errors: vec![],
         }
     }
@@ -31,7 +31,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
     /// - successful: `(Some(Program), [])`
     /// - partially successful: `(Some(Program), [..errors])`
     /// - unsuccessful: `(Err(fatal_error), [..errors])`
-    pub fn parse(mut self) -> (Result<Program<'src>>, Vec<Error>) {
+    pub fn parse(mut self) -> (Result<'src, Program<'src>>, Vec<Error<'src>>) {
         if let Err(err) = self.next() {
             return (Err(err), self.errors);
         }
@@ -52,7 +52,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
     }
 
     // moves cursor to next token
-    fn next(&mut self) -> Result<()> {
+    fn next(&mut self) -> Result<'src, ()> {
         // swap prev_tok and curr_tok in memory so that what was curr_tok is now prev_tok
         mem::swap(&mut self.prev_tok, &mut self.curr_tok);
         // overwrite curr_tok (which is now what prev_tok was) with the next token from the lexer
@@ -62,7 +62,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
     }
 
     // expects the curr_tok to be of the specified kind
-    fn expect(&mut self, kind: TokenKind) -> Result<()> {
+    fn expect(&mut self, kind: TokenKind) -> Result<'src, ()> {
         if self.curr_tok.kind != kind {
             return Err(Error::new(
                 format!("expected `{kind}`, found `{}`", self.curr_tok.kind),
@@ -74,7 +74,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
     }
 
     // expects the curr_tok to be an identifier and returns its name if this is the case
-    fn expect_ident(&mut self) -> Result<Spanned<&'src str>> {
+    fn expect_ident(&mut self) -> Result<'src, Spanned<'src, &'src str>> {
         match self.curr_tok.kind {
             TokenKind::Ident(ident) => {
                 let ident = Spanned {
@@ -96,8 +96,8 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         &mut self,
         kind: TokenKind,
         message: impl Into<String>,
-        span: Span,
-    ) -> Result<Span> {
+        span: Span<'src>,
+    ) -> Result<'src, Span<'src>> {
         let start_loc = self.curr_tok.span.start;
         let end_loc = if self.curr_tok.kind != kind {
             self.errors.push(Error::new(message.into(), span));
@@ -111,7 +111,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
 
     //////////////////////////
 
-    fn program(&mut self) -> Result<Program<'src>> {
+    fn program(&mut self) -> Result<'src, Program<'src>> {
         let start_loc = self.curr_tok.span.start;
         let mut functions = vec![];
 
@@ -125,7 +125,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         })
     }
 
-    fn type_(&mut self) -> Result<Spanned<Type>> {
+    fn type_(&mut self) -> Result<'src, Spanned<'src, Type>> {
         let start_loc = self.curr_tok.span.start;
         let type_ = match self.curr_tok.kind {
             TokenKind::Ident("int") => Type::Int,
@@ -165,7 +165,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         })
     }
 
-    fn function_definition(&mut self) -> Result<FunctionDefinition<'src>> {
+    fn function_definition(&mut self) -> Result<'src, FunctionDefinition<'src>> {
         let start_loc = self.curr_tok.span.start;
 
         self.expect(TokenKind::Fn)?;
@@ -222,7 +222,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         })
     }
 
-    fn parameter(&mut self) -> Result<Parameter<'src>> {
+    fn parameter(&mut self) -> Result<'src, Parameter<'src>> {
         let mutable = self.curr_tok.kind == TokenKind::Mut;
         if mutable {
             self.next()?;
@@ -236,7 +236,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
                     name.span,
                 ));
                 Spanned {
-                    span: Span::default(),
+                    span: Span::dummy(),
                     inner: Type::Unknown,
                 }
             }
@@ -252,7 +252,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         })
     }
 
-    fn block(&mut self) -> Result<Block<'src>> {
+    fn block(&mut self) -> Result<'src, Block<'src>> {
         let start_loc = self.curr_tok.span.start;
 
         self.expect(TokenKind::LBrace)?;
@@ -282,7 +282,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         })
     }
 
-    fn statement(&mut self) -> Result<Either<Statement<'src>, Expression<'src>>> {
+    fn statement(&mut self) -> Result<'src, Either<Statement<'src>, Expression<'src>>> {
         Ok(match self.curr_tok.kind {
             TokenKind::Let => Either::Left(self.let_stmt()?),
             TokenKind::Return => Either::Left(self.return_stmt()?),
@@ -295,7 +295,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         })
     }
 
-    fn let_stmt(&mut self) -> Result<Statement<'src>> {
+    fn let_stmt(&mut self) -> Result<'src, Statement<'src>> {
         let start_loc = self.curr_tok.span.start;
 
         // skip let token: this function is only called when self.curr_tok.kind == TokenKind::Let
@@ -333,7 +333,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         }))
     }
 
-    fn return_stmt(&mut self) -> Result<Statement<'src>> {
+    fn return_stmt(&mut self) -> Result<'src, Statement<'src>> {
         let start_loc = self.curr_tok.span.start;
 
         // skip return token: this function is only called when self.curr_tok.kind == TokenKind::Return
@@ -356,7 +356,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         }))
     }
 
-    fn loop_stmt(&mut self) -> Result<Statement<'src>> {
+    fn loop_stmt(&mut self) -> Result<'src, Statement<'src>> {
         let start_loc = self.curr_tok.span.start;
 
         // skip loop token: this function is only called when self.curr_tok.kind == TokenKind::Loop
@@ -375,7 +375,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         }))
     }
 
-    fn while_stmt(&mut self) -> Result<Statement<'src>> {
+    fn while_stmt(&mut self) -> Result<'src, Statement<'src>> {
         let start_loc = self.curr_tok.span.start;
 
         // skip while token: this function is only called when self.curr_tok.kind == TokenKind::While
@@ -397,7 +397,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         }))
     }
 
-    fn for_stmt(&mut self) -> Result<Statement<'src>> {
+    fn for_stmt(&mut self) -> Result<'src, Statement<'src>> {
         let start_loc = self.curr_tok.span.start;
 
         // skip for token: this function is only called when self.curr_tok.kind == TokenKind::For
@@ -446,7 +446,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         }))
     }
 
-    fn break_stmt(&mut self) -> Result<Statement<'src>> {
+    fn break_stmt(&mut self) -> Result<'src, Statement<'src>> {
         let start_loc = self.curr_tok.span.start;
 
         // skip break token: this function is only called when self.curr_tok.kind == TokenKind::Break
@@ -463,7 +463,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         }))
     }
 
-    fn continue_stmt(&mut self) -> Result<Statement<'src>> {
+    fn continue_stmt(&mut self) -> Result<'src, Statement<'src>> {
         let start_loc = self.curr_tok.span.start;
 
         // skip continue token: this function is only called when self.curr_tok.kind == TokenKind::Continue
@@ -480,7 +480,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         }))
     }
 
-    fn expr_stmt(&mut self) -> Result<Either<Statement<'src>, Expression<'src>>> {
+    fn expr_stmt(&mut self) -> Result<'src, Either<Statement<'src>, Expression<'src>>> {
         let start_loc = self.curr_tok.span.start;
 
         let (expr, with_block) = match self.curr_tok.kind {
@@ -506,7 +506,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         })))
     }
 
-    fn expression(&mut self, prec: u8) -> Result<Expression<'src>> {
+    fn expression(&mut self, prec: u8) -> Result<'src, Expression<'src>> {
         let start_loc = self.curr_tok.span.start;
 
         let mut lhs = match self.curr_tok.kind {
@@ -571,7 +571,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         Ok(lhs)
     }
 
-    fn if_expr(&mut self) -> Result<IfExpr<'src>> {
+    fn if_expr(&mut self) -> Result<'src, IfExpr<'src>> {
         let start_loc = self.curr_tok.span.start;
 
         // skip if token: this function is only called when self.curr_tok.kind == TokenKind::If
@@ -613,7 +613,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         })
     }
 
-    fn atom<T>(&mut self, inner: T) -> Result<Spanned<T>> {
+    fn atom<T>(&mut self, inner: T) -> Result<'src, Spanned<'src, T>> {
         let start_loc = self.curr_tok.span.start;
         self.next()?;
         Ok(Spanned {
@@ -622,7 +622,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         })
     }
 
-    fn prefix_expr(&mut self, op: PrefixOp) -> Result<PrefixExpr<'src>> {
+    fn prefix_expr(&mut self, op: PrefixOp) -> Result<'src, PrefixExpr<'src>> {
         let start_loc = self.curr_tok.span.start;
 
         // skip the operator token
@@ -637,7 +637,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         })
     }
 
-    fn grouped_expr(&mut self) -> Result<Spanned<Box<Expression<'src>>>> {
+    fn grouped_expr(&mut self) -> Result<'src, Spanned<'src, Box<Expression<'src>>>> {
         let start_loc = self.curr_tok.span.start;
         // skip the opening parenthesis
         self.next()?;
@@ -657,10 +657,10 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
 
     fn infix_expr(
         &mut self,
-        start_loc: Location,
+        start_loc: Location<'src>,
         lhs: Expression<'src>,
         op: InfixOp,
-    ) -> Result<Expression<'src>> {
+    ) -> Result<'src, Expression<'src>> {
         let right_prec = self.curr_tok.kind.prec().1;
         self.next()?;
         let rhs = self.expression(right_prec)?;
@@ -678,10 +678,10 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
 
     fn assign_expr(
         &mut self,
-        start_loc: Location,
+        start_loc: Location<'src>,
         lhs: Expression<'src>,
         op: AssignOp,
-    ) -> Result<Expression<'src>> {
+    ) -> Result<'src, Expression<'src>> {
         let assignee = match lhs {
             Expression::Ident(item) => item,
             _ => {
@@ -690,7 +690,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
                     self.curr_tok.span,
                 ));
                 Spanned {
-                    span: Span::default(),
+                    span: Span::dummy(),
                     inner: "",
                 }
             }
@@ -713,9 +713,9 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
 
     fn call_expr(
         &mut self,
-        start_loc: Location,
+        start_loc: Location<'src>,
         expr: Expression<'src>,
-    ) -> Result<Expression<'src>> {
+    ) -> Result<'src, Expression<'src>> {
         let func = match expr {
             Expression::Ident(func) => func,
             _ => {
@@ -724,7 +724,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
                     self.curr_tok.span,
                 ));
                 Spanned {
-                    span: Span::default(),
+                    span: Span::dummy(),
                     inner: "",
                 }
             }
@@ -764,9 +764,9 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
 
     fn cast_expr(
         &mut self,
-        start_loc: Location,
+        start_loc: Location<'src>,
         expr: Expression<'src>,
-    ) -> Result<Expression<'src>> {
+    ) -> Result<'src, Expression<'src>> {
         // skip `as` token
         self.next()?;
 
@@ -792,8 +792,8 @@ mod tests {
     where
         T: Iterator<Item = Token<'src>>,
     {
-        fn next_token(&mut self) -> Result<Token<'src>> {
-            Ok(self.next().unwrap_or_default())
+        fn next_token(&mut self) -> Result<'src, Token<'src>> {
+            Ok(self.next().unwrap_or_else(Token::dummy))
         }
     }
 
@@ -802,7 +802,7 @@ mod tests {
     fn expr_test(
         tokens: impl IntoIterator<Item = Token<'static>>,
         tree: Expression<'static>,
-    ) -> Result<()> {
+    ) -> Result<'static, ()> {
         let mut parser = Parser::new(tokens.into_iter());
         parser.next()?;
         let expr = parser.expression(0)?;
@@ -816,7 +816,7 @@ mod tests {
     fn stmt_test(
         tokens: impl IntoIterator<Item = Token<'static>>,
         tree: Statement<'static>,
-    ) -> Result<()> {
+    ) -> Result<'static, ()> {
         let mut parser = Parser::new(tokens.into_iter());
         parser.next()?;
         let stmt = parser.statement()?;
@@ -830,7 +830,7 @@ mod tests {
     fn program_test(
         tokens: impl IntoIterator<Item = Token<'static>>,
         tree: Program<'static>,
-    ) -> Result<()> {
+    ) -> Result<'static, ()> {
         let parser = Parser::new(tokens.into_iter());
         let (res, errors) = parser.parse();
         assert!(dbg!(errors).is_empty());
@@ -839,7 +839,7 @@ mod tests {
     }
 
     #[test]
-    fn arithmetic_expressions() -> Result<()> {
+    fn arithmetic_expressions() -> Result<'static, ()> {
         // 3-2-1
         expr_test(
             tokens![
@@ -904,7 +904,7 @@ mod tests {
     }
 
     #[test]
-    fn assignment_expressions() -> Result<()> {
+    fn assignment_expressions() -> Result<'static, ()> {
         // a=1
         expr_test(
             tokens![
@@ -944,7 +944,7 @@ mod tests {
     }
 
     #[test]
-    fn if_expr() -> Result<()> {
+    fn if_expr() -> Result<'static, ()> {
         // if true{}
         expr_test(
             tokens![
@@ -1034,7 +1034,7 @@ mod tests {
     }
 
     #[test]
-    fn prefix_expressions() -> Result<()> {
+    fn prefix_expressions() -> Result<'static, ()> {
         // !func()
         expr_test(
             tokens![
@@ -1072,7 +1072,7 @@ mod tests {
     }
 
     #[test]
-    fn infix_expr() -> Result<()> {
+    fn infix_expr() -> Result<'static, ()> {
         infix_expr_test(TokenKind::Plus, InfixOp::Plus)?;
         infix_expr_test(TokenKind::Minus, InfixOp::Minus)?;
         infix_expr_test(TokenKind::Star, InfixOp::Mul)?;
@@ -1113,7 +1113,7 @@ mod tests {
     }
 
     #[test]
-    fn assign_expr() -> Result<()> {
+    fn assign_expr() -> Result<'static, ()> {
         assign_expr_test(TokenKind::Assign, AssignOp::Basic)?;
         assign_expr_test(TokenKind::PlusAssign, AssignOp::Plus)?;
         assign_expr_test(TokenKind::MinusAssign, AssignOp::Minus)?;
@@ -1131,7 +1131,7 @@ mod tests {
     }
 
     #[test]
-    fn let_stmt() -> Result<()> {
+    fn let_stmt() -> Result<'static, ()> {
         // let a=1;
         stmt_test(
             tokens![
@@ -1193,7 +1193,7 @@ mod tests {
     }
 
     #[test]
-    fn return_stmt() -> Result<()> {
+    fn return_stmt() -> Result<'static, ()> {
         // return;
         stmt_test(
             tokens![
@@ -1217,7 +1217,7 @@ mod tests {
     }
 
     #[test]
-    fn expr_stmt() -> Result<()> {
+    fn expr_stmt() -> Result<'static, ()> {
         // 1;
         stmt_test(
             tokens![
@@ -1244,7 +1244,7 @@ mod tests {
     }
 
     #[test]
-    fn programs() -> Result<()> {
+    fn programs() -> Result<'static, ()> {
         // fn main() { let a = true; a; }
         program_test(
             tokens![

@@ -1315,8 +1315,9 @@ mod tests {
 
     #[test]
     fn test_main_fn() {
-        let file = fs::read_to_string("./test.rush").unwrap();
-        let (ast, _) = rush_analyzer::analyze(&file).unwrap();
+        let filename = "./test.rush";
+        let file = fs::read_to_string(filename).unwrap();
+        let (ast, _) = rush_analyzer::analyze(&file, filename).unwrap();
 
         let context = Context::create();
         let mut compiler = Compiler::new(

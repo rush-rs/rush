@@ -6,12 +6,14 @@ macro_rules! span {
             column: $start + 1,
             char_idx: $start,
             byte_idx: $start,
+            path: "",
         }
         .until($crate::Location {
             line: 1,
             column: $end + 1,
             char_idx: $end,
             byte_idx: $end,
+            path: "",
         })
     };
 }

@@ -11,10 +11,10 @@ use crate::{ast::*, Diagnostic, DiagnosticLevel, ErrorKind};
 pub struct Analyzer<'src> {
     pub functions: HashMap<&'src str, Function<'src>>,
     builtin_functions: HashMap<&'static str, BuiltinFunction>,
-    scopes: Vec<HashMap<&'src str, Variable>>,
+    scopes: Vec<HashMap<&'src str, Variable<'src>>>,
     curr_fn: &'src str,
     used_builtins: HashSet<&'src str>,
-    pub diagnostics: Vec<Diagnostic>,
+    pub diagnostics: Vec<Diagnostic<'src>>,
     loop_count: usize,
     // saves any allocations made by the `let` keywoard
     // used to include allocations into the loop AST nodes (for the LLVM compiler) (for the LLVM
@@ -25,9 +25,9 @@ pub struct Analyzer<'src> {
 
 #[derive(Debug)]
 pub struct Function<'src> {
-    pub ident: Spanned<&'src str>,
-    pub params: Spanned<Vec<Parameter<'src>>>,
-    pub return_type: Spanned<Option<Type>>,
+    pub ident: Spanned<'src, &'src str>,
+    pub params: Spanned<'src, Vec<Parameter<'src>>>,
+    pub return_type: Spanned<'src, Option<Type>>,
     pub used: bool,
 }
 
@@ -47,11 +47,12 @@ impl BuiltinFunction {
 }
 
 #[derive(Debug)]
-pub struct Variable {
+pub struct Variable<'src> {
     pub type_: Type,
-    pub span: Span,
+    pub span: Span<'src>,
     pub used: bool,
     pub mutable: bool,
+    pub mutated: bool,
 }
 
 impl<'src> Analyzer<'src> {
@@ -67,7 +68,7 @@ impl<'src> Analyzer<'src> {
     }
 
     /// Adds a new diagnostic with the `Hint` level
-    fn hint(&mut self, message: impl Into<Cow<'static, str>>, span: Span) {
+    fn hint(&mut self, message: impl Into<Cow<'static, str>>, span: Span<'src>) {
         self.diagnostics.push(Diagnostic::new(
             DiagnosticLevel::Hint,
             message,
@@ -81,7 +82,7 @@ impl<'src> Analyzer<'src> {
         &mut self,
         message: impl Into<Cow<'static, str>>,
         notes: Vec<Cow<'static, str>>,
-        span: Span,
+        span: Span<'src>,
     ) {
         self.diagnostics
             .push(Diagnostic::new(DiagnosticLevel::Info, message, notes, span))
@@ -92,7 +93,7 @@ impl<'src> Analyzer<'src> {
         &mut self,
         message: impl Into<Cow<'static, str>>,
         notes: Vec<Cow<'static, str>>,
-        span: Span,
+        span: Span<'src>,
     ) {
         self.diagnostics.push(Diagnostic::new(
             DiagnosticLevel::Warning,
@@ -108,7 +109,7 @@ impl<'src> Analyzer<'src> {
         kind: ErrorKind,
         message: impl Into<Cow<'static, str>>,
         notes: Vec<Cow<'static, str>>,
-        span: Span,
+        span: Span<'src>,
     ) {
         self.diagnostics.push(Diagnostic::new(
             DiagnosticLevel::Error(kind),
@@ -212,7 +213,7 @@ impl<'src> Analyzer<'src> {
                         "the `main` function can be implemented like this: `fn main() { ... }`"
                             .into(),
                     ],
-                    Span::default(),
+                    Span::dummy(),
                 );
                 Err(self.diagnostics)
             }
@@ -241,16 +242,27 @@ impl<'src> Analyzer<'src> {
                     .into()],
                     var.span,
                 );
+            } else if var.mutable && !var.mutated {
+                self.info(
+                    format!("variable `{name}` does not need to be mutable"),
+                    vec![],
+                    var.span,
+                );
             }
         }
     }
 
     // Returns a mutable reference to the current scope
-    fn scope_mut(&mut self) -> &mut HashMap<&'src str, Variable> {
+    fn scope_mut(&mut self) -> &mut HashMap<&'src str, Variable<'src>> {
         self.scopes.last_mut().expect("only called in scopes")
     }
 
-    fn warn_unreachable(&mut self, unreachable_span: Span, causing_span: Span, expr: bool) {
+    fn warn_unreachable(
+        &mut self,
+        unreachable_span: Span<'src>,
+        causing_span: Span<'src>,
+        expr: bool,
+    ) {
         self.warn(
             match expr {
                 true => "unreachable expression",
@@ -351,6 +363,7 @@ impl<'src> Analyzer<'src> {
                         span: param.name.span,
                         used: false,
                         mutable: param.mutable,
+                        mutated: false,
                     },
                 );
                 params.push(AnalyzedParameter {
@@ -500,6 +513,7 @@ impl<'src> Analyzer<'src> {
                 span: node.name.span,
                 used: false,
                 mutable: node.mutable,
+                mutated: false,
             },
         ) {
             // a previous variable is shadowed by this declaration, analyze its use
@@ -516,6 +530,12 @@ impl<'src> Analyzer<'src> {
                 self.hint(
                     format!("variable `{}` shadowed here", node.name.inner),
                     node.name.span,
+                );
+            } else if old.mutable && !old.mutated {
+                self.info(
+                    format!("variable `{}` does not need to be mutable", node.name.inner),
+                    vec![],
+                    old.span,
                 );
             }
         } else {
@@ -699,6 +719,8 @@ impl<'src> Analyzer<'src> {
                 span: node.ident.span,
                 used: false,
                 mutable: true,
+                // always set mutated = true, even if it is not mutated, to prevent weird warnings
+                mutated: true,
             },
         );
 
@@ -791,7 +813,7 @@ impl<'src> Analyzer<'src> {
         })
     }
 
-    fn break_stmt(&mut self, node: BreakStmt) -> AnalyzedStatement<'src> {
+    fn break_stmt(&mut self, node: BreakStmt<'src>) -> AnalyzedStatement<'src> {
         if self.loop_count == 0 {
             self.error(
                 ErrorKind::Semantic,
@@ -804,7 +826,7 @@ impl<'src> Analyzer<'src> {
         AnalyzedStatement::Break
     }
 
-    fn continue_stmt(&mut self, node: ContinueStmt) -> AnalyzedStatement<'src> {
+    fn continue_stmt(&mut self, node: ContinueStmt<'src>) -> AnalyzedStatement<'src> {
         if self.loop_count == 0 {
             self.error(
                 ErrorKind::Semantic,
@@ -954,7 +976,7 @@ impl<'src> Analyzer<'src> {
 
     /// Searches all scopes for the requested variable.
     /// Starts at the current scope (last) and works its way down to the root scope (first).
-    fn ident_expr(&mut self, node: Spanned<&'src str>) -> AnalyzedExpression<'src> {
+    fn ident_expr(&mut self, node: Spanned<'src, &'src str>) -> AnalyzedExpression<'src> {
         for scope in self.scopes.iter_mut().rev() {
             if let Some(var) = scope.get_mut(node.inner) {
                 var.used = true;
@@ -1121,7 +1143,7 @@ impl<'src> Analyzer<'src> {
         )
     }
 
-    fn assign_type_error(&mut self, op: AssignOp, type_: Type, span: Span) -> Type {
+    fn assign_type_error(&mut self, op: AssignOp, type_: Type, span: Span<'src>) -> Type {
         self.error(
             ErrorKind::Type,
             format!("assignment operator `{op}` does not allow values of type `{type_}`"),
@@ -1134,10 +1156,12 @@ impl<'src> Analyzer<'src> {
     fn assign_expr(&mut self, node: AssignExpr<'src>) -> AnalyzedExpression<'src> {
         let var_type = match self
             .scopes
-            .iter()
-            .find_map(|scope| scope.get(node.assignee.inner))
+            .iter_mut()
+            .rev()
+            .find_map(|scope| scope.get_mut(node.assignee.inner))
         {
             Some(var) => {
+                var.mutated = true;
                 let type_ = var.type_;
                 if !var.mutable {
                     let span = var.span;
@@ -1361,7 +1385,7 @@ impl<'src> Analyzer<'src> {
         &mut self,
         arg: Expression<'src>,
         param_type: Type,
-        call_span: Span,
+        call_span: Span<'src>,
         result_type: &mut Type,
     ) -> AnalyzedExpression<'src> {
         let arg_span = arg.span();
@@ -1437,9 +1461,9 @@ mod tests {
     use rush_parser::{span, tree};
 
     fn program_test(
-        parsed_tree: Program,
-        analyzed_tree: AnalyzedProgram,
-    ) -> Result<(), Vec<Diagnostic>> {
+        parsed_tree: Program<'static>,
+        analyzed_tree: AnalyzedProgram<'static>,
+    ) -> Result<(), Vec<Diagnostic<'static>>> {
         let (tree, diagnostics) = dbg!(Analyzer::new().analyze(parsed_tree))?;
         assert!(!diagnostics
             .iter()
@@ -1449,7 +1473,7 @@ mod tests {
     }
 
     #[test]
-    fn programs() -> Result<(), Vec<Diagnostic>> {
+    fn programs() -> Result<(), Vec<Diagnostic<'static>>> {
         // fn add(left: int, right: int) -> int { return left + right; } fn main() {}
         program_test(
             tree! {
