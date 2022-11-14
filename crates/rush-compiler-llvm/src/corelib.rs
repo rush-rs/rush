@@ -1,6 +1,6 @@
 use inkwell::{
     types::BasicMetadataTypeEnum,
-    values::{BasicMetadataValueEnum, BasicValueEnum, IntValue},
+    values::{BasicMetadataValueEnum, BasicValueEnum, FloatValue, IntValue},
     FloatPredicate, IntPredicate,
 };
 
@@ -11,14 +11,14 @@ impl<'ctx> Compiler<'ctx> {
     /// Because LLVM does not support the pow instruction, the core function is used.
     /// This function will declare the `pow` function if not already done previously.
     /// The `pow` function is then called using the `lhs` and `rhs` arguments.
-    pub(crate) fn __rush_core_pow(
+    pub(crate) fn __rush_internal_pow(
         &mut self,
         lhs: IntValue<'ctx>,
         rhs: IntValue<'ctx>,
     ) -> IntValue<'ctx> {
         // declare the pow builtin function if not already declared
         if self.declared_builtins.insert("core::pow") {
-            self.declare_rush_core_pow();
+            self.declare_rush_internal_pow();
         }
 
         let args: Vec<BasicMetadataValueEnum> = vec![
@@ -54,7 +54,7 @@ impl<'ctx> Compiler<'ctx> {
     ///     }
     ///     res
     /// }
-    pub(crate) fn declare_rush_core_pow(&mut self) {
+    pub(crate) fn declare_rush_internal_pow(&mut self) {
         // save the basic block to jump to when done
         // this is required because the function is generated when needed
         let origin_block = self
@@ -147,11 +147,35 @@ impl<'ctx> Compiler<'ctx> {
         self.builder.position_at_end(origin_block);
     }
 
+    pub(crate) fn __rush_internal_float_to_char(
+        &mut self,
+        src: FloatValue<'ctx>,
+    ) -> BasicValueEnum<'ctx> {
+        // declare the `core::float_to_char` function if not declared already
+        if self.declared_builtins.insert("core::float_to_char") {
+            self.declare_rush_internal_float_to_char()
+        }
+        let func = self
+            .module
+            .get_function("core::float_to_char")
+            .expect("declared above");
+
+        let args = vec![BasicMetadataValueEnum::from(src)];
+
+        // call the function with the `src` as the argument
+        let res = self
+            .builder
+            .build_call(func, &args, "fc_cast")
+            .try_as_basic_value();
+
+        res.expect_left("always returns i8")
+    }
+
     /// Defines the builtin function responsible for converting a float into a char
     /// If the float is < 0.0, the char is 0.
     /// Otherwise, if the float is > 127.0, the char is 127.
     /// If the float is 0.0 < f < 127, the char is the truncated value of the float
-    pub(crate) fn declare_core_float_to_char(&mut self) {
+    pub(crate) fn declare_rush_internal_float_to_char(&mut self) {
         // save the basic block to jump to when done
         // this is required because the function is generated when needed
         let origin_block = self
@@ -164,7 +188,7 @@ impl<'ctx> Compiler<'ctx> {
         let signature = self.context.i8_type().fn_type(&params, false);
         let function = self
             .module
-            .add_function("core_float_to_char", signature, None);
+            .add_function("core::float_to_char", signature, None);
 
         // create a new basic block for the function
         let basic_block = self.context.append_basic_block(function, "entry");
@@ -235,8 +259,32 @@ impl<'ctx> Compiler<'ctx> {
         self.builder.position_at_end(origin_block);
     }
 
+    pub(crate) fn __rush_internal_int_to_char(
+        &mut self,
+        src: IntValue<'ctx>,
+    ) -> BasicValueEnum<'ctx> {
+        // declare the `core::int_to_char` function if not declared already
+        if self.declared_builtins.insert("core::int_to_char") {
+            self.declare_rush_internal_int_to_char()
+        }
+        let func = self
+            .module
+            .get_function("core::int_to_char")
+            .expect("declared above");
+
+        let args = vec![BasicMetadataValueEnum::from(src)];
+
+        // call the function with the `src` as the argument
+        let res = self
+            .builder
+            .build_call(func, &args, "ic_cast")
+            .try_as_basic_value();
+
+        res.expect_left("always returns i8")
+    }
+
     /// Defines the builtin function responsible for converting an int into a char
-    pub(crate) fn define_core_int_to_char(&mut self) {
+    pub(crate) fn declare_rush_internal_int_to_char(&mut self) {
         // save the basic block to jump to when done
         let origin_block = self
             .builder
@@ -248,7 +296,7 @@ impl<'ctx> Compiler<'ctx> {
         let signature = self.context.i8_type().fn_type(&params, false);
         let function = self
             .module
-            .add_function("core_int_to_char", signature, None);
+            .add_function("core::int_to_char", signature, None);
 
         // create a new basic block for the function
         let basic_block = self.context.append_basic_block(function, "entry");

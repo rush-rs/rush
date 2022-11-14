@@ -784,7 +784,7 @@ impl<'ctx> Compiler<'ctx> {
                     InfixOp::Mul => self.builder.build_int_mul(lhs, rhs, "i_prod"),
                     InfixOp::Div => self.builder.build_int_signed_div(lhs, rhs, "i_prod"),
                     InfixOp::Rem => self.builder.build_int_signed_rem(lhs, rhs, "i_rem"),
-                    InfixOp::Pow => self.__rush_core_pow(lhs, rhs),
+                    InfixOp::Pow => self.__rush_internal_pow(lhs, rhs),
                     InfixOp::Shl => self.builder.build_left_shift(lhs, rhs, "i_shl"),
                     InfixOp::Shr => self.builder.build_right_shift(lhs, rhs, true, "i_shr"),
                     InfixOp::BitOr => self.builder.build_or(lhs, rhs, "i_bor"),
@@ -996,26 +996,7 @@ impl<'ctx> Compiler<'ctx> {
             // converting a type to a char requires additional bounds checks
             // because valid ASCII chars lie in the range 0 - 127, these checks must be done.
             // the cast operation therefore invokes a builtin helper function.
-            (Type::Int, Type::Char) => {
-                // declare the `core_int_to_char` function if not declared already
-                if self.declared_builtins.insert("core_int_to_char") {
-                    self.define_core_int_to_char()
-                }
-                let func = self
-                    .module
-                    .get_function("core_int_to_char")
-                    .expect("this builtin function was declared if used here");
-
-                let args = vec![BasicMetadataValueEnum::from(lhs)];
-
-                // call the function with the lhs as the argument
-                let res = self
-                    .builder
-                    .build_call(func, &args, "ic_cast")
-                    .try_as_basic_value();
-
-                res.expect_left("this core lib function always returns i8")
-            }
+            (Type::Int, Type::Char) => self.__rush_internal_int_to_char(lhs.into_int_value()),
             (Type::Char, Type::Int) => self
                 .builder
                 .build_int_cast(lhs.into_int_value(), self.context.i64_type(), "ci_cast")
@@ -1040,26 +1021,7 @@ impl<'ctx> Compiler<'ctx> {
             // converting a type to a char requires additional bounds checks
             // because valid ASCII chars lie in the range 0 - 127, these checks must be done.
             // the cast operation therefore invokes a builtin helper function.
-            (Type::Float, Type::Char) => {
-                // declare the `core_float_to_char` function if not declared already
-                if self.declared_builtins.insert("core_float_to_char") {
-                    self.declare_core_float_to_char()
-                }
-                let func = self
-                    .module
-                    .get_function("core_float_to_char")
-                    .expect("this builtin function was declared if used here");
-
-                let args = vec![BasicMetadataValueEnum::from(lhs)];
-
-                // call the builtin function using lhs as the argument
-                let res = self
-                    .builder
-                    .build_call(func, &args, "fc_cast")
-                    .try_as_basic_value();
-
-                res.expect_left("this core lib function always returns i8")
-            }
+            (Type::Float, Type::Char) => self.__rush_internal_float_to_char(lhs.into_float_value()),
             (Type::Float, Type::Bool) => self
                 .builder
                 .build_float_compare(
