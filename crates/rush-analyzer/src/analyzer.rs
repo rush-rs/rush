@@ -65,6 +65,7 @@ impl<'src> Analyzer<'src> {
                 BuiltinFunction::new(vec![Type::Int], Type::Never),
             )]),
             source,
+            scopes: vec![HashMap::new()], // start with empty global scope
             ..Default::default()
         }
     }
@@ -161,6 +162,13 @@ impl<'src> Analyzer<'src> {
             );
         }
 
+        // analyze global let stmts
+        let globals = program
+            .globals
+            .into_iter()
+            .map(|node| self.global(node))
+            .collect();
+
         // then analyze each function body
         let mut functions = vec![];
         let mut main_fn = None;
@@ -173,6 +181,9 @@ impl<'src> Analyzer<'src> {
                 _ => functions.push(func),
             }
         }
+
+        // pop the global scope
+        self.pop_scope();
 
         // check if there are any unused functions
         let unused_funcs: Vec<_> = self
@@ -209,6 +220,7 @@ impl<'src> Analyzer<'src> {
         match main_fn {
             Some(main_fn) => Ok((
                 AnalyzedProgram {
+                    globals,
                     functions,
                     main_fn,
                     used_builtins: self.used_builtins,
@@ -285,6 +297,63 @@ impl<'src> Analyzer<'src> {
             "any code following this expression is unreachable",
             causing_span,
         );
+    }
+
+    fn global(&mut self, node: LetStmt<'src>) -> AnalyzedLetStmt<'src> {
+        // analyze the right hand side first
+        let expr_span = node.expr.span();
+        let expr = self.expression(node.expr);
+
+        // check if the optional type conflicts with the rhs
+        if let Some(declared) = &node.type_ {
+            if declared.inner != expr.result_type()
+                && !matches!(expr.result_type(), Type::Unknown | Type::Never)
+            {
+                self.error(
+                    ErrorKind::Type,
+                    format!(
+                        "mismatched types: expected `{}`, found `{}`",
+                        declared.inner,
+                        expr.result_type(),
+                    ),
+                    vec![],
+                    expr_span,
+                );
+                self.hint("expected due to this", declared.span);
+            }
+        }
+
+        // do not allow duplicate globals
+        if let Some(prev) = self.scopes[0].get(node.name.inner) {
+            let prev_span = prev.span;
+            self.error(
+                ErrorKind::Semantic,
+                format!("duplicate definition of global `{}`", node.name.inner),
+                vec![],
+                node.name.span,
+            );
+            self.hint(
+                format!("previous definition of global `{}` here", node.name.inner),
+                prev_span,
+            );
+        } else {
+            self.scopes[0].insert(
+                node.name.inner,
+                Variable {
+                    type_: node.type_.map_or(expr.result_type(), |type_| type_.inner),
+                    span: node.name.span,
+                    used: false,
+                    mutable: node.mutable,
+                    mutated: false,
+                },
+            );
+        }
+
+        AnalyzedLetStmt {
+            name: node.name.inner,
+            expr,
+            mutable: node.mutable,
+        }
     }
 
     fn function_definition(
@@ -1519,6 +1588,7 @@ mod tests {
             },
             analyzed_tree! {
                 (Program,
+                    globals: [],
                     functions: [
                         (FunctionDefinition,
                             used: false,

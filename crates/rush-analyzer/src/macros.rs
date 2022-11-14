@@ -5,11 +5,13 @@ macro_rules! analyzed_tree {
 
     ((
         Program,
+        globals: [$($global:tt),* $(,)?],
         functions: [$($func:tt),* $(,)?],
         main_fn: $main_fn:tt,
         used_builtins: [$($name:expr),* $(,)?] $(,)?
     )) => {
         AnalyzedProgram {
+            globals: vec![$(analyzed_tree!($global)),*],
             functions: vec![$(analyzed_tree!($func)),*],
             main_fn: analyzed_tree!($main_fn),
             used_builtins: HashSet::from([$($name),*]),
@@ -45,14 +47,17 @@ macro_rules! analyzed_tree {
     };
 
     ((
-        LetStmt,
+        Let,
         name: $name:expr,
         expr: $expr:tt $(,)?
     )) => {
-        AnalyzedStatement::Let(AnalyzedLetStmt {
+        AnalyzedLetStmt {
             name: $name,
             expr: analyzed_tree!($expr),
-        })
+        }
+    };
+    ((LetStmt $($rest:tt)*)) => {
+        AnalyzedStatement::Let(analyzed_tree!((Let $($rest)*)))
     };
     ((ReturnStmt, $expr:tt $(,)?)) => {
         AnalyzedStatement::Return(analyzed_tree!($expr))
