@@ -1147,6 +1147,7 @@ impl<'src> Analyzer<'src> {
 
         let allowed_types: &[Type];
         let mut override_result_type = None;
+        let mut allows_constant = true;
         let mut inherits_never_type = true;
         match node.op {
             InfixOp::Plus | InfixOp::Minus | InfixOp::Mul | InfixOp::Div => {
@@ -1156,7 +1157,11 @@ impl<'src> Analyzer<'src> {
                 allowed_types = &[Type::Int, Type::Float];
                 override_result_type = Some(Type::Bool);
             }
-            InfixOp::Rem | InfixOp::Pow | InfixOp::Shl | InfixOp::Shr => {
+            InfixOp::Rem | InfixOp::Shl | InfixOp::Shr => {
+                allowed_types = &[Type::Int];
+            }
+            InfixOp::Pow => {
+                allows_constant = false;
                 allowed_types = &[Type::Int];
             }
             InfixOp::Eq | InfixOp::Neq => {
@@ -1223,7 +1228,7 @@ impl<'src> Analyzer<'src> {
         AnalyzedExpression::Infix(
             AnalyzedInfixExpr {
                 result_type,
-                constant: lhs.constant() && rhs.constant(),
+                constant: lhs.constant() && rhs.constant() && allows_constant,
                 lhs,
                 op: node.op,
                 rhs,
