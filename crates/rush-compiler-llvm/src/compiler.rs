@@ -755,7 +755,6 @@ impl<'ctx> Compiler<'ctx> {
                     InfixOp::Mul => self.builder.build_float_mul(lhs, rhs, "f_prod"),
                     InfixOp::Div => self.builder.build_float_div(lhs, rhs, "f_prod"),
                     InfixOp::Rem => self.builder.build_float_rem(lhs, rhs, "f_rem"),
-                    InfixOp::Pow => self.invoke_pow(lhs, rhs),
                     // comparison operators (result in bool)
                     op => {
                         let (op, label) = match op {
