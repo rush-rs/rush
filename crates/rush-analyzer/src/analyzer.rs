@@ -813,6 +813,11 @@ impl<'src> Analyzer<'src> {
             },
         );
 
+        // add an allocation for the init variable if the allocations are tracked
+        if let Some(allocations) = self.allocations.as_mut() {
+            allocations.push((node.ident.inner, initializer.result_type()))
+        }
+
         // check that the condition is of type bool
         let cond_span = node.cond.span();
         let cond = self.expression(node.cond);
