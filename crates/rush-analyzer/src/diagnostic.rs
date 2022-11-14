@@ -1,4 +1,7 @@
-use std::{borrow::Cow, fmt::Display};
+use std::{
+    borrow::Cow,
+    fmt::{self, Display, Formatter},
+};
 
 use rush_parser::{Error, Span};
 
@@ -8,6 +11,7 @@ pub struct Diagnostic<'src> {
     pub message: Cow<'static, str>,
     pub notes: Vec<Cow<'static, str>>,
     pub span: Span<'src>,
+    pub source: &'src str,
 }
 
 impl<'src> From<Error<'src>> for Diagnostic<'src> {
@@ -17,7 +21,14 @@ impl<'src> From<Error<'src>> for Diagnostic<'src> {
             err.message,
             vec![],
             err.span,
+            err.source,
         )
+    }
+}
+
+impl<'src> From<Box<Error<'src>>> for Diagnostic<'src> {
+    fn from(err: Box<Error<'src>>) -> Self {
+        Self::from(*err)
     }
 }
 
@@ -27,17 +38,33 @@ impl<'src> Diagnostic<'src> {
         message: impl Into<Cow<'static, str>>,
         notes: Vec<Cow<'static, str>>,
         span: Span<'src>,
+        source: &'src str,
     ) -> Self {
         Self {
             level,
             message: message.into(),
             notes,
             span,
+            source,
         }
     }
+}
 
-    pub fn display(&self, source_code: &str, filename: &str) -> String {
-        let lines: Vec<_> = source_code.split('\n').collect();
+impl Display for Diagnostic<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let ansi_col = |col: u8, bold: bool| -> Cow<'static, str> {
+            match (f.alternate(), bold) {
+                (true, true) => format!("\x1b[1;{col}m").into(),
+                (true, false) => format!("\x1b[{col}m").into(),
+                (false, _) => "".into(),
+            }
+        };
+        let ansi_reset = match f.alternate() {
+            true => "\x1b[0m",
+            false => "",
+        };
+
+        let lines: Vec<_> = self.source.split('\n').collect();
 
         let (raw_marker, raw_marker_single, color) = match self.level {
             DiagnosticLevel::Hint => ("~", "^", 5),     // magenta
@@ -49,21 +76,31 @@ impl<'src> Diagnostic<'src> {
         let notes: String = self
             .notes
             .iter()
-            .map(|note| format!("\n \x1b[1;36mnote:\x1b[0m {note}"))
+            .map(|note| {
+                format!(
+                    "\n {color}note:{ansi_reset} {note}",
+                    color = ansi_col(36, true),
+                )
+            })
             .collect();
 
         // take special action if the source code is empty or there is no useful span
-        if source_code.is_empty() || self.span == Span::dummy() {
-            return format!(
-                " \x1b[1;3{color}m{lvl}\x1b[39m in {filename}\x1b[0m \n{msg}{notes}",
+        if self.source.is_empty() || self.span == Span::dummy() {
+            return write!(
+                f,
+                " {color}{lvl}{reset_col} in {path}{ansi_reset} \n{msg}{notes}",
+                color = ansi_col(color + 30, true),
                 lvl = self.level,
+                reset_col = ansi_col(39, false),
+                path = self.span.start.path,
                 msg = self.message,
             );
         }
 
         let line1 = match self.span.start.line > 1 {
             true => format!(
-                "\n \x1b[90m{: >3} | \x1b[0m{}",
+                "\n {}{: >3} | {ansi_reset}{}",
+                ansi_col(90, false),
                 self.span.start.line - 1,
                 lines[self.span.start.line - 2],
             ),
@@ -71,14 +108,16 @@ impl<'src> Diagnostic<'src> {
         };
 
         let line2 = format!(
-            " \x1b[90m{: >3} | \x1b[0m{}",
+            " {}{: >3} | {ansi_reset}{}",
+            ansi_col(90, false),
             self.span.start.line,
             lines[self.span.start.line - 1]
         );
 
         let line3 = match self.span.start.line < lines.len() {
             true => format!(
-                "\n \x1b[90m{: >3} | \x1b[0m{}",
+                "\n {}{: >3} | {ansi_reset}{}",
+                ansi_col(90, false),
                 self.span.start.line + 1,
                 lines[self.span.start.line]
             ),
@@ -96,28 +135,33 @@ impl<'src> Diagnostic<'src> {
             // multiline span
             (_, _) => {
                 format!(
-                    "{} ...\n{}\x1b[1;32m+ {} more line{}\x1b[1;0m",
-                    raw_marker
+                    "{marker} ...\n{space}{color}+ {line_count} more line{s}{ansi_reset}",
+                    marker = raw_marker
                         .repeat(lines[self.span.start.line - 1].len() - self.span.start.column + 1),
-                    " ".repeat(self.span.start.column + 6),
-                    self.span.end.line - self.span.start.line,
-                    if self.span.end.line - self.span.start.line == 1 {
-                        ""
-                    } else {
-                        "s"
+                    space = " ".repeat(self.span.start.column + 6),
+                    color = ansi_col(32, true),
+                    line_count = self.span.end.line - self.span.start.line,
+                    s = match self.span.end.line - self.span.start.line == 1 {
+                        true => "",
+                        false => "s",
                     },
                 )
             }
         };
 
         let marker = format!(
-            "{space}\x1b[1;3{color}m{markers}\x1b[0m",
+            "{space}{color}{markers}{ansi_reset}",
+            color = ansi_col(color + 30, true),
             space = " ".repeat(self.span.start.column + 6),
         );
 
-        format!(
-            " \x1b[1;3{color}m{lvl}\x1b[39m at {filename}:{line}:{col}\x1b[0m\n{line1}\n{line2}\n{marker}{line3}\n\n \x1b[1;3{color}m{msg}\x1b[0m{notes}",
+        write!(
+            f,
+            " {color}{lvl}{reset_col} at {path}:{line}:{col}{ansi_reset}\n{line1}\n{line2}\n{marker}{line3}\n\n {color}{msg}{ansi_reset}{notes}",
+            color = ansi_col(color + 30, true),
             lvl = self.level,
+            reset_col = ansi_col(39, false),
+            path = self.span.start.path,
             line = self.span.start.line,
             col = self.span.start.column,
             msg = self.message,
@@ -153,16 +197,5 @@ pub enum ErrorKind {
 impl Display for ErrorKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self:?}Error")
-    }
-}
-
-impl ErrorKind {
-    pub fn into_diagnostic(self, message: impl Into<Cow<'static, str>>, span: Span) -> Diagnostic {
-        Diagnostic {
-            level: DiagnosticLevel::Error(self),
-            message: message.into(),
-            notes: vec![],
-            span,
-        }
     }
 }

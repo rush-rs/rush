@@ -21,6 +21,7 @@ pub struct Analyzer<'src> {
     // compiler)
     // only needed when examining loops
     allocations: Option<Vec<(&'src str, Type)>>,
+    source: &'src str,
 }
 
 #[derive(Debug)]
@@ -57,12 +58,13 @@ pub struct Variable<'src> {
 
 impl<'src> Analyzer<'src> {
     /// Creates a new [`Analyzer`].
-    pub fn new() -> Self {
+    pub fn new(source: &'src str) -> Self {
         Self {
             builtin_functions: HashMap::from([(
                 "exit",
                 BuiltinFunction::new(vec![Type::Int], Type::Never),
             )]),
+            source,
             ..Default::default()
         }
     }
@@ -74,6 +76,7 @@ impl<'src> Analyzer<'src> {
             message,
             vec![],
             span,
+            self.source,
         ))
     }
 
@@ -84,8 +87,13 @@ impl<'src> Analyzer<'src> {
         notes: Vec<Cow<'static, str>>,
         span: Span<'src>,
     ) {
-        self.diagnostics
-            .push(Diagnostic::new(DiagnosticLevel::Info, message, notes, span))
+        self.diagnostics.push(Diagnostic::new(
+            DiagnosticLevel::Info,
+            message,
+            notes,
+            span,
+            self.source,
+        ))
     }
 
     /// Adds a new diagnostic with the `Warning` level
@@ -100,6 +108,7 @@ impl<'src> Analyzer<'src> {
             message,
             notes,
             span,
+            self.source,
         ))
     }
 
@@ -116,6 +125,7 @@ impl<'src> Analyzer<'src> {
             message,
             notes,
             span,
+            self.source,
         ))
     }
 
@@ -1464,7 +1474,7 @@ mod tests {
         parsed_tree: Program<'static>,
         analyzed_tree: AnalyzedProgram<'static>,
     ) -> Result<(), Vec<Diagnostic<'static>>> {
-        let (tree, diagnostics) = dbg!(Analyzer::new().analyze(parsed_tree))?;
+        let (tree, diagnostics) = dbg!(Analyzer::new("").analyze(parsed_tree))?;
         assert!(!diagnostics
             .iter()
             .any(|diag| matches!(diag.level, DiagnosticLevel::Error(_))));

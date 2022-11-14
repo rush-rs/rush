@@ -4,6 +4,7 @@ use crate::{Error, Location, Result, Token, TokenKind};
 
 pub trait Lex<'src> {
     fn next_token(&mut self) -> Result<'src, Token<'src>>;
+    fn source(&self) -> &'src str;
 }
 
 pub struct Lexer<'src> {
@@ -69,14 +70,19 @@ impl<'src> Lex<'src> for Lexer<'src> {
             Some(char) if char.is_ascii_alphabetic() || char == '_' => return Ok(self.make_name()),
             Some(char) => {
                 self.next();
-                return Err(Error::new(
+                return Err(Error::new_boxed(
                     format!("illegal character `{char}`"),
                     start_loc.until(self.location),
+                    self.input,
                 ));
             }
         };
         self.next();
         Ok(kind.spanned(start_loc.until(self.location)))
+    }
+
+    fn source(&self) -> &'src str {
+        self.input
     }
 }
 
@@ -187,9 +193,10 @@ impl<'src> Lexer<'src> {
         let char = match self.curr_char {
             None => {
                 self.next();
-                return Err(Error::new(
+                return Err(Error::new_boxed(
                     "unterminated char literal".to_string(),
                     start_loc.until(self.location),
+                    self.input,
                 ));
             }
             Some('\\') => {
@@ -206,9 +213,10 @@ impl<'src> Lexer<'src> {
                         let start_hex = self.location.byte_idx;
                         for i in 0..2 {
                             if !self.curr_char.map_or(false, |c| c.is_ascii_hexdigit()) {
-                                return Err(Error::new(
+                                return Err(Error::new_boxed(
                                     format!("expected 2 hexadecimal digits, found {i}"),
                                     start_loc.until(self.location),
+                                    self.input,
                                 ));
                             }
                             self.next();
@@ -228,21 +236,23 @@ impl<'src> Lexer<'src> {
                             }
                             _ => {
                                 self.next();
-                                Err(Error::new(
+                                Err(Error::new_boxed(
                                     "unterminated char literal".to_string(),
                                     start_loc.until(self.location),
+                                    self.input,
                                 ))
                             }
                         };
                     }
                     _ => {
                         self.next();
-                        return Err(Error::new(
+                        return Err(Error::new_boxed(
                             format!(
                                 "expected escape character, found {}",
                                 self.curr_char.map_or("EOF".to_string(), |c| c.to_string())
                             ),
                             start_loc.until(self.location),
+                            self.input,
                         ));
                     }
                 };
@@ -252,9 +262,10 @@ impl<'src> Lexer<'src> {
             Some(char) if char.is_ascii() => char as u8,
             Some(char) => {
                 self.next();
-                return Err(Error::new(
+                return Err(Error::new_boxed(
                     format!("character `{char}` is not in ASCII range"),
                     start_loc.until(self.location),
+                    self.input,
                 ));
             }
         };
@@ -269,9 +280,10 @@ impl<'src> Lexer<'src> {
             }
             _ => {
                 self.next();
-                Err(Error::new(
+                Err(Error::new_boxed(
                     "unterminated char literal".to_string(),
                     start_loc.until(self.location),
+                    self.input,
                 ))
             }
         }
@@ -287,9 +299,10 @@ impl<'src> Lexer<'src> {
 
             if !self.curr_char.map_or(false, |c| c.is_ascii_hexdigit()) {
                 self.next();
-                return Err(Error::new(
+                return Err(Error::new_boxed(
                     "expected at least one hexadecimal digit".to_string(),
                     start_loc.until(self.location),
+                    self.input,
                 ));
             }
 
@@ -306,9 +319,10 @@ impl<'src> Lexer<'src> {
             ) {
                 Ok(num) => num,
                 Err(_) => {
-                    return Err(Error::new(
+                    return Err(Error::new_boxed(
                         "integer too large for 64 bits".to_string(),
                         start_loc.until(self.location),
+                        self.input,
                     ))
                 }
             };
@@ -330,12 +344,13 @@ impl<'src> Lexer<'src> {
                 if !self.curr_char.map_or(false, |c| c.is_ascii_digit()) {
                     let err_start = self.location;
                     self.next();
-                    return Err(Error::new(
+                    return Err(Error::new_boxed(
                         format!(
                             "expected digit, found `{}`",
                             self.curr_char.map_or("EOF".to_string(), |c| c.to_string())
                         ),
                         err_start.until(self.location),
+                        self.input,
                     ));
                 }
 
@@ -373,9 +388,10 @@ impl<'src> Lexer<'src> {
                 {
                     Ok(value) => value,
                     Err(_) => {
-                        return Err(Error::new(
+                        return Err(Error::new_boxed(
                             "integer too large for 64 bits".to_string(),
                             start_loc.until(self.location),
+                            self.input,
                         ))
                     }
                 };

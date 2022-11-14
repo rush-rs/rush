@@ -30,10 +30,10 @@ pub fn analyze<'src>(
         (Err(critical), _) => Err(errs
             .into_iter()
             .map(Diagnostic::from)
-            .chain(iter::once(critical.into()))
+            .chain(iter::once((*critical).into()))
             .collect()),
         (Ok(ast), _) => {
-            let analyzer = Analyzer::new();
+            let analyzer = Analyzer::new(text);
 
             // saves potential issues of the parser as diagnostics
             let mut parser_diagnostics: Vec<Diagnostic> =

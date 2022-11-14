@@ -45,6 +45,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             self.errors.push(Error::new(
                 format!("expected EOF, found `{}`", self.curr_tok.kind),
                 self.curr_tok.span,
+                self.lexer.source(),
             ))
         }
 
@@ -64,9 +65,10 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
     // expects the curr_tok to be of the specified kind
     fn expect(&mut self, kind: TokenKind) -> Result<'src, ()> {
         if self.curr_tok.kind != kind {
-            return Err(Error::new(
+            return Err(Error::new_boxed(
                 format!("expected `{kind}`, found `{}`", self.curr_tok.kind),
                 self.curr_tok.span,
+                self.lexer.source(),
             ));
         }
         self.next()?;
@@ -84,9 +86,10 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
                 self.next()?;
                 Ok(ident)
             }
-            _ => Err(Error::new(
+            _ => Err(Error::new_boxed(
                 format!("expected identifier, found `{}`", self.curr_tok.kind),
                 self.curr_tok.span,
+                self.lexer.source(),
             )),
         }
     }
@@ -100,7 +103,8 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
     ) -> Result<'src, Span<'src>> {
         let start_loc = self.curr_tok.span.start;
         let end_loc = if self.curr_tok.kind != kind {
-            self.errors.push(Error::new(message.into(), span));
+            self.errors
+                .push(Error::new(message.into(), span, self.lexer.source()));
             self.curr_tok.span.start
         } else {
             self.next()?;
@@ -136,6 +140,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
                 self.errors.push(Error::new(
                     format!("unknown type `{ident}`"),
                     self.curr_tok.span,
+                    self.lexer.source(),
                 ));
                 Type::Unknown
             }
@@ -152,9 +157,10 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
                 });
             }
             invalid => {
-                return Err(Error::new(
+                return Err(Error::new_boxed(
                     format!("expected a type, found `{invalid}`"),
                     self.curr_tok.span,
+                    self.lexer.source(),
                 ));
             }
         };
@@ -234,6 +240,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
                 self.errors.push(Error::new(
                     format!("missing type for parameter `{}`", name.inner),
                     name.span,
+                    self.lexer.source(),
                 ));
                 Spanned {
                     span: Span::dummy(),
@@ -497,6 +504,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             (_, false) => self.errors.push(Error::new(
                 "missing semicolon after statement".to_string(),
                 expr.span(),
+                self.lexer.source(),
             )),
         }
 
@@ -522,9 +530,10 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             TokenKind::Minus => Expression::Prefix(self.prefix_expr(PrefixOp::Neg)?.into()),
             TokenKind::LParen => Expression::Grouped(self.grouped_expr()?),
             invalid => {
-                return Err(Error::new(
+                return Err(Error::new_boxed(
                     format!("expected an expression, found `{invalid}`"),
                     self.curr_tok.span,
+                    self.lexer.source(),
                 ));
             }
         };
@@ -593,11 +602,12 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
                     }
                     TokenKind::LBrace => self.block()?,
                     invalid => {
-                        return Err(Error::new(
+                        return Err(Error::new_boxed(
                             format!(
                                 "expected either `if` or block after `else`, found `{invalid}`"
                             ),
                             self.curr_tok.span,
+                            self.lexer.source(),
                         ));
                     }
                 })
@@ -688,6 +698,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
                 self.errors.push(Error::new(
                     "left hand side of assignment must be an identifier".to_string(),
                     self.curr_tok.span,
+                    self.lexer.source(),
                 ));
                 Spanned {
                     span: Span::dummy(),
@@ -722,6 +733,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
                 self.errors.push(Error::new(
                     "only identifiers can be called".to_string(),
                     self.curr_tok.span,
+                    self.lexer.source(),
                 ));
                 Spanned {
                     span: Span::dummy(),
@@ -794,6 +806,10 @@ mod tests {
     {
         fn next_token(&mut self) -> Result<'src, Token<'src>> {
             Ok(self.next().unwrap_or_else(Token::dummy))
+        }
+
+        fn source(&self) -> &'src str {
+            ""
         }
     }
 
