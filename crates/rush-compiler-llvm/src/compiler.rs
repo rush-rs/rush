@@ -116,15 +116,18 @@ impl<'ctx> Compiler<'ctx> {
     /// Compiles the given [`AnalyzedProgram`] to object code and the LLVM IR.
     /// Errors can occur if the target triple is invalid or the code generation fails
     pub fn compile(&mut self, program: AnalyzedProgram) -> Result<(MemoryBuffer, String)> {
+        // declare all global variables
+        for global in program.globals {
+            self.define_global(global.name.to_string(), &global.expr);
+        }
+
         // compile all defined functions which are later used
         for func in program.functions.iter().filter(|func| func.used) {
             self.compile_fn_definition(func);
         }
+
         // compile the main function
         self.compile_main_fn(&program.main_fn);
-
-        #[cfg(test)]
-        self.module.print_to_stderr();
 
         // verify the LLVM module when using debug
         #[cfg(debug_assertions)]
@@ -201,7 +204,7 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     /// Defines a new global variable with the given name and initializes it using the expression
-    fn _define_global(&mut self, ident: String, expression: &AnalyzedExpression) {
+    fn define_global(&mut self, ident: String, expression: &AnalyzedExpression) {
         let global = self
             .module
             .add_global(self.context.i64_type(), None, &ident);
@@ -1297,7 +1300,20 @@ mod tests {
     fn test_main_fn() {
         let filename = "./test.rush";
         let file = fs::read_to_string(filename).unwrap();
-        let (ast, _) = rush_analyzer::analyze(&file, filename).unwrap();
+        let ast = match rush_analyzer::analyze(&file, filename) {
+            Ok(res) => {
+                for diagnostic in &res.1 {
+                    println!("{:#}", diagnostic);
+                }
+                res.0
+            }
+            Err(diagnostics) => {
+                for diagnostic in diagnostics {
+                    println!("{:#}", diagnostic);
+                }
+                panic!("Analyzer detected issues");
+            }
+        };
 
         let context = Context::create();
         let mut compiler = Compiler::new(
