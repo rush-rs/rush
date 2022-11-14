@@ -118,7 +118,7 @@ impl<'ctx> Compiler<'ctx> {
     pub fn compile(&mut self, program: AnalyzedProgram) -> Result<(MemoryBuffer, String)> {
         // declare all global variables
         for global in program.globals {
-            self.define_global(global.name.to_string(), &global.expr);
+            self.declare_global(global.name.to_string(), &global.expr);
         }
 
         // compile all defined functions which are later used
@@ -204,11 +204,9 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     /// Defines a new global variable with the given name and initializes it using the expression
-    fn define_global(&mut self, ident: String, expression: &AnalyzedExpression) {
-        let global = self
-            .module
-            .add_global(self.context.i64_type(), None, &ident);
+    fn declare_global(&mut self, ident: String, expression: &AnalyzedExpression) {
         let init_value = self.compile_expression(expression);
+        let global = self.module.add_global(init_value.get_type(), None, &ident);
         global.set_initializer(&init_value);
         // store the global variable in the globals vec
         self.globals.insert(ident, global.as_pointer_value());
