@@ -25,8 +25,9 @@ pub struct Compiler<'ctx> {
     pub(crate) builder: Builder<'ctx>,
     // contains information about the current function
     pub(crate) curr_fn: Option<Function<'ctx>>,
-    // contains necessary metadata about the current loop construct
-    pub(crate) curr_loop: Option<Loop<'ctx>>,
+    // contains necessary metadata about current loops
+    // the last element is the most inner loop
+    pub(crate) loops: Vec<Loop<'ctx>>,
     // the scope stack (first is the root / function scope, last is the current scope)
     pub(crate) scopes: Vec<HashMap<String, Variable<'ctx>>>,
     // global variables
@@ -84,7 +85,7 @@ impl<'ctx> Compiler<'ctx> {
             curr_fn: None,
             scopes: vec![],
             globals: HashMap::new(),
-            curr_loop: None,
+            loops: vec![],
             declared_builtins: HashSet::new(),
             target_triple,
             optimization,
@@ -348,8 +349,8 @@ impl<'ctx> Compiler<'ctx> {
                     return;
                 }
 
-                // if there is a loop, use it's allocations
-                if let Some(curr_loop) = &mut self.curr_loop {
+                // if there is a (root) loop, use its allocations
+                if let Some(curr_loop) = self.loops.first_mut() {
                     for (idx, (alloc_ident, alloc_type, alloc_ptr)) in
                         curr_loop.allocations.iter_mut().enumerate()
                     {
@@ -362,6 +363,11 @@ impl<'ctx> Compiler<'ctx> {
                             return;
                         }
                     }
+                    unreachable!(
+                        "every loop allocation exists: {}: {}",
+                        node.name,
+                        node.expr.result_type()
+                    );
                 }
 
                 // allocate a pointer for value
@@ -396,14 +402,16 @@ impl<'ctx> Compiler<'ctx> {
     /// Transforms a vector containing allocations tracked by the analyzer into a vector conainting
     /// allocated pointers. For each element, a new LLVM pointer allocation is made.
     /// Used in loop statements in order to perform allocations upfront.
-    fn do_loop_allocations(&self, src: &[(&str, Type)]) -> Vec<(String, Type, PointerValue<'ctx>)> {
+    fn do_loop_allocations(
+        &mut self,
+        src: &[(&str, Type)],
+    ) -> Vec<(String, Type, PointerValue<'ctx>)> {
         src.iter()
             .map(|(ident, type_)| {
-                (
-                    ident.to_string(),
-                    *type_,
-                    self.builder.build_alloca(self.to_llvm_type(*type_), ident),
-                )
+                let ptr = self.builder.build_alloca(self.to_llvm_type(*type_), ident);
+                self.scope_mut()
+                    .insert(ident.to_string(), Variable::Mut(ptr));
+                (ident.to_string(), *type_, ptr)
             })
             .collect()
     }
@@ -422,15 +430,16 @@ impl<'ctx> Compiler<'ctx> {
             .context
             .append_basic_block(self.curr_fn().llvm_value, "after_loop");
 
-        // set the loop metadata so that the inner block can use it
-        self.curr_loop = Some(Loop {
-            loop_head,
-            after_loop,
-            allocations: self.do_loop_allocations(&node.allocations),
-        });
-
         // push a new scope for the loop
         self.scopes.push(HashMap::new());
+
+        // set the loop metadata so that the inner block can use it
+        let allocations = self.do_loop_allocations(&node.allocations);
+        self.loops.push(Loop {
+            loop_head,
+            after_loop,
+            allocations,
+        });
 
         // enter the loop from outside
         self.builder.build_unconditional_branch(loop_head);
@@ -444,6 +453,9 @@ impl<'ctx> Compiler<'ctx> {
 
         // drop the scope
         self.scopes.pop();
+
+        // remove the loop from `loops`
+        self.loops.pop();
 
         // place the builder cursor at the end of the `after_loop`
         self.builder.position_at_end(after_loop);
@@ -467,15 +479,16 @@ impl<'ctx> Compiler<'ctx> {
             .context
             .append_basic_block(self.curr_fn().llvm_value, "after_while");
 
-        // set the loop metadata so that the inner block can use it
-        self.curr_loop = Some(Loop {
-            loop_head: while_head,
-            after_loop: after_while,
-            allocations: self.do_loop_allocations(&node.allocations),
-        });
-
         // push a new scope for the loop
         self.scopes.push(HashMap::new());
+
+        // set the loop metadata so that the inner block can use it
+        let allocations = self.do_loop_allocations(&node.allocations);
+        self.loops.push(Loop {
+            loop_head: while_head,
+            after_loop: after_while,
+            allocations,
+        });
 
         // enter the loop from outside
         self.builder.build_unconditional_branch(while_head);
@@ -496,6 +509,9 @@ impl<'ctx> Compiler<'ctx> {
 
         // drop the loop scope
         self.scopes.pop();
+
+        // remove the loop from `loops`
+        self.loops.pop();
 
         // place the builder cursor at the end of the `after_loop`
         self.builder.position_at_end(after_while);
@@ -526,13 +542,6 @@ impl<'ctx> Compiler<'ctx> {
             .context
             .append_basic_block(self.curr_fn().llvm_value, "after_for");
 
-        // set the loop metadata so that the inner block can use it
-        self.curr_loop = Some(Loop {
-            loop_head: for_head,
-            after_loop: after_for,
-            allocations: self.do_loop_allocations(&node.allocations),
-        });
-
         // insert the initialization variable into the current scope
         let init_value = self.compile_expression(&node.initializer);
 
@@ -559,6 +568,14 @@ impl<'ctx> Compiler<'ctx> {
         // push a new scope for the loop
         self.scopes.push(HashMap::new());
 
+        // set the loop metadata so that the inner block can use it
+        let allocations = self.do_loop_allocations(&node.allocations);
+        self.loops.push(Loop {
+            loop_head: for_head,
+            after_loop: after_for,
+            allocations,
+        });
+
         // compile the loop body
         self.builder.position_at_end(for_body);
         self.compile_block(&node.block);
@@ -574,6 +591,9 @@ impl<'ctx> Compiler<'ctx> {
         // drop the scope
         self.scopes.pop();
 
+        // remove the loop from `loops`
+        self.loops.pop();
+
         // place the builder cursor at the end of the `after_loop`
         self.builder.position_at_end(after_for);
     }
@@ -583,7 +603,8 @@ impl<'ctx> Compiler<'ctx> {
     /// This basic block is saved under the `curr_loop` field of the compiler.
     fn compile_break_statement(&mut self) {
         let after_loop_block = self
-            .curr_loop
+            .loops
+            .last()
             .as_ref()
             .expect("break is only called in loop bodies")
             .after_loop;
@@ -595,7 +616,8 @@ impl<'ctx> Compiler<'ctx> {
     /// This basic block is saved under the `curr_loop` field of the compiler.
     fn compile_continue_statement(&mut self) {
         let loop_start_block = self
-            .curr_loop
+            .loops
+            .last()
             .as_ref()
             .expect("continue is only called in loop bodies")
             .loop_head;
@@ -663,7 +685,7 @@ impl<'ctx> Compiler<'ctx> {
         }
         match self.module.get_global(name) {
             Some(global) => Variable::Mut(global.as_pointer_value()),
-            None => unreachable!("every name used is either a var or global"),
+            None => unreachable!("every name used is either a var or global: {name}"),
         }
     }
 
@@ -1295,6 +1317,7 @@ mod tests {
     fn test_main_fn() {
         let file = fs::read_to_string("./test.rush").unwrap();
         let (ast, _) = rush_analyzer::analyze(&file).unwrap();
+        dbg!(&ast);
 
         let context = Context::create();
         let mut compiler = Compiler::new(
