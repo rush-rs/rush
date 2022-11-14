@@ -783,29 +783,7 @@ impl<'ctx> Compiler<'ctx> {
                     InfixOp::Mul => self.builder.build_int_mul(lhs, rhs, "i_prod"),
                     InfixOp::Div => self.builder.build_int_signed_div(lhs, rhs, "i_prod"),
                     InfixOp::Rem => self.builder.build_int_signed_rem(lhs, rhs, "i_rem"),
-                    InfixOp::Pow => {
-                        // convert both arguments to f64
-                        let lhs_f64 = self.builder.build_signed_int_to_float(
-                            lhs,
-                            self.context.f64_type(),
-                            "pow_lhs",
-                        );
-                        let rhs_f64 = self.builder.build_signed_int_to_float(
-                            rhs,
-                            self.context.f64_type(),
-                            "pow_rhs",
-                        );
-
-                        // call the pow builtin function
-                        let pow_res = self.invoke_pow(lhs_f64, rhs_f64);
-
-                        // convert the result back to i64
-                        self.builder.build_float_to_signed_int(
-                            pow_res,
-                            self.context.i64_type(),
-                            "pow_i64_res",
-                        )
-                    }
+                    InfixOp::Pow => self.__rush_core_pow(lhs, rhs),
                     InfixOp::Shl => self.builder.build_left_shift(lhs, rhs, "i_shl"),
                     InfixOp::Shr => self.builder.build_right_shift(lhs, rhs, true, "i_shr"),
                     InfixOp::BitOr => self.builder.build_or(lhs, rhs, "i_bor"),

@@ -1,6 +1,6 @@
 use inkwell::{
     types::BasicMetadataTypeEnum,
-    values::{BasicMetadataValueEnum, BasicValueEnum, FloatValue},
+    values::{BasicMetadataValueEnum, BasicValueEnum, IntValue},
     FloatPredicate, IntPredicate,
 };
 
@@ -8,29 +8,22 @@ use crate::Compiler;
 
 impl<'ctx> Compiler<'ctx> {
     /// Helper function for the `**` and `**=` operators.
-    /// Because LLVM does not support the pow instruction, the GLIBC `pow` function is used.
+    /// Because LLVM does not support the pow instruction, the core function is used.
     /// This function will declare the `pow` function if not already done previously.
     /// The `pow` function is then called using the `lhs` and `rhs` arguments.
-    pub(crate) fn invoke_pow(
+    pub(crate) fn __rush_core_pow(
         &mut self,
-        lhs: FloatValue<'ctx>,
-        rhs: FloatValue<'ctx>,
-    ) -> FloatValue<'ctx> {
+        lhs: IntValue<'ctx>,
+        rhs: IntValue<'ctx>,
+    ) -> IntValue<'ctx> {
         // declare the pow builtin function if not already declared
-        if self.declared_builtins.insert("pow") {
-            let pow_type = self.context.f64_type().fn_type(
-                &[
-                    BasicMetadataTypeEnum::FloatType(self.context.f64_type()),
-                    BasicMetadataTypeEnum::FloatType(self.context.f64_type()),
-                ],
-                false,
-            );
-            self.module.add_function("pow", pow_type, None);
+        if self.declared_builtins.insert("core::pow") {
+            self.declare_rush_core_pow();
         }
 
         let args: Vec<BasicMetadataValueEnum> = vec![
-            BasicValueEnum::FloatValue(lhs).into(),
-            BasicValueEnum::FloatValue(rhs).into(),
+            BasicValueEnum::IntValue(lhs).into(),
+            BasicValueEnum::IntValue(rhs).into(),
         ];
 
         // call the pow builtin function
@@ -38,15 +31,120 @@ impl<'ctx> Compiler<'ctx> {
             .builder
             .build_call(
                 self.module
-                    .get_function("pow")
+                    .get_function("core::pow")
                     .expect("pow is declared above"),
                 &args,
-                "pow",
+                "pow_res",
             )
             .try_as_basic_value()
             .expect_left("pow always returns a value");
 
-        res.into_float_value()
+        res.into_int_value()
+    }
+
+    /// Declares a rush core function for calculating the power of integer values.
+    /// fn pow(base: int, mut exp: int) -> int {
+    ///     let mut res = 1;
+    ///     if exp < 0 {
+    ///         return 0;
+    ///     }
+    ///     while exp != 0 {
+    ///         res *= base;
+    ///         exp -= 1;
+    ///     }
+    ///     res
+    /// }
+    pub(crate) fn declare_rush_core_pow(&mut self) {
+        // save the basic block to jump to when done
+        // this is required because the function is generated when needed
+        let origin_block = self
+            .builder
+            .get_insert_block()
+            .expect("there is a bb before this");
+
+        let i64 = self.context.i64_type();
+
+        let pow_type = i64.fn_type(
+            &[
+                BasicMetadataTypeEnum::IntType(i64),
+                BasicMetadataTypeEnum::IntType(i64),
+            ],
+            false,
+        );
+
+        let function = self.module.add_function("core::pow", pow_type, None);
+
+        // add basic blocks for the function
+        let fn_body = self.context.append_basic_block(function, "entry");
+        let return_0_block = self.context.append_basic_block(function, "ret_0");
+
+        // add basic blocks for the loop
+        let loop_head = self.context.append_basic_block(function, "loop_head");
+        let loop_body = self.context.append_basic_block(function, "loop_body");
+        let after_loop = self.context.append_basic_block(function, "after_loop");
+
+        //// Before loop ////
+        self.builder.position_at_end(fn_body);
+
+        // get the base and exp from the args
+        let base = function.get_params()[0].into_int_value();
+        let exp = function.get_params()[1];
+        let exp_ptr = self.builder.build_alloca(i64, "exp_ptr");
+        self.builder.build_store(exp_ptr, exp);
+
+        // create the accumulator variable
+        self.builder.position_at_end(fn_body);
+        let acc_ptr = self.builder.build_alloca(i64, "accumulator");
+        self.builder.build_store(acc_ptr, i64.const_int(1, false));
+
+        //// Edge case: exp < 0 ////
+        let exp_lt_0 = self.builder.build_int_compare(
+            IntPredicate::SLT,
+            exp.into_int_value(),
+            i64.const_zero(),
+            "exp_lt_0",
+        );
+        self.builder
+            .build_conditional_branch(exp_lt_0, return_0_block, loop_head);
+        self.builder.position_at_end(return_0_block);
+        self.builder.build_return(Some(&i64.const_zero()));
+
+        //// Loop head ////
+        self.builder.position_at_end(loop_head);
+
+        // if the exponent is 0, quit the loop
+        let exp = self.builder.build_load(exp_ptr, "exp").into_int_value();
+        let break_cond =
+            self.builder
+                .build_int_compare(IntPredicate::EQ, exp, i64.const_zero(), "break_cond");
+        self.builder
+            .build_conditional_branch(break_cond, after_loop, loop_body);
+
+        //// Loop body ////
+        self.builder.position_at_end(loop_body);
+
+        // accumulator *= base
+        let acc = self.builder.build_load(acc_ptr, "acc").into_int_value();
+        let acc_mul_ass = self.builder.build_int_mul(acc, base, "acc_mul_ass");
+        self.builder.build_store(acc_ptr, acc_mul_ass);
+
+        // exp -= 1
+        let exp = self.builder.build_load(exp_ptr, "exp").into_int_value();
+        let exp_sub_ass = self
+            .builder
+            .build_int_sub(exp, i64.const_int(1, false), "exp_sub_ass");
+        self.builder.build_store(exp_ptr, exp_sub_ass);
+
+        // repeat iteration (jump to loop head)
+        self.builder.build_unconditional_branch(loop_head);
+
+        //// After loop ////
+        self.builder.position_at_end(after_loop);
+        let res = self.builder.build_load(acc_ptr, "res");
+        self.builder.build_return(Some(&res));
+
+        // jump back to the origin basic block
+        self.builder.position_at_end(origin_block);
     }
 
     /// Defines the builtin function responsible for converting a float into a char
@@ -60,6 +158,7 @@ impl<'ctx> Compiler<'ctx> {
             .builder
             .get_insert_block()
             .expect("there is a bb before this");
+
         // define the function signature
         let params = vec![BasicMetadataTypeEnum::FloatType(self.context.f64_type())];
         let signature = self.context.i8_type().fn_type(&params, false);
@@ -131,6 +230,7 @@ impl<'ctx> Compiler<'ctx> {
         );
         // return the char result in the end
         self.builder.build_return(Some(&char_res));
+
         // jump back to the origin basic block
         self.builder.position_at_end(origin_block);
     }
@@ -142,6 +242,7 @@ impl<'ctx> Compiler<'ctx> {
             .builder
             .get_insert_block()
             .expect("there must be a bb before this");
+
         // define the function signature
         let params = vec![BasicMetadataTypeEnum::IntType(self.context.i64_type())];
         let signature = self.context.i8_type().fn_type(&params, false);
@@ -213,6 +314,7 @@ impl<'ctx> Compiler<'ctx> {
         );
         // return the char result in the end
         self.builder.build_return(Some(&char_res));
+
         // jump back to the origin basic block
         self.builder.position_at_end(origin_block);
     }
