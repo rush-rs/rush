@@ -220,7 +220,7 @@ impl<'ctx> Compiler<'ctx> {
                 Type::Float => BasicMetadataTypeEnum::FloatType(self.context.f64_type()),
                 Type::Bool => BasicMetadataTypeEnum::IntType(self.context.bool_type()),
                 Type::Char => BasicMetadataTypeEnum::IntType(self.context.i8_type()),
-                Type::Unit => BasicMetadataTypeEnum::IntType(self.context.i8_type()),
+                Type::Unit => BasicMetadataTypeEnum::IntType(self.context.bool_type()),
                 Type::Never | Type::Unknown => {
                     unreachable!("the analyzer disallows these types to be used as parameters")
                 }
@@ -231,7 +231,7 @@ impl<'ctx> Compiler<'ctx> {
         let signature = match node.return_type {
             Type::Int => self.context.i64_type().fn_type(&params, false),
             Type::Float => self.context.f64_type().fn_type(&params, false),
-            Type::Unit => self.context.void_type().fn_type(&params, false),
+            Type::Unit => self.context.bool_type().fn_type(&params, false),
             Type::Char => self.context.i8_type().fn_type(&params, false),
             Type::Bool => self.context.bool_type().fn_type(&params, false),
             Type::Unknown | Type::Never => {
