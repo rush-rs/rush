@@ -65,7 +65,7 @@ impl Compiler<'_> {
         self.function_body.extend_from_slice(idx);
     }
 
-    pub fn __rush_internal_cast_int_to_char(&mut self) {
+    pub(crate) fn __rush_internal_cast_int_to_char(&mut self) {
         self.call_internal(
             "__rush_internal_cast_int_to_char",
             vec![
@@ -118,7 +118,7 @@ impl Compiler<'_> {
         );
     }
 
-    pub fn __rush_internal_cast_float_to_char(&mut self) {
+    pub(crate) fn __rush_internal_cast_float_to_char(&mut self) {
         self.call_internal(
             "__rush_internal_cast_float_to_char",
             vec![
@@ -163,7 +163,7 @@ impl Compiler<'_> {
         );
     }
 
-    pub fn __rush_internal_pow_int(&mut self) {
+    pub(crate) fn __rush_internal_pow_int(&mut self) {
         self.call_internal(
             "__rush_internal_pow_int",
             vec![
@@ -289,7 +289,7 @@ impl Compiler<'_> {
         self.function_body.extend_from_slice(idx);
     }
 
-    pub fn __wasi_exit(&mut self) {
+    pub(crate) fn __wasi_exit(&mut self) {
         self.function_body.push(instructions::I32_WRAP_I64);
         self.call_wasi(
             "__wasi_exit",
