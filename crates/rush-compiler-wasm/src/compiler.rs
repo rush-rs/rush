@@ -229,12 +229,17 @@ impl<'src> Compiler<'src> {
 
         // compile functions
         self.main_fn(node.main_fn);
-        for (idx, func) in node.functions.into_iter().enumerate() {
+        for (idx, func) in node
+            .functions
+            .into_iter()
+            .filter(|func| func.used)
+            .enumerate()
+        {
             self.curr_func_idx = idx + 1;
             self.function_definition(func);
         }
 
-        // push contents of `after_code_section`
+        // push bodies of builtin functions
         self.code_section.append(&mut self.builtins_code);
     }
 
@@ -335,11 +340,6 @@ impl<'src> Compiler<'src> {
     }
 
     fn function_definition(&mut self, node: AnalyzedFunctionDefinition<'src>) {
-        // don't compile unused functions
-        if !node.used {
-            return;
-        }
-
         // reset param count
         self.param_count = 0;
 
