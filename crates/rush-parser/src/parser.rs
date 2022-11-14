@@ -118,14 +118,29 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
     fn program(&mut self) -> Result<'src, Program<'src>> {
         let start_loc = self.curr_tok.span.start;
         let mut functions = vec![];
+        let mut globals = vec![];
 
         while self.curr_tok.kind != TokenKind::Eof {
-            functions.push(self.function_definition()?);
+            match self.curr_tok.kind {
+                TokenKind::Fn => functions.push(self.function_definition()?),
+                TokenKind::Let => globals.push(self.let_stmt()?),
+                _ => {
+                    return Err(Error::new_boxed(
+                        format!(
+                            "expected either `fn` or `let`, found `{}`",
+                            self.curr_tok.kind
+                        ),
+                        self.curr_tok.span,
+                        self.lexer.source(),
+                    ))
+                }
+            }
         }
 
         Ok(Program {
             span: start_loc.until(self.prev_tok.span.end),
             functions,
+            globals,
         })
     }
 
@@ -291,7 +306,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
 
     fn statement(&mut self) -> Result<'src, Either<Statement<'src>, Expression<'src>>> {
         Ok(match self.curr_tok.kind {
-            TokenKind::Let => Either::Left(self.let_stmt()?),
+            TokenKind::Let => Either::Left(Statement::Let(self.let_stmt()?)),
             TokenKind::Return => Either::Left(self.return_stmt()?),
             TokenKind::Loop => Either::Left(self.loop_stmt()?),
             TokenKind::While => Either::Left(self.while_stmt()?),
@@ -302,7 +317,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         })
     }
 
-    fn let_stmt(&mut self) -> Result<'src, Statement<'src>> {
+    fn let_stmt(&mut self) -> Result<'src, LetStmt<'src>> {
         let start_loc = self.curr_tok.span.start;
 
         // skip let token: this function is only called when self.curr_tok.kind == TokenKind::Let
@@ -331,13 +346,13 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             start_loc.until(self.prev_tok.span.end),
         )?;
 
-        Ok(Statement::Let(LetStmt {
+        Ok(LetStmt {
             span: start_loc.until(self.prev_tok.span.end),
             mutable,
             type_,
             name,
             expr,
-        }))
+        })
     }
 
     fn return_stmt(&mut self) -> Result<'src, Statement<'src>> {
@@ -1279,20 +1294,22 @@ mod tests {
                 RBrace @ 29..30,
             ],
             tree! {
-                (Program @ 0..30, [
-                    (FunctionDefinition @ 0..30,
-                        name: ("main", @ 3..7),
-                        params @ 7..9: [],
-                        return_type: (None, @ 8..11),
-                        block: (Block @ 10..30,
-                            stmts: [
-                                (LetStmt @ 12..25,
-                                    mutable: false,
-                                    name: ("a", @ 16..17),
-                                    type: (None),
-                                    expr: (Bool true, @ 20..24)),
-                                (ExprStmt @ 26..28, (Ident "a", @ 26..27))],
-                            expr: (None)))])
+                (Program @ 0..30,
+                    functions: [
+                        (FunctionDefinition @ 0..30,
+                            name: ("main", @ 3..7),
+                            params @ 7..9: [],
+                            return_type: (None, @ 8..11),
+                            block: (Block @ 10..30,
+                                stmts: [
+                                    (LetStmt @ 12..25,
+                                        mutable: false,
+                                        name: ("a", @ 16..17),
+                                        type: (None),
+                                        expr: (Bool true, @ 20..24)),
+                                    (ExprStmt @ 26..28, (Ident "a", @ 26..27))],
+                                expr: (None)))],
+                    globals: [])
             },
         )?;
 
@@ -1321,30 +1338,32 @@ mod tests {
                 RBrace @ 60..61,
             ],
             tree! {
-                (Program @ 0..61, [
-                    (FunctionDefinition @ 0..61,
-                        name: ("add", @ 3..6),
-                        params @ 6..29: [
-                            (Parameter,
-                                mutable: false,
-                                name: ("left", @ 7..11),
-                                type: (Type::Int, @ 13..16)),
-                            (Parameter,
-                                mutable: false,
-                                name: ("right", @ 18..23),
-                                type: (Type::Int, @ 25..28))],
-                        return_type: (Some(Type::Int), @ 33..36),
-                        block: (Block @ 37..61,
-                            stmts: [
-                                (ReturnStmt @ 39..59, (Some(InfixExpr @ 46..58,
-                                    lhs: (Ident "left", @ 46..50),
-                                    op: InfixOp::Plus,
-                                    rhs: (Ident "right", @ 53..58))))],
-                            expr: (None)))])
+                (Program @ 0..61,
+                    functions: [
+                        (FunctionDefinition @ 0..61,
+                            name: ("add", @ 3..6),
+                            params @ 6..29: [
+                                (Parameter,
+                                    mutable: false,
+                                    name: ("left", @ 7..11),
+                                    type: (Type::Int, @ 13..16)),
+                                (Parameter,
+                                    mutable: false,
+                                    name: ("right", @ 18..23),
+                                    type: (Type::Int, @ 25..28))],
+                            return_type: (Some(Type::Int), @ 33..36),
+                            block: (Block @ 37..61,
+                                stmts: [
+                                    (ReturnStmt @ 39..59, (Some(InfixExpr @ 46..58,
+                                        lhs: (Ident "left", @ 46..50),
+                                        op: InfixOp::Plus,
+                                        rhs: (Ident "right", @ 53..58))))],
+                                expr: (None)))],
+                    globals: [])
             },
         )?;
 
-        // fn a() {} fn b() {}
+        // fn a() {} fn b() {} let a = 1;
         program_test(
             tokens![
                 Fn @ 0..2,
@@ -1359,23 +1378,35 @@ mod tests {
                 RParen @ 15..16,
                 LBrace @ 17..18,
                 RBrace @ 18..19,
+                Let @ 20..23,
+                Ident("a") @ 24..25,
+                Assign @ 26..27,
+                Int(1) @ 28..29,
+                Semicolon @ 29..30,
             ],
             tree! {
-                (Program @ 0..19, [
-                    (FunctionDefinition @ 0..9,
-                        name: ("a", @ 3..4),
-                        params @ 4..6: [],
-                        return_type: (None, @ 5..8),
-                        block: (Block @ 7..9,
-                            stmts: [],
-                            expr: (None))),
-                    (FunctionDefinition @ 10..19,
-                        name: ("b", @ 13..14),
-                        params @ 14..16: [],
-                        return_type: (None, @ 15..18),
-                        block: (Block @ 17..19,
-                            stmts: [],
-                            expr: (None)))])
+                (Program @ 0..30,
+                    functions: [
+                        (FunctionDefinition @ 0..9,
+                            name: ("a", @ 3..4),
+                            params @ 4..6: [],
+                            return_type: (None, @ 5..8),
+                            block: (Block @ 7..9,
+                                stmts: [],
+                                expr: (None))),
+                        (FunctionDefinition @ 10..19,
+                            name: ("b", @ 13..14),
+                            params @ 14..16: [],
+                            return_type: (None, @ 15..18),
+                            block: (Block @ 17..19,
+                                stmts: [],
+                                expr: (None)))],
+                    globals: [
+                        (Let @ 20..30,
+                            mutable: false,
+                            name: ("a", @ 24..25),
+                            type: (None),
+                            expr: (Int 1, @ 28..29))])
             },
         )?;
 

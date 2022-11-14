@@ -1487,33 +1487,35 @@ mod tests {
         // fn add(left: int, right: int) -> int { return left + right; } fn main() {}
         program_test(
             tree! {
-                (Program @ 0..61, [
-                    (FunctionDefinition @ 0..61,
-                        name: ("add", @ 3..6),
-                        params @ 6..29: [
-                            (Parameter,
-                                mutable: false,
-                                name: ("left", @ 7..11),
-                                type: (Type::Int, @ 13..16)),
-                            (Parameter,
-                                mutable: false,
-                                name: ("right", @ 18..23),
-                                type: (Type::Int, @ 25..28))],
-                        return_type: (Some(Type::Int), @ 33..36),
-                        block: (Block @ 37..61,
-                            stmts: [
-                                (ReturnStmt @ 39..59, (Some(InfixExpr @ 46..58,
-                                    lhs: (Ident "left", @ 46..50),
-                                    op: InfixOp::Plus,
-                                    rhs: (Ident "right", @ 53..58))))],
-                            expr: (None))),
-                    (FunctionDefinition @ 62..74,
-                        name: ("main", @ 65..69),
-                        params @ 69..71: [],
-                        return_type: (None, @ 70..73),
-                        block: (Block @ 72..74,
-                            stmts: [],
-                            expr: (None)))])
+                (Program @ 0..61,
+                    functions: [
+                        (FunctionDefinition @ 0..61,
+                            name: ("add", @ 3..6),
+                            params @ 6..29: [
+                                (Parameter,
+                                    mutable: false,
+                                    name: ("left", @ 7..11),
+                                    type: (Type::Int, @ 13..16)),
+                                (Parameter,
+                                    mutable: false,
+                                    name: ("right", @ 18..23),
+                                    type: (Type::Int, @ 25..28))],
+                            return_type: (Some(Type::Int), @ 33..36),
+                            block: (Block @ 37..61,
+                                stmts: [
+                                    (ReturnStmt @ 39..59, (Some(InfixExpr @ 46..58,
+                                        lhs: (Ident "left", @ 46..50),
+                                        op: InfixOp::Plus,
+                                        rhs: (Ident "right", @ 53..58))))],
+                                expr: (None))),
+                        (FunctionDefinition @ 62..74,
+                            name: ("main", @ 65..69),
+                            params @ 69..71: [],
+                            return_type: (None, @ 70..73),
+                            block: (Block @ 72..74,
+                                stmts: [],
+                                expr: (None)))],
+                    globals: [])
             },
             analyzed_tree! {
                 (Program,

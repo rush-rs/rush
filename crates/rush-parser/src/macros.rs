@@ -3,10 +3,15 @@ macro_rules! tree {
     ((None)) => { None };
     ((Some($($node:tt)*))) => { Some(tree!(($($node)*))) };
 
-    ((Program @ $start:literal .. $end:literal, [$($func:tt),* $(,)?])) => {
+    ((
+        Program @ $start:literal .. $end:literal,
+        functions: [$($func:tt),* $(,)?],
+        globals: [$($global:tt),* $(,)?] $(,)?
+    )) => {
         Program {
             span: span!($start..$end),
             functions: vec![$(tree!($func)),*],
+            globals: vec![$(tree!($global)),*],
         }
     };
     ((
@@ -38,19 +43,22 @@ macro_rules! tree {
     };
 
     ((
-        LetStmt @ $start:literal .. $end:literal,
+        Let @ $start:literal .. $end:literal,
         mutable: $mut:literal,
         name: $ident:tt,
         type: $type:tt,
         expr: $expr:tt $(,)?
     )) => {
-        Statement::Let(LetStmt {
+        LetStmt {
             span: span!($start..$end),
             mutable: $mut,
             name: tree!($ident),
             type_: tree!($type),
             expr: tree!($expr),
-        })
+        }
+    };
+    ((LetStmt $($rest:tt)*)) => {
+        Statement::Let(tree!((Let $($rest)*)))
     };
     ((ReturnStmt @ $start:literal .. $end:literal, $expr:tt $(,)?)) => {
         Statement::Return(ReturnStmt {

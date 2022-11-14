@@ -43,6 +43,7 @@ pub struct Spanned<'src, T> {
 pub struct Program<'src> {
     pub span: Span<'src>,
     pub functions: Vec<FunctionDefinition<'src>>,
+    pub globals: Vec<LetStmt<'src>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

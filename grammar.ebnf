@@ -1,5 +1,6 @@
-Program = { FunctionDefinition } ;
+Program = { Item } ;
 
+Item               = FunctionDefinition | LetStmt ;
 FunctionDefinition = 'fn' , ident , '(' , [ ParameterList ] , ')'
                    , [ '->' , Type ] , Block ;
 ParameterList      = Parameter , { ',' , Parameter } , [ ',' ] ;
