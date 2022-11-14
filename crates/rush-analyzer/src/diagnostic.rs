@@ -3,15 +3,15 @@ use std::{borrow::Cow, fmt::Display};
 use rush_parser::{Error, Span};
 
 #[derive(PartialEq, Eq, Debug, Clone)]
-pub struct Diagnostic {
+pub struct Diagnostic<'src> {
     pub level: DiagnosticLevel,
     pub message: Cow<'static, str>,
     pub notes: Vec<Cow<'static, str>>,
-    pub span: Span,
+    pub span: Span<'src>,
 }
 
-impl From<Error> for Diagnostic {
-    fn from(err: Error) -> Self {
+impl<'src> From<Error<'src>> for Diagnostic<'src> {
+    fn from(err: Error<'src>) -> Self {
         Self::new(
             DiagnosticLevel::Error(ErrorKind::Syntax),
             err.message,
@@ -21,12 +21,12 @@ impl From<Error> for Diagnostic {
     }
 }
 
-impl Diagnostic {
+impl<'src> Diagnostic<'src> {
     pub fn new(
         level: DiagnosticLevel,
         message: impl Into<Cow<'static, str>>,
         notes: Vec<Cow<'static, str>>,
-        span: Span,
+        span: Span<'src>,
     ) -> Self {
         Self {
             level,
@@ -53,7 +53,7 @@ impl Diagnostic {
             .collect();
 
         // take special action if the source code is empty or there is no useful span
-        if source_code.is_empty() || self.span == Span::default() {
+        if source_code.is_empty() || self.span == Span::dummy() {
             return format!(
                 " \x1b[1;3{color}m{lvl}\x1b[39m in {filename}\x1b[0m \n{msg}{notes}",
                 lvl = self.level,

@@ -2,15 +2,22 @@ use std::fmt::{self, Debug, Display, Formatter};
 
 use crate::Span;
 
-#[derive(Clone, Copy, PartialEq, Default)]
+#[derive(Clone, Copy, PartialEq)]
 pub struct Token<'src> {
     pub kind: TokenKind<'src>,
-    pub span: Span,
+    pub span: Span<'src>,
 }
 
 impl<'src> Token<'src> {
-    pub fn new(kind: TokenKind<'src>, span: Span) -> Self {
+    pub fn new(kind: TokenKind<'src>, span: Span<'src>) -> Self {
         Self { kind, span }
+    }
+
+    pub fn dummy() -> Self {
+        Self {
+            kind: TokenKind::default(),
+            span: Span::dummy(),
+        }
     }
 }
 
@@ -158,7 +165,7 @@ pub enum TokenKind<'src> {
 }
 
 impl<'src> TokenKind<'src> {
-    pub fn spanned(self, span: Span) -> Token<'src> {
+    pub fn spanned(self, span: Span<'src>) -> Token<'src> {
         Token { kind: self, span }
     }
 

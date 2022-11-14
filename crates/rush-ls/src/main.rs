@@ -52,7 +52,7 @@ impl LanguageServer for Backend {
 impl Backend {
     async fn create_diagnostics(&self, params: TextDocumentItem) {
         // obtain the diagnostics from the analyzer
-        let raw_diagnostics = match rush_analyzer::analyze(&params.text) {
+        let raw_diagnostics = match rush_analyzer::analyze(&params.text, params.uri.as_str()) {
             Ok((_, diagnostics)) => diagnostics,
             Err(diagnostics) => diagnostics,
         };

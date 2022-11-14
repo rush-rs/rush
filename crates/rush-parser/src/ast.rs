@@ -34,43 +34,43 @@ impl Display for Type {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Spanned<T> {
-    pub span: Span,
+pub struct Spanned<'src, T> {
+    pub span: Span<'src>,
     pub inner: T,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Program<'src> {
-    pub span: Span,
+    pub span: Span<'src>,
     pub functions: Vec<FunctionDefinition<'src>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FunctionDefinition<'src> {
-    pub span: Span,
-    pub name: Spanned<&'src str>,
-    pub params: Spanned<Vec<Parameter<'src>>>,
-    pub return_type: Spanned<Option<Type>>,
+    pub span: Span<'src>,
+    pub name: Spanned<'src, &'src str>,
+    pub params: Spanned<'src, Vec<Parameter<'src>>>,
+    pub return_type: Spanned<'src, Option<Type>>,
     pub block: Block<'src>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Parameter<'src> {
     pub mutable: bool,
-    pub name: Spanned<&'src str>,
-    pub type_: Spanned<Type>,
+    pub name: Spanned<'src, &'src str>,
+    pub type_: Spanned<'src, Type>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Block<'src> {
-    pub span: Span,
+    pub span: Span<'src>,
     pub stmts: Vec<Statement<'src>>,
     pub expr: Option<Expression<'src>>,
 }
 
-impl Block<'_> {
+impl<'src> Block<'src> {
     /// Returns the span responsible for the block's result type
-    pub fn result_span(&self) -> Span {
+    pub fn result_span(&self) -> Span<'src> {
         self.expr.as_ref().map_or_else(
             || self.stmts.last().map_or(self.span, |stmt| stmt.span()),
             |expr| expr.span(),
@@ -85,13 +85,13 @@ pub enum Statement<'src> {
     Loop(LoopStmt<'src>),
     While(WhileStmt<'src>),
     For(ForStmt<'src>),
-    Break(BreakStmt),
-    Continue(ContinueStmt),
+    Break(BreakStmt<'src>),
+    Continue(ContinueStmt<'src>),
     Expr(ExprStmt<'src>),
 }
 
-impl Statement<'_> {
-    pub fn span(&self) -> Span {
+impl<'src> Statement<'src> {
+    pub fn span(&self) -> Span<'src> {
         match self {
             Self::Let(stmt) => stmt.span,
             Self::Return(stmt) => stmt.span,
@@ -107,36 +107,36 @@ impl Statement<'_> {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct LetStmt<'src> {
-    pub span: Span,
+    pub span: Span<'src>,
     pub mutable: bool,
-    pub name: Spanned<&'src str>,
-    pub type_: Option<Spanned<Type>>,
+    pub name: Spanned<'src, &'src str>,
+    pub type_: Option<Spanned<'src, Type>>,
     pub expr: Expression<'src>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReturnStmt<'src> {
-    pub span: Span,
+    pub span: Span<'src>,
     pub expr: Option<Expression<'src>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct LoopStmt<'src> {
-    pub span: Span,
+    pub span: Span<'src>,
     pub block: Block<'src>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct WhileStmt<'src> {
-    pub span: Span,
+    pub span: Span<'src>,
     pub cond: Expression<'src>,
     pub block: Block<'src>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ForStmt<'src> {
-    pub span: Span,
-    pub ident: Spanned<&'src str>,
+    pub span: Span<'src>,
+    pub ident: Spanned<'src, &'src str>,
     pub initializer: Expression<'src>,
     pub cond: Expression<'src>,
     pub update: Expression<'src>,
@@ -144,18 +144,18 @@ pub struct ForStmt<'src> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BreakStmt {
-    pub span: Span,
+pub struct BreakStmt<'src> {
+    pub span: Span<'src>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ContinueStmt {
-    pub span: Span,
+pub struct ContinueStmt<'src> {
+    pub span: Span<'src>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExprStmt<'src> {
-    pub span: Span,
+    pub span: Span<'src>,
     pub expr: Expression<'src>,
 }
 
@@ -163,21 +163,21 @@ pub struct ExprStmt<'src> {
 pub enum Expression<'src> {
     Block(Box<Block<'src>>),
     If(Box<IfExpr<'src>>),
-    Int(Spanned<i64>),
-    Float(Spanned<f64>),
-    Bool(Spanned<bool>),
-    Char(Spanned<u8>),
-    Ident(Spanned<&'src str>),
+    Int(Spanned<'src, i64>),
+    Float(Spanned<'src, f64>),
+    Bool(Spanned<'src, bool>),
+    Char(Spanned<'src, u8>),
+    Ident(Spanned<'src, &'src str>),
     Prefix(Box<PrefixExpr<'src>>),
     Infix(Box<InfixExpr<'src>>),
     Assign(Box<AssignExpr<'src>>),
     Call(Box<CallExpr<'src>>),
     Cast(Box<CastExpr<'src>>),
-    Grouped(Spanned<Box<Expression<'src>>>),
+    Grouped(Spanned<'src, Box<Expression<'src>>>),
 }
 
-impl Expression<'_> {
-    pub fn span(&self) -> Span {
+impl<'src> Expression<'src> {
+    pub fn span(&self) -> Span<'src> {
         match self {
             Self::Block(expr) => expr.span,
             Self::If(expr) => expr.span,
@@ -198,7 +198,7 @@ impl Expression<'_> {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct IfExpr<'src> {
-    pub span: Span,
+    pub span: Span<'src>,
     pub cond: Expression<'src>,
     pub then_block: Block<'src>,
     pub else_block: Option<Block<'src>>,
@@ -206,7 +206,7 @@ pub struct IfExpr<'src> {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PrefixExpr<'src> {
-    pub span: Span,
+    pub span: Span<'src>,
     pub op: PrefixOp,
     pub expr: Expression<'src>,
 }
@@ -221,7 +221,7 @@ pub enum PrefixOp {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct InfixExpr<'src> {
-    pub span: Span,
+    pub span: Span<'src>,
     pub lhs: Expression<'src>,
     pub op: InfixOp,
     pub rhs: Expression<'src>,
@@ -323,8 +323,8 @@ impl Display for InfixOp {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AssignExpr<'src> {
-    pub span: Span,
-    pub assignee: Spanned<&'src str>,
+    pub span: Span<'src>,
+    pub assignee: Spanned<'src, &'src str>,
     pub op: AssignOp,
     pub expr: Expression<'src>,
 }
@@ -382,14 +382,14 @@ impl Display for AssignOp {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CallExpr<'src> {
-    pub span: Span,
-    pub func: Spanned<&'src str>,
+    pub span: Span<'src>,
+    pub func: Spanned<'src, &'src str>,
     pub args: Vec<Expression<'src>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CastExpr<'src> {
-    pub span: Span,
+    pub span: Span<'src>,
     pub expr: Expression<'src>,
-    pub type_: Spanned<Type>,
+    pub type_: Spanned<'src, Type>,
 }

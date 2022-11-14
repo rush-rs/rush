@@ -1,18 +1,25 @@
 use std::fmt::Debug;
 
-#[derive(Default, Clone, Copy, PartialEq, Eq)]
-pub struct Span {
-    pub start: Location,
-    pub end: Location,
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct Span<'src> {
+    pub start: Location<'src>,
+    pub end: Location<'src>,
 }
 
-impl Span {
-    pub fn new(start: Location, end: Location) -> Self {
+impl<'src> Span<'src> {
+    pub fn new(start: Location<'src>, end: Location<'src>) -> Self {
         Self { start, end }
+    }
+
+    pub fn dummy() -> Self {
+        Self {
+            start: Location::new(""),
+            end: Location::new(""),
+        }
     }
 }
 
-impl Debug for Span {
+impl Debug for Span<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match f.alternate() {
             true => write!(
@@ -26,25 +33,27 @@ impl Debug for Span {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Location {
+pub struct Location<'src> {
     pub line: usize,
     pub column: usize,
     pub char_idx: usize,
     pub byte_idx: usize,
+    pub path: &'src str,
 }
 
-impl Default for Location {
-    fn default() -> Self {
+impl<'src> Location<'src> {
+    pub fn new(path: &'src str) -> Self {
         Self {
             line: 1,
             column: 1,
             char_idx: 0,
             byte_idx: 0,
+            path,
         }
     }
 }
 
-impl Location {
+impl<'src> Location<'src> {
     pub fn advance(&mut self, newline: bool, byte_idx_offset: usize) {
         self.char_idx += 1;
         self.byte_idx += byte_idx_offset;
@@ -56,7 +65,7 @@ impl Location {
         }
     }
 
-    pub fn until(self, end: Location) -> Span {
+    pub fn until(self, end: Location<'src>) -> Span {
         Span { start: self, end }
     }
 }
