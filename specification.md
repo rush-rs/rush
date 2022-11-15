@@ -10,9 +10,9 @@ create a valid program, the `main` function needs to be declared.
 
 ### Functions
 
-In rush, there cannot be top-level code other than function declarations.
-Therefore, a [main](#the-main-function) function is required to mark the start
-of program execution.
+In rush, there cannot be top-level code other than function declarations and
+globals. Therefore, a [main](#the-main-function) function is required to mark
+the start of program execution.
 
 ### The main function
 
@@ -28,8 +28,60 @@ fn main() {
 }
 ```
 
-This means the `main` function cannot take any `arguments` or return a value.
+This means the `main` function cannot take any `arguments` or return a non-unit
+value.
 
 ## Types
 
+| Notation    | Example Value | Size   | Values                          |
+| ----------- | ------------- | ------ | ------------------------------- |
+| `int`       | 42            | 64 bit | $- (2 ^{31})$ to $2 ^ {31}$     |
+| `float`     | 3.1415        | 64 bit | $- (2.0 ^{31})$ to $2.0 ^ {31}$ |
+| `char`      | 'a'           | 8 bit  | $0$ to $127$                    |
+| `bool`      | true          | 1 bit  | `true` and `false`              |
+| `()` (unit) | no value      | 1 bit  | no values                       |
+
 ## Operators
+
+### Arithmetic Operators
+
+| Operator | Operand Types  | Produces (Type)  |
+| -------- | -------------- | ---------------- |
+| +        | `int`, `float` | same as operands |
+| -        | `int`, `float` | same as operands |
+| *        | `int`, `float` | same as operands |
+| /        | `int`, `float` | same as operands |
+| %        | `int`          | `int`            |
+| **       | `int`          | `int`            |
+
+### Bitwise Operators
+
+| Operator | Operand Types | Produces (Type)  |
+| -------- | ------------- | ---------------- |
+| <<       | `int`         | `int`            |
+| >>       | `int`         | `int`            |
+| \|       | `int`, `bool` | same as operands |
+| \&       | `int`, `bool` | same as operands |
+| \^       | `int`, `bool` | same as operands |
+
+### Logical Operators
+
+| Operator | Operand Types                  | Produces (Type) |
+| -------- | ------------------------------ | --------------- |
+| &&       | `bool`                         | `bool`          |
+| \|\|     | `bool`                         | `bool`          |
+| <        | `int`, `float`                 | `bool`          |
+| <=       | `int`, `float`                 | `bool`          |
+| >        | `int`, `float`                 | `bool`          |
+| >=       | `int`, `float`                 | `bool`          |
+| ==       | `int`, `float`, `bool`, `char` | `bool`          |
+| !=       | `int`, `float`, `bool`, `char` | `bool`          |
+
+## Type Cast
+
+The rush language supports conversion between types. The basic syntax looks like
+this:
+
+```rs
+type as type
+```
