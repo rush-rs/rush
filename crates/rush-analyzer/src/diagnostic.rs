@@ -86,7 +86,7 @@ impl Display for Diagnostic<'_> {
 
         // take special action if the source code is empty or there is no useful span
         if self.source.is_empty() || self.span == Span::dummy() {
-            return write!(
+            return writeln!(
                 f,
                 " {color}{lvl}{reset_col} in {path}{ansi_reset} \n{msg}{notes}",
                 color = ansi_col(color + 30, true),
@@ -155,7 +155,7 @@ impl Display for Diagnostic<'_> {
             space = " ".repeat(self.span.start.column + 6),
         );
 
-        write!(
+        writeln!(
             f,
             " {color}{lvl}{reset_col} at {path}:{line}:{col}{ansi_reset}\n{line1}\n{line2}\n{marker}{line3}\n\n {color}{msg}{ansi_reset}{notes}",
             color = ansi_col(color + 30, true),
