@@ -1,5 +1,5 @@
 use std::{
-    fs,
+    env, fs,
     path::Path,
     process::{self, Command, Stdio},
 };
@@ -63,17 +63,24 @@ pub fn compile(ast: AnalyzedProgram, args: BuildArgs) {
 
 pub fn run(ast: AnalyzedProgram, args: BuildArgs) {
     // get executable path
-    let executable = match &args.output_file {
-        Some(path) => path.to_string_lossy().into_owned(),
-        None => {
-            format!(
-                "./{}",
+    let executable: String = match &args.output_file {
+        Some(path) => match path.is_absolute() {
+            true => path.to_string_lossy().into(),
+            false => env::current_dir()
+                .expect("there must be a working dir")
+                .join(path)
+                .to_string_lossy()
+                .into(),
+        },
+        None => env::current_dir()
+            .expect("there must be a working dir")
+            .join(
                 args.path
                     .file_stem()
-                    .expect("file reading would have failed before")
-                    .to_string_lossy()
+                    .expect("file reading would have failed before"),
             )
-        }
+            .to_string_lossy()
+            .into(),
     };
 
     compile(ast, args);
