@@ -600,14 +600,9 @@ impl<'src> Analyzer<'src> {
             }
         }
 
-        // do not allow never type on rhs
+        // warn unreachable if never type
         if expr.result_type() == Type::Never {
-            self.error(
-                ErrorKind::Type,
-                "invalid type for let-statemnt `!`",
-                vec![],
-                expr_span,
-            );
+            self.warn_unreachable(node.span, expr_span, false);
         }
 
         // insert and do additional checks if variable is shadowed
