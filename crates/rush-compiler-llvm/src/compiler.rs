@@ -150,7 +150,7 @@ impl<'ctx> Compiler<'ctx> {
 
     fn optimize(&self) {
         let config = InitializationConfig::default();
-        Target::initialize_native(&config).unwrap();
+        Target::initialize_all(&config);
         let pass_manager_builder = PassManagerBuilder::create();
 
         pass_manager_builder.set_optimization_level(self.optimization);

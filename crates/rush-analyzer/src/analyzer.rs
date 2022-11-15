@@ -235,7 +235,8 @@ impl<'src> Analyzer<'src> {
                         "the `main` function can be implemented like this: `fn main() { ... }`"
                             .into(),
                     ],
-                    Span::dummy(),
+                    // empty span including filename
+                    program.span.start.until(program.span.start),
                 );
                 Err(self.diagnostics)
             }

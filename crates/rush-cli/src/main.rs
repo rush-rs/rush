@@ -1,62 +1,38 @@
-use std::{fs, path::PathBuf, process, str::FromStr};
+use std::{fs, process};
 
-use analyzer::analyze;
 use clap::Parser;
-use cli::{Args, Backend, Command as ClapCommand};
-use rush_compiler_llvm::OptimizationLevel;
-//use rush_compiler_wasm::Compiler as WasmCompiler;
+use cli::{Backend, Cli};
 
 mod analyzer;
 mod cli;
 mod llvm;
 
 fn main() {
-    let args = Args::parse();
-
-    match args.command {
-        ClapCommand::Build {
-            backend,
-            output_file,
-            llvm_opt,
-            llvm_target,
-            llvm_show_ir,
-            file,
-        } => {
-            let path_str = file.to_string_lossy();
-            let code = fs::read_to_string(&file).unwrap_or_else(|err| {
+    match Cli::parse() {
+        Cli::Build(args) => {
+            let path_str = args.path.clone();
+            let path_str = path_str.to_string_lossy();
+            let code = fs::read_to_string(&args.path).unwrap_or_else(|err| {
                 eprintln!("cannot read `{}`: {err}", path_str);
                 process::exit(1);
             });
-            let ast = analyze(&code, &path_str).unwrap_or_else(|err| {
-                eprintln!("compilation failed: {err}");
-                process::exit(1);
-            });
+            let ast = analyzer::analyze(&code, &path_str);
 
-            match backend {
-                Backend::Llvm => llvm::compile(
-                    ast,
-                    OptimizationLevel::from(llvm_opt),
-                    llvm_show_ir,
-                    &output_file.unwrap_or_else(|| {
-                        PathBuf::from_str(&file.file_stem().unwrap().to_string_lossy()).unwrap()
-                    }),
-                ),
+            match args.backend {
+                Backend::Llvm => llvm::compile(ast, args),
                 Backend::Wasm => {
                     todo!()
                 }
             }
         }
-        ClapCommand::Run { backend, file } => todo!("Run"),
-        ClapCommand::Check { file } => {
+        Cli::Run(_args) => todo!("Run"),
+        Cli::Check { file } => {
             let path_str = file.to_string_lossy();
             let code = fs::read_to_string(&file).unwrap_or_else(|err| {
                 eprintln!("cannot read `{}`: {err}", path_str);
                 process::exit(1);
             });
-            let ast = analyze(&code, &path_str).unwrap_or_else(|err| {
-                eprintln!("compilation failed: {err}");
-                process::exit(1);
-            });
+            analyzer::analyze(&code, &path_str);
         }
     }
 }

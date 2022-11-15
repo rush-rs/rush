@@ -1,9 +1,10 @@
-use anyhow::{anyhow, Result};
-use rush_analyzer::{ast::AnalyzedProgram, Diagnostic, DiagnosticLevel};
+use std::process;
+
+use rush_analyzer::{ast::AnalyzedProgram, Diagnostic};
 
 /// Analyzes the specified source code and prints out any diagnostics.
-/// If an error occurs, the first error's kind is returned as the `Err(_)` variant.
-pub fn analyze<'src>(text: &'src str, path: &'src str) -> Result<AnalyzedProgram<'src>> {
+/// All diagnostics are printed to stderr and the process is exited when there is an error.
+pub fn analyze<'src>(text: &'src str, path: &'src str) -> AnalyzedProgram<'src> {
     let ast = match rush_analyzer::analyze(text, path) {
         Ok((ast, diagnostics)) => {
             print_diagnostics(&diagnostics);
@@ -11,27 +12,15 @@ pub fn analyze<'src>(text: &'src str, path: &'src str) -> Result<AnalyzedProgram
         }
         Err(diagnostics) => {
             print_diagnostics(&diagnostics);
-            let err = diagnostics
-                .iter()
-                .find_map(|d| {
-                    if let DiagnosticLevel::Error(err) = &d.level {
-                        Some(err.to_string())
-                    } else {
-                        None
-                    }
-                })
-                .expect("there is always an error");
-            return Err(anyhow!(err));
+            process::exit(1);
         }
     };
-    Ok(ast)
+    ast
 }
 
+#[inline]
 fn print_diagnostics(diagnostics: &[Diagnostic]) {
-    let display = diagnostics
-        .iter()
-        .map(|d| format!("{d:#}\n"))
-        .collect::<Vec<String>>()
-        .join("");
-    print!("{display}");
+    for diag in diagnostics {
+        eprintln!("{diag:#}");
+    }
 }

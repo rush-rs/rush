@@ -1,15 +1,49 @@
 use std::path::PathBuf;
 
-use clap::{ArgGroup, Parser, Subcommand, ValueEnum};
-use rush_compiler_llvm::OptimizationLevel;
+use clap::{Args, Parser, ValueEnum};
+use rush_compiler_llvm::inkwell::OptimizationLevel;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about)]
-#[command(group(ArgGroup::new("llvm")))]
-pub struct Args {
-    /// Rush subcommands
-    #[command(subcommand)]
-    pub command: Command,
+pub enum Cli {
+    /// Build a binary using the specified backend
+    #[clap(alias = "b")]
+    Build(BuildArgs),
+    /// Run the source file's binary using the specified compiler
+    #[clap(alias = "r")]
+    Run(BuildArgs),
+    /// Check the source code without compilation
+    #[clap(alias = "c")]
+    Check {
+        /// Rush Source file
+        file: PathBuf,
+    },
+}
+
+#[derive(Args, Debug)]
+pub struct BuildArgs {
+    /// Specifies the compiler backend
+    #[clap(short, long, value_enum)]
+    pub backend: Backend,
+
+    /// Output file location
+    #[clap(short, long, value_parser)]
+    pub output_file: Option<PathBuf>,
+
+    /// The optimization level when using the LLVM backend
+    #[clap(short = 'O', long, value_parser, default_value = "0")]
+    pub llvm_opt: LlvmOpt,
+
+    /// The target triplet to use when using the LLVM backend, defaults to native
+    #[clap(long, value_parser)]
+    pub llvm_target: Option<String>,
+
+    /// Print the generated LLVM IR to stdout
+    #[clap(long, value_parser)]
+    pub llvm_show_ir: bool,
+
+    /// Path to rush source file
+    pub path: PathBuf,
 }
 
 #[derive(ValueEnum, Clone, Debug, PartialEq, Eq)]
@@ -18,49 +52,6 @@ pub enum Backend {
     Llvm,
     /// WASM compiler: requires wasm runtime for later execution
     Wasm,
-}
-
-#[derive(Subcommand, PartialEq, Eq, Debug)]
-pub enum Command {
-    /// Build (b) a binary using the specified backend
-    #[clap(alias = "b")]
-    Build {
-        /// Specifies the compiler backend
-        #[clap(short, long, value_enum)]
-        backend: Backend,
-
-        /// Compiler output file
-        #[clap(short, long, value_parser)]
-        output_file: Option<PathBuf>,
-
-        #[clap(short='O', long, value_parser, default_value=None)]
-        llvm_opt: LlvmOpt,
-
-        #[clap(long, value_parser)]
-        llvm_target: Option<String>,
-
-        #[clap(long, value_parser)]
-        llvm_show_ir: bool,
-
-        /// Rush Source file
-        file: PathBuf,
-    },
-    /// Run (r) the source file's binary using the specified compiler
-    #[clap(alias = "r")]
-    Run {
-        /// Specifies the compiler backend
-        #[clap(short, long, value_enum)]
-        backend: Backend,
-
-        /// Rush Source file
-        file: PathBuf,
-    },
-    /// Check (c) the source code without compilation
-    #[clap(alias = "c")]
-    Check {
-        /// Rush Source file
-        file: PathBuf,
-    },
 }
 
 #[derive(ValueEnum, Clone, Debug, PartialEq, Eq)]
