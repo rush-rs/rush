@@ -4,11 +4,9 @@ mod error;
 
 pub use compiler::*;
 pub use error::*;
-pub use inkwell::{
-    context::Context,
-    memory_buffer::MemoryBuffer,
-    targets::{TargetMachine, TargetTriple},
-    OptimizationLevel,
+pub use inkwell;
+use inkwell::{
+    context::Context, memory_buffer::MemoryBuffer, targets::TargetTriple, OptimizationLevel,
 };
 use rush_analyzer::ast::AnalyzedProgram;
 

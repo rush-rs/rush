@@ -17,6 +17,10 @@ impl<'src> Span<'src> {
             end: Location::new(""),
         }
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.start.byte_idx == self.end.byte_idx
+    }
 }
 
 impl Debug for Span<'_> {

@@ -85,10 +85,10 @@ impl Display for Diagnostic<'_> {
             .collect();
 
         // take special action if the source code is empty or there is no useful span
-        if self.source.is_empty() || self.span == Span::dummy() {
+        if self.source.is_empty() || self.span.is_empty() {
             return writeln!(
                 f,
-                " {color}{lvl}{reset_col} in {path}{ansi_reset} \n{msg}{notes}",
+                " {color}{lvl}{reset_col} in {path}{ansi_reset} \n {msg}{notes}",
                 color = ansi_col(color + 30, true),
                 lvl = self.level,
                 reset_col = ansi_col(39, false),
