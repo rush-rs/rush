@@ -33,13 +33,13 @@ value.
 
 ## Types
 
-| Notation    | Example Value | Size   | Values                          |
-| ----------- | ------------- | ------ | ------------------------------- |
-| `int`       | 42            | 64 bit | $- (2 ^{31})$ to $2 ^ {31}$     |
-| `float`     | 3.1415        | 64 bit | $- (2.0 ^{31})$ to $2.0 ^ {31}$ |
-| `char`      | 'a'           | 8 bit  | $0$ to $127$                    |
-| `bool`      | true          | 1 bit  | `true` and `false`              |
-| `()` (unit) | no value      | 1 bit  | no values                       |
+| Notation    | Example Value | Size   | Values                         |
+| ----------- | ------------- | ------ | ------------------------------ |
+| `int`       | 42            | 64 bit | $- 2 ^{63} \le x \lt 2 ^ {31}$ |
+| `float`     | 3.1415        | 64 bit | IEEE float values              |
+| `char`      | 'a'           | 8 bit  | $0 \le x \le 127$              |
+| `bool`      | true          | 1 bit  | `true` and `false`             |
+| `()` (unit) | no value      | 1 bit  | no values                      |
 
 ## Operators
 
@@ -83,5 +83,37 @@ The rush language supports conversion between types. The basic syntax looks like
 this:
 
 ```rs
-type as type
+value as type
 ```
+
+### A Note on Casting to Char
+
+When casting `int` or `float` values to char, any source value $lt 0$ is
+transformed into a `char` with the value $0$. Furthermore, if the source value
+is $\gt127$, the resulting char will have the value $127$. These limitations are
+due to chars only containing valid `ASCII` characters which lie in the range $0
+\le x \le 127$.
+
+**Note:** casting to char may involve invoking corelib functions, which may be
+expensive.
+
+### Valid Casts
+
+| From    | To      | Notes                                      |
+| ------- | ------- | ------------------------------------------ |
+| `int`   | `int`   | redundant                                  |
+| `int`   | `float` |                                            |
+| `int`   | `bool`  | `res` = `int` != 0                         |
+| `int`   | `char`  | [defined here](#a-note-on-casting-to-char) |
+| `float` | `int`   | truncate                                   |
+| `float` | `float` | redundant                                  |
+| `float` | `bool`  | `res` = `float` != 0.0                     |
+| `float` | `char`  | [defined here](#a-note-on-casting-to-char) |
+| `bool`  | `int`   | `true` = 1 \| `false` = 0                  |
+| `bool`  | `float` |                                            |
+| `bool`  | `bool`  | redundant                                  |
+| `bool`  | `char`  |                                            |
+| `char`  | `int`   |                                            |
+| `char`  | `float` |                                            |
+| `char`  | `bool`  | `res` = `int(char)` != 0                   |
+| `char`  | `char`  | redundant                                  |
