@@ -60,3 +60,31 @@ pub fn compile(ast: AnalyzedProgram, args: BuildArgs) {
         process::exit(1);
     }
 }
+
+pub fn run(ast: AnalyzedProgram, args: BuildArgs) {
+    // get executable path
+    let executable = match &args.output_file {
+        Some(path) => path.to_string_lossy().into_owned(),
+        None => {
+            format!(
+                "./{}",
+                args.path
+                    .file_stem()
+                    .expect("file reading would have failed before")
+                    .to_string_lossy()
+            )
+        }
+    };
+
+    compile(ast, args);
+
+    let command = Command::new(executable)
+        .stderr(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .output()
+        .unwrap_or_else(|err| {
+            eprintln!("could not invoke binary: {err}");
+            process::exit(1);
+        });
+    process::exit(command.status.code().unwrap_or_default())
+}
