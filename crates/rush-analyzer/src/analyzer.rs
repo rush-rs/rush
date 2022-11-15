@@ -350,7 +350,12 @@ impl<'src> Analyzer<'src> {
             self.scopes[0].insert(
                 node.name.inner,
                 Variable {
-                    type_: node.type_.map_or(expr.result_type(), |type_| type_.inner),
+                    // use `{unknown}` type for non-constant globals to prevent further misleading
+                    // warnings
+                    type_: match expr.constant() {
+                        true => node.type_.map_or(expr.result_type(), |type_| type_.inner),
+                        false => Type::Unknown,
+                    },
                     span: node.name.span,
                     used: false,
                     mutable: node.mutable,
@@ -577,9 +582,10 @@ impl<'src> Analyzer<'src> {
         let expr = self.expression(node.expr);
 
         // check if the optional type conflicts with the rhs
-        // if the type of the rhs is unknown, do not return an error
         if let Some(declared) = &node.type_ {
-            if declared.inner != expr.result_type() && expr.result_type() != Type::Unknown {
+            if declared.inner != expr.result_type()
+                && !matches!(expr.result_type(), Type::Unknown | Type::Never)
+            {
                 self.error(
                     ErrorKind::Type,
                     format!(
@@ -594,11 +600,25 @@ impl<'src> Analyzer<'src> {
             }
         }
 
+        // do not allow never type on rhs
+        if expr.result_type() == Type::Never {
+            self.error(
+                ErrorKind::Type,
+                "invalid type for let-statemnt `!`",
+                vec![],
+                expr_span,
+            );
+        }
+
         // insert and do additional checks if variable is shadowed
         if let Some(old) = self.scope_mut().insert(
             node.name.inner,
             Variable {
-                type_: node.type_.map_or(expr.result_type(), |type_| type_.inner),
+                type_: match node.type_.map_or(expr.result_type(), |type_| type_.inner) {
+                    // map `!` to `{unknown}` to prevent further misleading warnings
+                    Type::Never => Type::Unknown,
+                    type_ => type_,
+                },
                 span: node.name.span,
                 used: false,
                 mutable: node.mutable,
