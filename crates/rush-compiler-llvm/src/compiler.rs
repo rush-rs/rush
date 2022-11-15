@@ -1224,11 +1224,11 @@ impl<'ctx> Compiler<'ctx> {
     fn build_return(&mut self, return_value: Option<BasicValueEnum<'ctx>>) {
         if !self.current_instruction_is_block_terminator() {
             match (return_value, self.curr_fn().name.as_str()) {
-                (Some(value), _) => self.builder.build_return(Some(&value)),
-                (None, "main") => {
+                (_, "main") => {
                     let success = self.context.i32_type().const_zero();
                     self.builder.build_return(Some(&success))
                 }
+                (Some(value), _) => self.builder.build_return(Some(&value)),
                 (None, _) => self.builder.build_return(None),
             };
         }
