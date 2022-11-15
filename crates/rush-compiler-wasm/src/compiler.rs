@@ -522,7 +522,7 @@ impl<'src> Compiler<'src> {
         self.function_body.push(instructions::LOOP); // loop to jump to with `continue`
         self.function_body.push(types::VOID); // with result `()`
 
-        self.block_expr(node.block);
+        self.block_expr(node.block, true);
         self.function_body.push(instructions::BR); // jump
         self.function_body.push(0); // to start of loop
 
@@ -548,7 +548,7 @@ impl<'src> Compiler<'src> {
         self.function_body.push(instructions::BR_IF); // jump if cond is not true
         self.function_body.push(1); // to end of outer block
 
-        self.block_expr(node.block);
+        self.block_expr(node.block, true);
         self.function_body.push(instructions::BR); // jump
         self.function_body.push(0); // to start of loop
 
@@ -570,8 +570,12 @@ impl<'src> Compiler<'src> {
         if let Some(byte) = wasm_type {
             self.locals.push(vec![1, byte]);
         }
-        self.curr_scope()
-            .insert(node.ident, wasm_type.map(|_| local_idx.clone()));
+
+        // create new scope with induction variable
+        self.scopes.push(HashMap::from([(
+            node.ident,
+            wasm_type.map(|_| local_idx.clone()),
+        )]));
 
         self.expression(node.initializer);
         self.function_body.push(instructions::LOCAL_SET);
@@ -597,7 +601,7 @@ impl<'src> Compiler<'src> {
         self.function_body.push(instructions::BR_IF); // jump if cond is not true
         self.function_body.push(1); // to end of outer block
 
-        self.block_expr(node.block); // the loop body
+        self.block_expr(node.block, false); // the loop body
         self.expression(node.update); // loop update expression
 
         self.function_body.push(instructions::BR); // jump
@@ -608,12 +612,15 @@ impl<'src> Compiler<'src> {
 
         // restore block count
         self.block_count = prev_block_count;
+
+        // pop scope
+        self.pop_scope();
     }
 
     fn expression(&mut self, node: AnalyzedExpression<'src>) {
         let diverges = node.result_type() == Type::Never;
         match node {
-            AnalyzedExpression::Block(node) => self.block_expr(*node),
+            AnalyzedExpression::Block(node) => self.block_expr(*node, true),
             AnalyzedExpression::If(node) => self.if_expr(*node),
             AnalyzedExpression::Int(value) => {
                 // `int`s are stored as signed `i64`
@@ -661,15 +668,19 @@ impl<'src> Compiler<'src> {
         }
     }
 
-    fn block_expr(&mut self, node: AnalyzedBlock<'src>) {
-        self.push_scope();
+    fn block_expr(&mut self, node: AnalyzedBlock<'src>, new_scope: bool) {
+        if new_scope {
+            self.push_scope();
+        }
         for stmt in node.stmts {
             self.statement(stmt);
         }
         if let Some(expr) = node.expr {
             self.expression(expr);
         }
-        self.pop_scope();
+        if new_scope {
+            self.pop_scope();
+        }
     }
 
     fn if_expr(&mut self, node: AnalyzedIfExpr<'src>) {
@@ -683,11 +694,11 @@ impl<'src> Compiler<'src> {
         }
 
         self.block_count += 1;
-        self.block_expr(node.then_block);
+        self.block_expr(node.then_block, true);
 
         if let Some(else_block) = node.else_block {
             self.function_body.push(instructions::ELSE);
-            self.block_expr(else_block);
+            self.block_expr(else_block, true);
         }
 
         self.block_count -= 1;
