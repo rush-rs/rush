@@ -168,7 +168,7 @@ impl<'ctx> Compiler<'ctx> {
 
     fn compile_main_fn(&mut self, node: &AnalyzedBlock) {
         // main fn takes no arguments but returns an i8 (exit-code)
-        let fn_type = self.context.i8_type().fn_type(&[], false);
+        let fn_type = self.context.i32_type().fn_type(&[], false);
         let main_fn = self
             .module
             .add_function("main", fn_type, Some(Linkage::External));
@@ -193,8 +193,7 @@ impl<'ctx> Compiler<'ctx> {
         self.scopes.pop();
 
         // return exit-code 0
-        let success = self.context.i8_type().const_zero().as_basic_value_enum();
-        self.build_return(Some(success));
+        self.build_return(None);
     }
 
     /// Defines a new global variable with the given name and initializes it using the expression
@@ -1227,7 +1226,7 @@ impl<'ctx> Compiler<'ctx> {
             match (return_value, self.curr_fn().name.as_str()) {
                 (Some(value), _) => self.builder.build_return(Some(&value)),
                 (None, "main") => {
-                    let success = self.context.i8_type().const_zero();
+                    let success = self.context.i32_type().const_zero();
                     self.builder.build_return(Some(&success))
                 }
                 (None, _) => self.builder.build_return(None),
