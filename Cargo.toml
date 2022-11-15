@@ -5,6 +5,7 @@ members = [
     "crates/rush-compiler-llvm",
     "crates/rush-ls",
     "crates/rush-compiler-wasm",
+    "crates/rush-cli",
 ]
 package.authors = ["RubixDev", "MikMuellerDev"]
 package.edition = "2021"
