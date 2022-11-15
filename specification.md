@@ -3,22 +3,25 @@
 A simple programming language for researching different ways of program
 execution and compilation.
 
+For an overview about rush's syntax, please consult the
+[grammar](./grammar.ebnf).
+
 ## Semantics
 
-Each rush program consists of an arbitrary amount of functions. In order to
-create a valid program, the `main` function needs to be declared.
+Each rush program consists of an arbitrary amount of functions and globals. In
+order to create a valid program, the [`main`](#the-main-function) function needs
+to be declared.
 
 ### Functions
 
 In rush, there cannot be top-level code other than function declarations and
-globals. Therefore, a [main](#the-main-function) function is required to mark
-the start of program execution.
+globals.
 
-### The main function
+#### The Main Function
 
-The `main` function serves as the entry to a rush program because program
-execution will start there. This concept is very similar to the `main` function
-in [Rust](https://www.rust-lang.org/) or in
+The `main` function serves as the entry to a rush program, so that code starts
+executing from here. This concept is very similar to the `main` function in
+[Rust](https://www.rust-lang.org/) or in
 [C](https://en.wikipedia.org/wiki/C_(programming_language)). The function
 signature of the `main` function has to look like this:
 
@@ -28,8 +31,19 @@ fn main() {
 }
 ```
 
-This means the `main` function cannot take any `arguments` or return a non-unit
-value.
+Therefore the `main` function cannot take any arguments or return a non-unit
+type value.
+
+#### Builtin Functions
+
+##### Exit
+
+```rs
+fn exit(code: i32) -> !
+```
+
+The `exit` function calls the operating system to quit program execution with
+the specified exit-code.
 
 ## Types
 
