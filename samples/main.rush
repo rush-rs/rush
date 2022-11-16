@@ -1,5 +1,8 @@
 ////////////// PART ONE //////////////
 
+// rush supports global variables
+let mut answer = 42;
+
 fn main() {
     let mut answer: int = 42; // int (i64)
     let pi: float = 3.14159265358979323846264338327950; // float (f64)
