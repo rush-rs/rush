@@ -1,1 +1,2 @@
-// TODO: add this module
+mod instruction;
+mod register;
