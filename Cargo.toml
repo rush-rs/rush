@@ -1,11 +1,12 @@
 [workspace]
 members = [
+    "crates/rush-ls",
+    "crates/rush-cli",
     "crates/rush-parser",
     "crates/rush-analyzer",
-    "crates/rush-compiler-llvm",
-    "crates/rush-ls",
     "crates/rush-compiler-wasm",
-    "crates/rush-cli",
+    "crates/rush-compiler-llvm",
+    "crates/rush-compiler-risc-v",
 ]
 package.authors = ["RubixDev", "MikMuellerDev"]
 package.edition = "2021"

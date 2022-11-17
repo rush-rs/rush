@@ -536,6 +536,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "rush-compiler-risc-v"
+version = "0.1.0"
+
+[[package]]
 name = "rush-compiler-wasm"
 version = "0.1.0"
 dependencies = [
