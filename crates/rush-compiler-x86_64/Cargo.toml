@@ -1,0 +1,7 @@
+[package]
+name = "rush-compiler-x86_64"
+version = "0.1.0"
+authors.workspace = true
+edition = "2021"
+license.workspace = true
+repository.workspace = true

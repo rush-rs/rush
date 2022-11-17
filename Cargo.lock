@@ -548,6 +548,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "rush-compiler-x86_64"
+version = "0.1.0"
+
+[[package]]
 name = "rush-ls"
 version = "0.1.0"
 dependencies = [
