@@ -139,8 +139,8 @@ impl Display for Instruction {
         match self {
             Instruction::IntelSyntax => writeln!(f, ".intel_syntax"),
             Instruction::Global(name) => writeln!(f, ".global {name}"),
-            Instruction::Section(section) => writeln!(f, ".section {section}"),
-            Instruction::Symbol(name) => writeln!(f, "{name}:"),
+            Instruction::Section(section) => writeln!(f, "\n.section {section}"),
+            Instruction::Symbol(name) => writeln!(f, "\n{name}:"),
             Instruction::Byte(num) => writeln!(f, "    .byte {num:#04x}"),
             Instruction::Short(num) => writeln!(f, "    .short {num:#06x}"),
             Instruction::Long(num) => writeln!(f, "    .long {num:#010x}"),
