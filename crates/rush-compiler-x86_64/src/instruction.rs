@@ -14,6 +14,7 @@ pub enum Instruction {
     Short(u16),
     Long(u32),
     Quad(u64),
+    Octa(u128),
 
     Ret,
     Syscall,
@@ -30,10 +31,11 @@ pub enum Instruction {
     Add(IntValue, IntValueOrImm),
     Sub(IntValue, IntValueOrImm),
     Imul(IntValue, IntValueOrImm),
-    Idiv(IntValue, IntValueOrImm),
+    Idiv(IntValue),
 
     Inc(IntValue),
     Dec(IntValue),
+    Neg(IntValue),
 
     /// Logical shift left
     Shl(IntValue, IntValueOrImm),
@@ -63,6 +65,9 @@ pub enum Instruction {
     /// Divide scalar double
     Divsd(FloatValue, FloatValue),
 
+    /// **Xor** **p**acked **d**ouble
+    Xorpd(FloatValue, FloatValue),
+
     /// Compare floats. (**u**nordered **com**pare **s**calar **d**ouble)
     Ucomisd(FloatValue, FloatValue),
     /// Convert float to int. (**c**on**v**er**t** **t**runcating **s**calar **d**ouble to
@@ -80,7 +85,7 @@ pub enum Section {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FloatValue {
     Register(FloatRegister),
-    Ptr(IntRegister, Offset),
+    Ptr(Size, IntRegister, Offset),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -102,6 +107,7 @@ pub enum Size {
     Word,
     Dword,
     Qword,
+    Oword,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -139,6 +145,7 @@ impl Display for Instruction {
             Instruction::Short(num) => writeln!(f, "    .short {num:#06x}"),
             Instruction::Long(num) => writeln!(f, "    .long {num:#010x}"),
             Instruction::Quad(num) => writeln!(f, "    .quad {num:#018x}"),
+            Instruction::Octa(num) => writeln!(f, "    .octa {num:#034x}"),
             Instruction::Ret => writeln!(f, "    ret"),
             Instruction::Syscall => writeln!(f, "    syscall"),
             Instruction::Jmp(symbol) => writeln!(f, "    jmp {symbol}"),
@@ -148,9 +155,10 @@ impl Display for Instruction {
             Instruction::Add(dest, src) => writeln!(f, "    add {dest}, {src}"),
             Instruction::Sub(dest, src) => writeln!(f, "    sub {dest}, {src}"),
             Instruction::Imul(dest, src) => writeln!(f, "    imul {dest}, {src}"),
-            Instruction::Idiv(dest, src) => writeln!(f, "    idiv {dest}, {src}"),
+            Instruction::Idiv(divisor) => writeln!(f, "    idiv {divisor}"),
             Instruction::Inc(reg) => writeln!(f, "    inc {reg}"),
             Instruction::Dec(reg) => writeln!(f, "    dec {reg}"),
+            Instruction::Neg(reg) => writeln!(f, "    neg {reg}"),
             Instruction::Shl(dest, src) => writeln!(f, "    shl {dest}, {src}"),
             Instruction::Sar(dest, src) => writeln!(f, "    sar {dest}, {src}"),
             Instruction::And(dest, src) => writeln!(f, "    and {dest}, {src}"),
@@ -163,6 +171,7 @@ impl Display for Instruction {
             Instruction::Subsd(dest, src) => writeln!(f, "    subsd {dest}, {src}"),
             Instruction::Mulsd(dest, src) => writeln!(f, "    mulsd {dest}, {src}"),
             Instruction::Divsd(dest, src) => writeln!(f, "    divsd {dest}, {src}"),
+            Instruction::Xorpd(dest, src) => writeln!(f, "    xorpd {dest}, {src}"),
             Instruction::Ucomisd(left, right) => writeln!(f, "    ucomisd {left}, {right}"),
             Instruction::Cvttsd2si(dest, src) => writeln!(f, "    cvttsd2si {dest}, {src}"),
         }
@@ -187,7 +196,7 @@ impl Display for FloatValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             FloatValue::Register(reg) => write!(f, "{reg}"),
-            FloatValue::Ptr(reg, offset) => write!(f, "qword ptr [{reg} + {offset}]"),
+            FloatValue::Ptr(size, reg, offset) => write!(f, "{size} ptr [{reg} + {offset}]"),
         }
     }
 }
@@ -221,6 +230,7 @@ impl Display for Size {
                 Size::Word => "word",
                 Size::Dword => "dword",
                 Size::Qword => "qword",
+                Size::Oword => "oword",
             }
         )
     }
@@ -276,7 +286,11 @@ mod tests {
             ),
             Instruction::Ucomisd(
                 FloatValue::Register(FloatRegister::Xmm0),
-                FloatValue::Ptr(IntRegister::Rip, Offset::Symbol("float_0".to_string())),
+                FloatValue::Ptr(
+                    Size::Qword,
+                    IntRegister::Rip,
+                    Offset::Symbol("float_0".to_string()),
+                ),
             ),
             Instruction::Section(Section::ReadOnlyData),
             Instruction::Symbol("float_127".to_string()),
