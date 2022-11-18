@@ -15,6 +15,7 @@ pub enum Instruction {
     SetIntCondition(Condition, IntRegister, IntRegister, IntRegister),
     Snez(IntRegister, IntRegister),
     Li(IntRegister, i64),
+    Mov(IntRegister, IntRegister),
     Add(IntRegister, IntRegister, IntRegister),
     Sub(IntRegister, IntRegister, IntRegister),
     Mul(IntRegister, IntRegister, IntRegister),
@@ -36,6 +37,7 @@ pub enum Instruction {
     SetFloatCondition(Condition, FloatRegister, FloatRegister, FloatRegister),
     Fld(FldType),
     Fsd(FldType),
+    Fmov(FloatRegister, FloatRegister),
     Fadd(FloatRegister, FloatRegister, FloatRegister),
     Fsub(FloatRegister, FloatRegister, FloatRegister),
     Fmul(FloatRegister, FloatRegister, FloatRegister),
@@ -136,6 +138,12 @@ impl Display for Instruction {
                 Condition::Gt => write!(f, "fgt.d {dest}, {l}, {r}"),
                 Condition::Ge => write!(f, "fge.d {dest}, {l}, {r}"),
             },
+            Instruction::Snez(dest, arg) => write!(f, "snez {dest}, {arg}"),
+            Instruction::Mov(dest, src) => write!(f, "mv {dest}, {src}"),
+            Instruction::Fmov(dest, src) => write!(f, "fmov.d {dest}, {src}"),
+            Instruction::CastIntToFloat(_, _) => todo!(),
+            Instruction::CastFloatToInt(_, _) => todo!(),
+            Instruction::CastByteToFloat(_, _) => todo!(),
         }
     }
 }

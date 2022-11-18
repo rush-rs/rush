@@ -1,16 +1,25 @@
+#![allow(dead_code)] // TODO: remove this attribute
+
 use std::collections::HashMap;
 
 use crate::{
     compiler::{Block, Compiler},
     instruction::Instruction,
-    register::{FloatRegister, IntRegister},
+    register::{FloatRegister, IntRegister, INT_REGISTERS},
 };
 
 impl Compiler {
-    pub(crate) fn alloc_reg(&mut self) -> IntRegister {
-        todo!()
+    /// Allocates (and returns) the next unused, general purpose int register
+    pub(crate) fn alloc_ireg(&mut self) -> IntRegister {
+        for reg in INT_REGISTERS {
+            if !self.used_registers.contains(reg) {
+                return *reg;
+            }
+        }
+        unreachable!("out of registers!")
     }
 
+    /// Allocates (and returns) the next unused, general purpose float register
     pub(crate) fn alloc_freg(&mut self) -> FloatRegister {
         todo!()
     }

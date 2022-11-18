@@ -1,4 +1,6 @@
-use std::collections::{HashMap, HashSet};
+#![allow(dead_code)] // TODO: remove this attribute
+
+use std::collections::HashMap;
 
 use rush_analyzer::ast::{
     AnalyzedBlock, AnalyzedExpression, AnalyzedFunctionDefinition, AnalyzedLetStmt,
@@ -19,14 +21,14 @@ pub struct Compiler {
     pub(crate) data_section: Vec<DataObj>,
     /// Read-only data section for storing constant values.
     pub(crate) rodata_section: Vec<DataObj>,
-
+    /// Holds metadata about the current function
     pub(crate) curr_fn: Function,
-
+    /// Saves the scopes. The last element is the most recent scope.
     pub(crate) scopes: Vec<HashMap<String, i64 /* sp offset */>>,
     /// Specifies all registers which are currently in use and may not be overwritten.
-    pub(crate) used_registers: HashSet<IntRegister>,
+    pub(crate) used_registers: Vec<IntRegister>,
     /// Specifies all float registers which are currently in use and may not be overwritten.
-    pub(crate) used_float_registers: HashSet<FloatRegister>,
+    pub(crate) used_float_registers: Vec<FloatRegister>,
 }
 
 pub(crate) struct Block {
@@ -36,8 +38,8 @@ pub(crate) struct Block {
 
 pub(crate) struct Function {
     /// Specifies how many bytes of stack space need to be allocated for the current function.
-    /// Include the nessecary allocation for `ra` or `fp`
-    pub(crate) stack_space: usize,
+    /// Include the necessary allocation for `ra` or `fp`
+    pub(crate) fp: usize,
 }
 
 pub(crate) enum DataObj {
@@ -47,7 +49,7 @@ pub(crate) enum DataObj {
 }
 
 impl Compiler {
-    fn position_at_end(&mut self, label: String) {
+    fn position_at_end(&mut self, label: &str) {
         self.curr_block = self
             .blocks
             .iter()
@@ -62,14 +64,14 @@ impl Compiler {
             data_section: vec![],
             rodata_section: vec![],
             scopes: vec![],
-            curr_fn: Function { stack_space: 0 },
-            used_registers: HashSet::new(),
-            used_float_registers: HashSet::new(),
+            curr_fn: Function { fp: 0 },
+            used_registers: vec![],
+            used_float_registers: vec![],
         }
     }
 
     pub fn compile(&mut self, ast: AnalyzedProgram) -> String {
-        for var in ast.globals {
+        for _var in ast.globals {
             // TODO: add zero initializer, init variables in
             //self.declare_global(var.name.into())
         }
@@ -81,12 +83,34 @@ impl Compiler {
         todo!()
     }
 
-    fn declare_global(&mut self, ident: String, value: AnalyzedExpression) {
+    fn declare_global(&mut self, _ident: String, _value: AnalyzedExpression) {
         todo!()
     }
 
     fn function_declaration(&mut self, node: AnalyzedFunctionDefinition) {
         // append block for the function
+        let block_label = format!(".{}", node.name);
+        self.append_block(block_label.clone());
+        self.position_at_end(&block_label);
+
+        // compile each statement
+        for stmt in node.block.stmts {
+            self.statement(stmt);
+        }
+
+        // place the result of the optional expression in the return value register(s)
+        if let Some(expr) = node.block.expr {
+            let res_reg = self.expression(expr);
+            match res_reg {
+                Register::Int(IntRegister::A0) | Register::Float(FloatRegister::Fa0) => {} // already in target register
+                Register::Int(reg) => {
+                    self.insert(Instruction::Mov(IntRegister::A0, reg));
+                }
+                Register::Float(reg) => {
+                    self.insert(Instruction::Fmov(FloatRegister::Fa0, reg));
+                }
+            }
+        }
     }
 
     fn block(&mut self, node: AnalyzedBlock) {
@@ -110,7 +134,9 @@ impl Compiler {
             AnalyzedStatement::For(_) => todo!(),
             AnalyzedStatement::Break => todo!(),
             AnalyzedStatement::Continue => todo!(),
-            AnalyzedStatement::Expr(_) => todo!(),
+            AnalyzedStatement::Expr(node) => {
+                self.expression(node);
+            }
         }
     }
 
@@ -122,21 +148,40 @@ impl Compiler {
         match value_reg {
             Register::Int(reg) => self.insert(Instruction::Sd(
                 reg,
-                Pointer::Stack(IntRegister::Fp, self.curr_fn.stack_space as i64),
+                Pointer::Stack(IntRegister::Fp, self.curr_fn.fp as i64),
             )),
             Register::Float(reg) => self.insert(Instruction::Fsd(FldType::Stack(
                 reg,
                 IntRegister::T0,
-                self.curr_fn.stack_space as i64,
+                self.curr_fn.fp as i64,
             ))),
         }
-        // TODO: insert into scope
-        //
-        // allocate stack space for the variable
-        self.curr_fn.stack_space += 8;
+
+        // insert variable into current scope
+        self.scopes
+            .last_mut()
+            .expect("there must be a scope")
+            .insert(node.name.to_string(), self.curr_fn.fp as i64);
+
+        // increment frame pointer
+        self.curr_fn.fp += 8;
     }
 
     fn expression(&mut self, node: AnalyzedExpression) -> Register {
-        todo!()
+        match node {
+            AnalyzedExpression::Block(_) => todo!(),
+            AnalyzedExpression::If(_) => todo!(),
+            AnalyzedExpression::Int(_) => todo!(),
+            AnalyzedExpression::Float(_) => todo!(),
+            AnalyzedExpression::Bool(_) => todo!(),
+            AnalyzedExpression::Char(_) => todo!(),
+            AnalyzedExpression::Ident(_) => todo!(),
+            AnalyzedExpression::Prefix(_) => todo!(),
+            AnalyzedExpression::Infix(_) => todo!(),
+            AnalyzedExpression::Assign(_) => todo!(),
+            AnalyzedExpression::Call(_) => todo!(),
+            AnalyzedExpression::Cast(_) => todo!(),
+            AnalyzedExpression::Grouped(_) => todo!(),
+        }
     }
 }

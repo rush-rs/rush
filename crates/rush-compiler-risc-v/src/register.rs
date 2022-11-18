@@ -2,13 +2,76 @@
 
 use std::fmt::Display;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Register {
     Int(IntRegister),
     Float(FloatRegister),
 }
 
-#[derive(Debug)]
+pub(crate) const INT_REGISTERS: &[IntRegister] = &[
+    IntRegister::T0,
+    IntRegister::T1,
+    IntRegister::T2,
+    IntRegister::T3,
+    IntRegister::T4,
+    IntRegister::T5,
+    IntRegister::S1,
+    IntRegister::S2,
+    IntRegister::S3,
+    IntRegister::S4,
+    IntRegister::S5,
+    IntRegister::S6,
+    IntRegister::S7,
+    IntRegister::S8,
+    IntRegister::S9,
+    IntRegister::S10,
+    IntRegister::S11,
+    IntRegister::A0,
+    IntRegister::A1,
+    IntRegister::A2,
+    IntRegister::A3,
+    IntRegister::A4,
+    IntRegister::A5,
+    IntRegister::A6,
+    IntRegister::A7,
+];
+
+pub(crate) const FLOAT_REGISTERS: &[FloatRegister] = &[
+    FloatRegister::Ft0,
+    FloatRegister::Ft1,
+    FloatRegister::Ft2,
+    FloatRegister::Ft3,
+    FloatRegister::Ft4,
+    FloatRegister::Ft5,
+    FloatRegister::Ft6,
+    FloatRegister::Ft7,
+    FloatRegister::Ft8,
+    FloatRegister::Ft9,
+    FloatRegister::Ft10,
+    FloatRegister::Ft11,
+    FloatRegister::Fs0,
+    FloatRegister::Fs1,
+    FloatRegister::Fs2,
+    FloatRegister::Fs3,
+    FloatRegister::Fs4,
+    FloatRegister::Fs5,
+    FloatRegister::Fs6,
+    FloatRegister::Fs7,
+    FloatRegister::Fs8,
+    FloatRegister::Fs9,
+    FloatRegister::Fs10,
+    FloatRegister::Fs11,
+    FloatRegister::Fa0,
+    FloatRegister::Fa1,
+    FloatRegister::Fa2,
+    FloatRegister::Fa3,
+    FloatRegister::Fa4,
+    FloatRegister::Fa5,
+    FloatRegister::Fa6,
+    FloatRegister::Fa7,
+];
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum IntRegister {
     // special
     Zero,
@@ -56,7 +119,7 @@ impl Display for IntRegister {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum FloatRegister {
     // temporaries
     Ft0,
