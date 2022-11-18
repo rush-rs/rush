@@ -4,6 +4,12 @@ use std::fmt::Display;
 
 #[derive(Debug)]
 pub enum Register {
+    Int(IntRegister),
+    Float(FloatRegister),
+}
+
+#[derive(Debug)]
+pub enum IntRegister {
     // special
     Zero,
     Ra,
@@ -43,7 +49,7 @@ pub enum Register {
     A7,
 }
 
-impl Display for Register {
+impl Display for IntRegister {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // lowercase debug display
         write!(f, "{}", format!("{self:?}").to_lowercase())
@@ -103,12 +109,12 @@ mod tests {
     #[test]
     fn test_register_display() {
         let tests = [
-            (Register::Zero, "zero"),
-            (Register::A0, "a0"),
-            (Register::Ra, "ra"),
-            (Register::Fp, "fp"),
-            (Register::T0, "t0"),
-            (Register::S6, "s6"),
+            (IntRegister::Zero, "zero"),
+            (IntRegister::A0, "a0"),
+            (IntRegister::Ra, "ra"),
+            (IntRegister::Fp, "fp"),
+            (IntRegister::T0, "t0"),
+            (IntRegister::S6, "s6"),
         ];
 
         for (reg, display) in tests {

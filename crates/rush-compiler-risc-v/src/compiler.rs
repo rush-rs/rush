@@ -1,43 +1,49 @@
 use std::collections::{HashMap, HashSet};
 
-use rush_analyzer::ast::{AnalyzedExpression, AnalyzedFunctionDefinition, AnalyzedProgram};
+use rush_analyzer::ast::{
+    AnalyzedBlock, AnalyzedExpression, AnalyzedFunctionDefinition, AnalyzedLetStmt,
+    AnalyzedProgram, AnalyzedStatement,
+};
 
 use crate::{
-    instruction::Instruction,
-    register::{FloatRegister, Register},
+    instruction::{FldType, Instruction, Pointer},
+    register::{FloatRegister, IntRegister, Register},
 };
 
 pub struct Compiler {
     /// Sections / basic blocks which contain instructions.
     pub(crate) blocks: Vec<Block>,
     /// Points to the current section which is inserted to
-    curr_block: usize,
-
+    pub(crate) curr_block: usize,
     /// Data section for storing global variables.
     pub(crate) data_section: Vec<DataObj>,
     /// Read-only data section for storing constant values.
     pub(crate) rodata_section: Vec<DataObj>,
 
-    pub(crate) curr_fn: Option<Function>,
+    pub(crate) curr_fn: Function,
+
+    pub(crate) scopes: Vec<HashMap<String, i64 /* sp offset */>>,
     /// Specifies all registers which are currently in use and may not be overwritten.
-    pub(crate) used_registers: HashSet<Register>,
+    pub(crate) used_registers: HashSet<IntRegister>,
     /// Specifies all float registers which are currently in use and may not be overwritten.
     pub(crate) used_float_registers: HashSet<FloatRegister>,
 }
 
 pub(crate) struct Block {
-    label: String,
-    instructions: Vec<Instruction>,
+    pub(crate) label: String,
+    pub(crate) instructions: Vec<Instruction>,
+}
+
+pub(crate) struct Function {
+    /// Specifies how many bytes of stack space need to be allocated for the current function.
+    /// Include the nessecary allocation for `ra` or `fp`
+    pub(crate) stack_space: usize,
 }
 
 pub(crate) enum DataObj {
     Float(f64),
     Dword(i64),
     Byte(i64),
-}
-
-pub(crate) struct Function {
-    pub(crate) vars: Vec<HashMap<String, i64 /* sp offset */>>,
 }
 
 impl Compiler {
@@ -55,7 +61,8 @@ impl Compiler {
             curr_block: 0,
             data_section: vec![],
             rodata_section: vec![],
-            curr_fn: None,
+            scopes: vec![],
+            curr_fn: Function { stack_space: 0 },
             used_registers: HashSet::new(),
             used_float_registers: HashSet::new(),
         }
@@ -78,5 +85,58 @@ impl Compiler {
         todo!()
     }
 
-    fn function_declaration(&mut self, node: AnalyzedFunctionDefinition) {}
+    fn function_declaration(&mut self, node: AnalyzedFunctionDefinition) {
+        // append block for the function
+    }
+
+    fn block(&mut self, node: AnalyzedBlock) {
+        // push a new scope
+        self.push_scope();
+
+        for stmt in node.stmts {
+            self.statement(stmt)
+        }
+
+        // pop the scope again
+        self.pop_scope()
+    }
+
+    fn statement(&mut self, node: AnalyzedStatement) {
+        match node {
+            AnalyzedStatement::Let(node) => self.let_statement(node),
+            AnalyzedStatement::Return(_) => todo!(),
+            AnalyzedStatement::Loop(_) => todo!(),
+            AnalyzedStatement::While(_) => todo!(),
+            AnalyzedStatement::For(_) => todo!(),
+            AnalyzedStatement::Break => todo!(),
+            AnalyzedStatement::Continue => todo!(),
+            AnalyzedStatement::Expr(_) => todo!(),
+        }
+    }
+
+    /// Allocates the variable on the stack.
+    /// Also increments the `additional_stack_space` of the current function
+    fn let_statement(&mut self, node: AnalyzedLetStmt) {
+        let value_reg = self.expression(node.expr);
+        // store the value of the expr on the stack
+        match value_reg {
+            Register::Int(reg) => self.insert(Instruction::Sd(
+                reg,
+                Pointer::Stack(IntRegister::Fp, self.curr_fn.stack_space as i64),
+            )),
+            Register::Float(reg) => self.insert(Instruction::Fsd(FldType::Stack(
+                reg,
+                IntRegister::T0,
+                self.curr_fn.stack_space as i64,
+            ))),
+        }
+        // TODO: insert into scope
+        //
+        // allocate stack space for the variable
+        self.curr_fn.stack_space += 8;
+    }
+
+    fn expression(&mut self, node: AnalyzedExpression) -> Register {
+        todo!()
+    }
 }
