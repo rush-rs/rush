@@ -2,7 +2,7 @@
 
 use std::fmt::{self, Display, Formatter};
 
-use crate::register::{FloatRegister, IntRegister};
+use crate::{register::IntRegister, value::{IntValue, IntValueOrImm, FloatValue}};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Instruction {
@@ -82,40 +82,6 @@ pub enum Section {
     ReadOnlyData,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FloatValue {
-    Register(FloatRegister),
-    Ptr(Size, IntRegister, Offset),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum IntValue {
-    Register(IntRegister),
-    Ptr(Size, IntRegister, Offset),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum IntValueOrImm {
-    Register(IntRegister),
-    Ptr(Size, IntRegister, Offset),
-    Immediate(i64),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Size {
-    Byte,
-    Word,
-    Dword,
-    Qword,
-    Oword,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Offset {
-    Immediate(i64),
-    Symbol(String),
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Condition {
     Above,
@@ -192,59 +158,6 @@ impl Display for Section {
     }
 }
 
-impl Display for FloatValue {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            FloatValue::Register(reg) => write!(f, "{reg}"),
-            FloatValue::Ptr(size, reg, offset) => write!(f, "{size} ptr [{reg} + {offset}]"),
-        }
-    }
-}
-
-impl Display for IntValue {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            IntValue::Register(reg) => write!(f, "{reg}"),
-            IntValue::Ptr(size, reg, offset) => write!(f, "{size} ptr [{reg} + {offset}]"),
-        }
-    }
-}
-
-impl Display for IntValueOrImm {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            IntValueOrImm::Register(reg) => write!(f, "{reg}"),
-            IntValueOrImm::Ptr(size, reg, offset) => write!(f, "{size} ptr [{reg} + {offset}]"),
-            IntValueOrImm::Immediate(num) => write!(f, "{num}"),
-        }
-    }
-}
-
-impl Display for Size {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Size::Byte => "byte",
-                Size::Word => "word",
-                Size::Dword => "dword",
-                Size::Qword => "qword",
-                Size::Oword => "oword",
-            }
-        )
-    }
-}
-
-impl Display for Offset {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            Offset::Immediate(num) => write!(f, "{num}"),
-            Offset::Symbol(symbol) => write!(f, "{symbol}"),
-        }
-    }
-}
-
 impl Display for Condition {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
@@ -270,6 +183,8 @@ impl Display for Condition {
 
 #[cfg(test)]
 mod tests {
+    use crate::{register::FloatRegister, value::{Size, Offset}};
+
     use super::*;
 
     #[test]
