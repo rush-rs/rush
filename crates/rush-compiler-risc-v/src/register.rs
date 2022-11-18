@@ -125,6 +125,20 @@ impl IntRegister {
             _ => unreachable!("cannot use other int registers as params"),
         })
     }
+
+    #[inline]
+    pub(crate) fn to_reg(self) -> Register {
+        Register::Int(self)
+    }
+}
+
+impl From<Register> for IntRegister {
+    fn from(src: Register) -> Self {
+        match src {
+            Register::Int(reg) => reg,
+            Register::Float(_) => panic!("cannot convert float register into int register"),
+        }
+    }
 }
 
 impl Display for IntRegister {
@@ -186,6 +200,20 @@ impl FloatRegister {
             FloatRegister::Fa7 => return None,
             _ => unreachable!("cannot use other float registers as params"),
         })
+    }
+
+    #[inline]
+    pub(crate) fn to_reg(self) -> Register {
+        Register::Float(self)
+    }
+}
+
+impl From<Register> for FloatRegister {
+    fn from(src: Register) -> Self {
+        match src {
+            Register::Float(reg) => reg,
+            Register::Int(_) => panic!("cannot convert int register into float register"),
+        }
     }
 }
 

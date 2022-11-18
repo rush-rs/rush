@@ -8,6 +8,7 @@ pub enum Instruction {
     Ret,
     Call(String),
     Ecall,
+    Comment(String),
 
     Jmp(String),
     BrCond(Condition, IntRegister, IntRegister, String),
@@ -18,6 +19,7 @@ pub enum Instruction {
     Li(IntRegister, i64),
     Mov(IntRegister, IntRegister),
     Add(IntRegister, IntRegister, IntRegister),
+    Addi(IntRegister, IntRegister, i64),
     Sub(IntRegister, IntRegister, IntRegister),
     Mul(IntRegister, IntRegister, IntRegister),
     Div(IntRegister, IntRegister, IntRegister),
@@ -71,6 +73,7 @@ impl Display for Instruction {
             Instruction::Ret => write!(f, "ret"),
             Instruction::Call(callee) => write!(f, "call {callee}"),
             Instruction::Ecall => write!(f, "ecall"),
+            Instruction::Comment(msg) => write!(f, "# {msg}"),
             Instruction::Jmp(label) => write!(f, "j {label}"),
             Instruction::BrCond(cond, l, r, lbl) => write!(f, "b{cond} {l}, {r}, {lbl}"),
             Instruction::SetIntCondition(cond, dest, l, r) => match cond {
@@ -110,6 +113,7 @@ impl Display for Instruction {
             },
             Instruction::Li(dest, val) => write!(f, "li {dest}, {val}"),
             Instruction::Add(dest, lhs, rhs) => write!(f, "add {dest}, {lhs}, {rhs}"),
+            Instruction::Addi(dest, src, imm) => write!(f, "addi {dest}, {src}, {imm}"),
             Instruction::Sub(dest, lhs, rhs) => write!(f, "sub {dest}, {lhs}, {rhs}"),
             Instruction::Mul(dest, lhs, rhs) => write!(f, "mul {dest}, {lhs}, {rhs}"),
             Instruction::Div(dest, lhs, rhs) => write!(f, "div {dest}, {lhs}, {rhs}"),

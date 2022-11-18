@@ -1,13 +1,16 @@
 #![allow(dead_code)] // TODO: remove this attribute
 
-use std::{collections::HashMap, fmt::Display};
+use std::{
+    collections::{HashMap, VecDeque},
+    fmt::Display,
+};
 
 use rush_analyzer::{
     ast::{
         AnalyzedBlock, AnalyzedCallExpr, AnalyzedExpression, AnalyzedFunctionDefinition,
-        AnalyzedLetStmt, AnalyzedProgram, AnalyzedStatement,
+        AnalyzedInfixExpr, AnalyzedLetStmt, AnalyzedProgram, AnalyzedStatement,
     },
-    Type,
+    InfixOp, Type,
 };
 
 use crate::{
@@ -38,7 +41,7 @@ pub struct Compiler {
 
 pub(crate) struct Block {
     pub(crate) label: String,
-    pub(crate) instructions: Vec<Instruction>,
+    pub(crate) instructions: VecDeque<Instruction>,
 }
 
 impl Display for Block {
@@ -58,7 +61,7 @@ impl Display for Block {
 pub(crate) struct Function {
     /// Specifies how many bytes of stack space need to be allocated for the current function.
     /// Include the necessary allocation for `ra` or `fp`
-    pub(crate) fp: usize,
+    pub(crate) stack_allocs: usize,
 }
 
 pub(crate) struct DataObj {
@@ -94,7 +97,7 @@ impl Display for DataObjType {
 }
 
 impl Compiler {
-    fn position_at_end(&mut self, label: &str) {
+    fn insert_at(&mut self, label: &str) {
         self.curr_block = self
             .blocks
             .iter()
@@ -110,7 +113,7 @@ impl Compiler {
             data_section: vec![],
             rodata_section: vec![],
             scopes: vec![],
-            curr_fn: Function { fp: 0 },
+            curr_fn: Function { stack_allocs: 0 },
             used_registers: vec![],
             used_float_registers: vec![],
         }
@@ -175,7 +178,7 @@ impl Compiler {
         let block_label = "_start";
         self.append_block(block_label.into());
         self.exports.push(block_label.into());
-        self.position_at_end(block_label);
+        self.insert_at(block_label);
 
         self.function_body(node);
 
@@ -192,12 +195,104 @@ impl Compiler {
         // append block for the function
         let block_label = format!(".{}", node.name);
         self.append_block(block_label.clone());
-        self.position_at_end(&block_label);
+        self.insert_at(&block_label);
 
         // push a scope
         self.push_scope();
+
+        // push arguments into the function's scope
+        let mut curr_int_reg = IntRegister::A0;
+        let mut curr_flt_reg = FloatRegister::Fa0;
+
+        for param in node.params.iter() {
+            // save current parameter inside the function's scope
+            let var_offset = match param.type_ {
+                // TODO: implement stack access correctly
+                Type::Int | Type::Char | Type::Bool => {
+                    // get the current param's register
+                    let reg = self.alloc_ireg();
+
+                    // advance the register
+                    match curr_int_reg.next_param() {
+                        Some(next) => curr_int_reg = next,
+                        None => todo!("stack args are not yet implemented"),
+                    }
+
+                    let fp = self.curr_fn.stack_allocs as i64;
+                    self.curr_fn.stack_allocs += 16; // add room for saving `fp` and `ra`
+                    self.insert(Instruction::Sd(reg, Pointer::Stack(IntRegister::Fp, fp)));
+                    Some(fp)
+                }
+                Type::Float => {
+                    // get the current param's register
+                    let reg = self.alloc_freg();
+
+                    // advance the register
+                    match curr_flt_reg.next_param() {
+                        Some(next) => curr_flt_reg = next,
+                        None => todo!("stack args are not yet implemented"),
+                    }
+
+                    let fp = self.curr_fn.stack_allocs as i64;
+                    self.curr_fn.stack_allocs += 8;
+                    self.insert(Instruction::Fsd(FldType::Stack(reg, self.alloc_ireg(), fp)));
+                    Some(fp)
+                }
+                Type::Unit | Type::Never => None,
+                Type::Unknown => unreachable!("cannot use {{unknown}} as a param"),
+            };
+            self.scope_mut().insert(param.name.to_string(), var_offset);
+        }
+
         self.function_body(node.block);
+        let epilogue_label = format!("epilogue_{}", self.blocks.len());
+        self.insert(Instruction::Jmp(epilogue_label.clone()));
         self.pop_scope();
+
+        //// PROLOGUE ////
+        self.insert_start(Instruction::Comment("end prologue".to_string()));
+        self.insert_start(Instruction::Addi(
+            IntRegister::Fp,
+            IntRegister::Sp,
+            self.curr_fn.stack_allocs as i64,
+        ));
+        self.insert_start(Instruction::Sd(
+            IntRegister::Ra,
+            Pointer::Stack(IntRegister::Sp, (self.curr_fn.stack_allocs - 8) as i64),
+        ));
+        self.insert_start(Instruction::Sd(
+            IntRegister::Fp,
+            Pointer::Stack(IntRegister::Sp, (self.curr_fn.stack_allocs - 16) as i64),
+        ));
+        self.insert_start(Instruction::Addi(
+            IntRegister::Sp,
+            IntRegister::Sp,
+            -(self.curr_fn.stack_allocs as i64),
+        ));
+        self.insert_start(Instruction::Comment("start prologue".to_string()));
+
+        //// EPILOGUE ////
+        self.append_block(epilogue_label.clone());
+        self.insert_at(&epilogue_label);
+
+        // restore ra
+        self.insert(Instruction::Ld(
+            IntRegister::Ra,
+            Pointer::Stack(IntRegister::Sp, (self.curr_fn.stack_allocs - 8) as i64),
+        ));
+        // restore fp
+        self.insert(Instruction::Ld(
+            IntRegister::Fp,
+            Pointer::Stack(IntRegister::Sp, self.curr_fn.stack_allocs as i64 - 16),
+        ));
+        // deallocate stack space
+        self.insert(Instruction::Addi(
+            IntRegister::Sp,
+            IntRegister::Sp,
+            self.curr_fn.stack_allocs as i64,
+        ));
+        // return control back to caller
+        self.insert(Instruction::Ret);
     }
 
     fn function_body(&mut self, node: AnalyzedBlock) {
@@ -261,15 +356,16 @@ impl Compiler {
     fn let_statement(&mut self, node: AnalyzedLetStmt) {
         let value_reg = self.expression(node.expr);
         // store the value of the expr on the stack
+        self.insert(Instruction::Comment(format!("let {} = ...", node.name)));
         match value_reg {
             Some(Register::Int(reg)) => self.insert(Instruction::Sd(
                 reg,
-                Pointer::Stack(IntRegister::Fp, self.curr_fn.fp as i64),
+                Pointer::Stack(IntRegister::Fp, self.curr_fn.stack_allocs as i64),
             )),
             Some(Register::Float(reg)) => self.insert(Instruction::Fsd(FldType::Stack(
                 reg,
                 IntRegister::T0,
-                self.curr_fn.fp as i64,
+                self.curr_fn.stack_allocs as i64,
             ))),
             None => {
                 // insert a dummy variable into the HashMap
@@ -284,10 +380,13 @@ impl Compiler {
         self.scopes
             .last_mut()
             .expect("there must be a scope")
-            .insert(node.name.to_string(), Some(self.curr_fn.fp as i64));
+            .insert(
+                node.name.to_string(),
+                Some(self.curr_fn.stack_allocs as i64),
+            );
 
         // increment frame pointer
-        self.curr_fn.fp += 8;
+        self.curr_fn.stack_allocs += 8;
     }
 
     fn expression(&mut self, node: AnalyzedExpression) -> Option<Register> {
@@ -339,7 +438,7 @@ impl Compiler {
                             let dest_reg = self.alloc_ireg();
                             self.insert(Instruction::Lb(
                                 dest_reg,
-                                Pointer::Stack(IntRegister::Sp, *offset),
+                                Pointer::Stack(IntRegister::Fp, *offset),
                             ));
                             Some(Register::Int(dest_reg))
                         }
@@ -347,7 +446,7 @@ impl Compiler {
                             let dest_reg = self.alloc_ireg();
                             self.insert(Instruction::Ld(
                                 dest_reg,
-                                Pointer::Stack(IntRegister::Sp, *offset),
+                                Pointer::Stack(IntRegister::Fp, *offset),
                             ));
                             Some(Register::Int(dest_reg))
                         }
@@ -367,7 +466,7 @@ impl Compiler {
                 }
             }
             AnalyzedExpression::Prefix(_) => todo!(),
-            AnalyzedExpression::Infix(_) => todo!(),
+            AnalyzedExpression::Infix(node) => self.infix_expr(*node),
             AnalyzedExpression::Assign(_) => todo!(),
             AnalyzedExpression::Call(node) => self.call_expr(*node),
             AnalyzedExpression::Cast(_) => todo!(),
@@ -375,10 +474,40 @@ impl Compiler {
         }
     }
 
+    fn infix_expr(&mut self, node: AnalyzedInfixExpr) -> Option<Register> {
+        let type_ = node.lhs.result_type();
+
+        let lhs_reg = self.expression(node.lhs)?;
+        // mark the lhs register as used
+        self.use_reg(lhs_reg);
+
+        let rhs_reg = self.expression(node.rhs)?;
+        // mark the rhs register as used
+        self.use_reg(rhs_reg);
+
+        let res = match (type_, node.op) {
+            (Type::Int, InfixOp::Plus) => {
+                let dest_reg = self.alloc_ireg();
+                self.insert(Instruction::Add(dest_reg, lhs_reg.into(), rhs_reg.into()));
+                Some(dest_reg.to_reg())
+            }
+            _ => todo!("implement these cases"), // TODO: implement this
+        };
+
+        // release the usage block of the operands
+        self.release_reg(lhs_reg);
+        self.release_reg(rhs_reg);
+
+        res
+    }
+
     fn call_expr(&mut self, node: AnalyzedCallExpr) -> Option<Register> {
         // initial argument register
         let mut curr_int_reg = IntRegister::A0;
         let mut curr_flt_reg = FloatRegister::Fa0;
+
+        // TODO: release all reserved registers after call
+        let mut used_registers = vec![];
 
         for arg in node
             .args
@@ -393,8 +522,11 @@ impl Compiler {
 
                     // expr result will be in correct reg
                     self.expression(arg).expect("filtered out above");
+
                     // mark the curr_reg as used
                     self.used_registers.push(curr_int_reg);
+                    used_registers.push(curr_int_reg.to_reg());
+
                     match curr_int_reg.next_param() {
                         Some(next) => curr_int_reg = next,
                         None => todo!("stack args are not yet implemented"),
@@ -406,8 +538,11 @@ impl Compiler {
 
                     // expr result will be in correct reg
                     self.expression(arg).expect("filtered out above");
+
                     // mark the curr_reg as used
                     self.used_float_registers.push(curr_flt_reg);
+                    used_registers.push(curr_flt_reg.to_reg());
+
                     match curr_flt_reg.next_param() {
                         Some(next) => curr_flt_reg = next,
                         None => todo!("stack args are not yet implemented"),
@@ -419,8 +554,17 @@ impl Compiler {
         }
         // TODO: restore all previously pushed from vec?
 
+        for reg in used_registers {
+            self.release_reg(reg)
+        }
+
         // perform the actual call
-        self.insert(Instruction::Call(node.func.into()));
+        // TODO: improve this
+        if node.func == "exit" {
+            self.insert(Instruction::Call("exit".into()));
+        } else {
+            self.insert(Instruction::Call(format!(".{}", node.func)));
+        }
 
         // return the call return value
         match node.result_type {
@@ -433,7 +577,10 @@ impl Compiler {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, process::Command};
+    use std::{
+        fs,
+        process::{Command, Stdio},
+    };
 
     use super::*;
 
@@ -458,6 +605,8 @@ mod tests {
                 "test",
             ])
             .arg("-static")
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
             .output()
             .unwrap();
     }
