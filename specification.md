@@ -127,7 +127,7 @@ expensive.
 | `bool`  | `int`   | `true` = 1 \| `false` = 0                  |
 | `bool`  | `float` |                                            |
 | `bool`  | `char`  |                                            |
+| `char`  | `char`  | redundant                                  |
 | `char`  | `int`   |                                            |
 | `char`  | `float` |                                            |
 | `char`  | `bool`  | `res` = `int(char)` != 0                   |
-| `char`  | `char`  | redundant                                  |
