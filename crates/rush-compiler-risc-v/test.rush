@@ -1,29 +1,9 @@
-fn add_two(n: int) -> int {
-    n + 2
+fn add(n: int, m: int) -> int {
+    n + m
 }
 
-fn wrapper(n: int) -> int {
-    let a = 1;
-    add_two(n)
-}
-
-
+// TODO: both are broken 
 fn main() {
-    rec();
+    // exit(add(1, add(2, 3)))
+    // exit(1 + 2 + 3)
 }
-
-fn rec() {
-    rec()
-}
-
-/* fn _a() -> int {
-    let a = 1;
-    a
-} */
-
-/* fn _b() -> float {
-    let a = 3.141592265;
-    let b = 42.0;
-    a;
-    b
-} */
