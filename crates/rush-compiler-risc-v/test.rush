@@ -1,0 +1,29 @@
+fn add_two(n: int) -> int {
+    n + 2
+}
+
+fn wrapper(n: int) -> int {
+    let a = 1;
+    add_two(n)
+}
+
+
+fn main() {
+    rec();
+}
+
+fn rec() {
+    rec()
+}
+
+/* fn _a() -> int {
+    let a = 1;
+    a
+} */
+
+/* fn _b() -> float {
+    let a = 3.141592265;
+    let b = 42.0;
+    a;
+    b
+} */
