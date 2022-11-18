@@ -123,9 +123,9 @@ expensive.
 | `float` | `float` | redundant                                  |
 | `float` | `bool`  | `res` = `float` != 0.0                     |
 | `float` | `char`  | [defined here](#a-note-on-casting-to-char) |
+| `bool`  | `bool`  | redundant                                  |
 | `bool`  | `int`   | `true` = 1 \| `false` = 0                  |
 | `bool`  | `float` |                                            |
-| `bool`  | `bool`  | redundant                                  |
 | `bool`  | `char`  |                                            |
 | `char`  | `int`   |                                            |
 | `char`  | `float` |                                            |
