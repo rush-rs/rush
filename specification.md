@@ -49,7 +49,7 @@ the specified exit-code.
 
 | Notation    | Example Value | Size   | Values                         |
 | ----------- | ------------- | ------ | ------------------------------ |
-| `int`       | 42            | 64 bit | $- 2 ^{63} \le x \lt 2 ^ {31}$ |
+| `int`       | 42            | 64 bit | $- 2 ^{63} \le x \lt 2 ^ {63}$ |
 | `float`     | 3.1415        | 64 bit | IEEE float values              |
 | `char`      | 'a'           | 8 bit  | $0 \le x \le 127$              |
 | `bool`      | true          | 1 bit  | `true` and `false`             |
