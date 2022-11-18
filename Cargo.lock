@@ -538,6 +538,9 @@ dependencies = [
 [[package]]
 name = "rush-compiler-risc-v"
 version = "0.1.0"
+dependencies = [
+ "rush-analyzer",
+]
 
 [[package]]
 name = "rush-compiler-wasm"

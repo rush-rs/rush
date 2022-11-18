@@ -13,6 +13,7 @@ pub enum Instruction {
 
     // base integer instructions
     SetIntCondition(Condition, Register, Register, Register),
+    Snez(Register, Register),
     Li(Register, i64),
     Add(Register, Register, Register),
     Sub(Register, Register, Register),
@@ -38,6 +39,11 @@ pub enum Instruction {
     Fsub(FloatRegister, FloatRegister, FloatRegister),
     Fmul(FloatRegister, FloatRegister, FloatRegister),
     Fdiv(FloatRegister, FloatRegister, FloatRegister),
+
+    // casts
+    CastIntToFloat(FloatRegister, Register),
+    CastFloatToInt(Register, FloatRegister),
+    CastByteToFloat(FloatRegister, Register),
 }
 
 pub enum FldType {
