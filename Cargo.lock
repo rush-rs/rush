@@ -551,7 +551,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "rush-compiler-x86_64"
+name = "rush-compiler-x86-64"
 version = "0.1.0"
 
 [[package]]
