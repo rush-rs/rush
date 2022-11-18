@@ -1,3 +1,5 @@
+#![allow(dead_code)] // TODO: remove this attribute
+
 use std::fmt::Display;
 
 use crate::register::{FloatRegister, Register};

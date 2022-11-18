@@ -1,3 +1,5 @@
+#![allow(dead_code)] // TODO: remove this attribute
+
 use std::fmt::{self, Display, Formatter};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
