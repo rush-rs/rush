@@ -9,6 +9,14 @@ pub enum Register {
 }
 
 pub(crate) const INT_REGISTERS: &[IntRegister] = &[
+    IntRegister::A0,
+    IntRegister::A1,
+    IntRegister::A2,
+    IntRegister::A3,
+    IntRegister::A4,
+    IntRegister::A5,
+    IntRegister::A6,
+    IntRegister::A7,
     IntRegister::T0,
     IntRegister::T1,
     IntRegister::T2,
@@ -26,17 +34,17 @@ pub(crate) const INT_REGISTERS: &[IntRegister] = &[
     IntRegister::S9,
     IntRegister::S10,
     IntRegister::S11,
-    IntRegister::A0,
-    IntRegister::A1,
-    IntRegister::A2,
-    IntRegister::A3,
-    IntRegister::A4,
-    IntRegister::A5,
-    IntRegister::A6,
-    IntRegister::A7,
 ];
 
 pub(crate) const FLOAT_REGISTERS: &[FloatRegister] = &[
+    FloatRegister::Fa0,
+    FloatRegister::Fa1,
+    FloatRegister::Fa2,
+    FloatRegister::Fa3,
+    FloatRegister::Fa4,
+    FloatRegister::Fa5,
+    FloatRegister::Fa6,
+    FloatRegister::Fa7,
     FloatRegister::Ft0,
     FloatRegister::Ft1,
     FloatRegister::Ft2,
@@ -61,14 +69,6 @@ pub(crate) const FLOAT_REGISTERS: &[FloatRegister] = &[
     FloatRegister::Fs9,
     FloatRegister::Fs10,
     FloatRegister::Fs11,
-    FloatRegister::Fa0,
-    FloatRegister::Fa1,
-    FloatRegister::Fa2,
-    FloatRegister::Fa3,
-    FloatRegister::Fa4,
-    FloatRegister::Fa5,
-    FloatRegister::Fa6,
-    FloatRegister::Fa7,
 ];
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -110,6 +110,21 @@ pub enum IntRegister {
     A5,
     A6,
     A7,
+}
+
+impl IntRegister {
+    pub(crate) fn next_param(&self) -> Option<Self> {
+        Some(match self {
+            Self::A0 => Self::A1,
+            Self::A1 => Self::A2,
+            Self::A2 => Self::A3,
+            Self::A3 => Self::A4,
+            Self::A4 => Self::A5,
+            Self::A5 => Self::A6,
+            Self::A6 => return None,
+            _ => unreachable!("cannot use other int registers as params"),
+        })
+    }
 }
 
 impl Display for IntRegister {
@@ -156,6 +171,22 @@ pub enum FloatRegister {
     Fa5,
     Fa6,
     Fa7,
+}
+
+impl FloatRegister {
+    pub(crate) fn next_param(&self) -> Option<Self> {
+        Some(match self {
+            FloatRegister::Fa0 => FloatRegister::Fa1,
+            FloatRegister::Fa1 => FloatRegister::Fa2,
+            FloatRegister::Fa2 => FloatRegister::Fa3,
+            FloatRegister::Fa3 => FloatRegister::Fa4,
+            FloatRegister::Fa4 => FloatRegister::Fa5,
+            FloatRegister::Fa5 => FloatRegister::Fa6,
+            FloatRegister::Fa6 => FloatRegister::Fa7,
+            FloatRegister::Fa7 => return None,
+            _ => unreachable!("cannot use other float registers as params"),
+        })
+    }
 }
 
 impl Display for FloatRegister {

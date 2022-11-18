@@ -5,12 +5,12 @@ use std::collections::HashMap;
 use crate::{
     compiler::{Block, Compiler},
     instruction::Instruction,
-    register::{FloatRegister, IntRegister, INT_REGISTERS},
+    register::{FloatRegister, IntRegister, FLOAT_REGISTERS, INT_REGISTERS},
 };
 
 impl Compiler {
     /// Allocates (and returns) the next unused, general purpose int register
-    pub(crate) fn alloc_ireg(&mut self) -> IntRegister {
+    pub(crate) fn alloc_ireg(&self) -> IntRegister {
         for reg in INT_REGISTERS {
             if !self.used_registers.contains(reg) {
                 return *reg;
@@ -20,8 +20,13 @@ impl Compiler {
     }
 
     /// Allocates (and returns) the next unused, general purpose float register
-    pub(crate) fn alloc_freg(&mut self) -> FloatRegister {
-        todo!()
+    pub(crate) fn alloc_freg(&self) -> FloatRegister {
+        for reg in FLOAT_REGISTERS {
+            if !self.used_float_registers.contains(reg) {
+                return *reg;
+            }
+        }
+        unreachable!("out of float registers!")
     }
 
     pub(crate) fn append_block(&mut self, label: String) -> usize {

@@ -6,6 +6,7 @@ use crate::register::{FloatRegister, IntRegister};
 
 pub enum Instruction {
     Ret,
+    Call(String),
     Ecall,
 
     Jmp(String),
@@ -68,6 +69,7 @@ impl Display for Instruction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Instruction::Ret => write!(f, "ret"),
+            Instruction::Call(callee) => write!(f, "call {callee}"),
             Instruction::Ecall => write!(f, "ecall"),
             Instruction::Jmp(label) => write!(f, "j {label}"),
             Instruction::BrCond(cond, l, r, lbl) => write!(f, "b{cond} {l}, {r}, {lbl}"),
@@ -247,7 +249,7 @@ mod tests {
         ];
 
         for (inst, display) in tests {
-            println!("{inst}");
+            //println!("{inst}");
             assert_eq!(inst.to_string(), display)
         }
     }
