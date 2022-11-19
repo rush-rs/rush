@@ -109,15 +109,13 @@ impl Compiler {
                     self.use_reg(curr_reg);
 
                     if curr_reg != res_reg {
-                        dbg!(&self.used_registers);
-                        let offset = -(self.curr_fn().stack_allocs as i64);
+                        let offset = -(self.curr_fn().stack_allocs as i64 + 8);
                         self.insert(Instruction::Sd(
                             IntRegister::A0,
                             Pointer::Stack(IntRegister::Fp, offset),
                         ));
                         self.curr_fn_mut().stack_allocs += 8;
                         self.insert(Instruction::Mov(curr_reg.into(), res_reg.into()));
-                        //todo!("call: {}/{int_cnt}: register {curr_reg:?} is already in use, must save /load -> got {res_reg:?}", node.func)
                     }
 
                     int_cnt += 1;
