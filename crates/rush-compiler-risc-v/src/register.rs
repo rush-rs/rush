@@ -189,17 +189,17 @@ pub enum FloatRegister {
 }
 
 impl FloatRegister {
-    pub(crate) fn next_param(&self) -> Option<Self> {
-        Some(match self {
-            FloatRegister::Fa0 => FloatRegister::Fa1,
-            FloatRegister::Fa1 => FloatRegister::Fa2,
-            FloatRegister::Fa2 => FloatRegister::Fa3,
-            FloatRegister::Fa3 => FloatRegister::Fa4,
-            FloatRegister::Fa4 => FloatRegister::Fa5,
-            FloatRegister::Fa5 => FloatRegister::Fa6,
-            FloatRegister::Fa6 => FloatRegister::Fa7,
-            FloatRegister::Fa7 => return None,
-            _ => unreachable!("cannot use other float registers as params"),
+    pub(crate) fn nth_param(n: usize) -> Option<Self> {
+        Some(match n {
+            0 => Self::Fa0,
+            1 => Self::Fa1,
+            2 => Self::Fa2,
+            3 => Self::Fa3,
+            4 => Self::Fa4,
+            5 => Self::Fa5,
+            6 => Self::Fa6,
+            7 => Self::Fa7,
+            _ => return None,
         })
     }
 

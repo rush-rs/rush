@@ -1,5 +1,11 @@
 fn main() {
-    exit(fib(36) / 1_000_000)
+    let a = add(1.0, 2, 2.0, 1);
+
+    exit(a as int);
+}
+
+fn add(n: float, m: int, o: float, p: int) -> float {
+    n + m as float + o + p as float
 }
 
 fn fib(n: int) -> int {

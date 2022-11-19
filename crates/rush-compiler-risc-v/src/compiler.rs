@@ -166,14 +166,13 @@ impl Compiler {
 
         self.push_scope();
 
-        // TODO: implement args
-
         let mut param_regs = vec![];
-        for (idx, param) in node.params.iter().enumerate() {
+        let mut int_cnt = 0;
+        let mut float_cnt = 0;
+        for param in node.params {
             match param.type_ {
-                Type::Int => {
-                    // TODO: account for mixed types
-                    let reg = IntRegister::nth_param(idx)
+                Type::Int | Type::Char | Type::Bool => {
+                    let reg = IntRegister::nth_param(int_cnt)
                         .expect("argument spilling is not yet implemented")
                         .to_reg();
                     self.scope_mut()
@@ -181,10 +180,23 @@ impl Compiler {
 
                     // mark the argument registers as used
                     param_regs.push(reg);
-                    self.use_reg(reg)
+                    self.use_reg(reg);
+
+                    int_cnt += 1;
                 }
-                Type::Char | Type::Bool => {}
-                Type::Float => {}
+                Type::Float => {
+                    let reg = FloatRegister::nth_param(float_cnt)
+                        .expect("argument spilling is not yet implemented")
+                        .to_reg();
+                    self.scope_mut()
+                        .insert(param.name.to_string(), Some(Variable::Register(reg)));
+
+                    // mark the argument registers as used
+                    param_regs.push(reg);
+                    self.use_reg(reg);
+
+                    float_cnt += 1;
+                }
                 Type::Unit | Type::Never => {} // ignore these types
                 Type::Unknown => unreachable!("analyzer would have failed"),
             }
@@ -209,6 +221,7 @@ impl Compiler {
         self.insert(Instruction::Jmp(epilogue_label.clone()));
         self.pop_scope();
 
+        // mark all params as unused when done
         for reg in param_regs {
             self.release_reg(reg)
         }
@@ -242,7 +255,7 @@ impl Compiler {
                     self.insert(Instruction::Mov(IntRegister::A0, reg));
                 }
                 Some(Register::Float(reg)) => {
-                    self.insert(Instruction::Fmov(FloatRegister::Fa0, reg));
+                    self.insert(Instruction::Fmv(FloatRegister::Fa0, reg));
                 }
                 None => {} // do nothing with unit values
             }
@@ -437,7 +450,7 @@ impl Compiler {
                 (Some(Register::Float(res)), Some(Register::Float(else_reg)))
                     if res != else_reg =>
                 {
-                    self.insert(Instruction::Fmov(res, else_reg));
+                    self.insert(Instruction::Fmv(res, else_reg));
                 }
                 _ => {}
             }
@@ -454,7 +467,7 @@ impl Compiler {
                 self.insert(Instruction::Mov(res, then_reg));
             }
             (Some(Register::Float(res)), Some(Register::Float(then_reg))) if res != then_reg => {
-                self.insert(Instruction::Fmov(res, then_reg));
+                self.insert(Instruction::Fmv(res, then_reg));
             }
             _ => {}
         }
@@ -578,12 +591,18 @@ impl Compiler {
         let lhs_reg = self.expression(node.expr)?;
 
         match (lhs_type, node.type_) {
+            (lhs, rhs) if lhs == rhs => Some(lhs_reg),
+            (Type::Bool, Type::Int) | (Type::Char, Type::Int) => Some(lhs_reg),
             (Type::Float, Type::Int) => {
                 let dest_reg = self.alloc_ireg();
                 self.insert(Instruction::CastFloatToInt(dest_reg, lhs_reg.into()));
                 Some(dest_reg.to_reg())
             }
-            (Type::Bool, Type::Int) | (Type::Char, Type::Int) => Some(lhs_reg),
+            (Type::Int, Type::Float) => {
+                let dest_reg = self.alloc_freg();
+                self.insert(Instruction::CastIntToFloat(dest_reg, lhs_reg.into()));
+                Some(dest_reg.to_reg())
+            }
             _ => todo!(),
         }
     }

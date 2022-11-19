@@ -62,7 +62,7 @@ impl Compiler {
             func => format!(".{func}"),
         };
 
-        let mut _float_cnt = 0;
+        let mut float_cnt = 0;
         let mut int_cnt = 0;
 
         let mut param_regs = vec![];
@@ -111,7 +111,7 @@ impl Compiler {
                     if curr_reg != res_reg {
                         let offset = -(self.curr_fn().stack_allocs as i64 + 8);
                         self.insert(Instruction::Sd(
-                            IntRegister::A0,
+                            curr_reg.into(),
                             Pointer::Stack(IntRegister::Fp, offset),
                         ));
                         self.curr_fn_mut().stack_allocs += 8;
@@ -121,11 +121,32 @@ impl Compiler {
                     int_cnt += 1;
                 }
                 Type::Float => {
-                    todo!()
+                    let curr_reg = FloatRegister::nth_param(float_cnt)
+                        .expect("spilling is not yet implemented")
+                        .to_reg();
+
+                    let res_reg = self
+                        .expression(arg)
+                        .expect("none variants filtered out above");
+
+                    param_regs.push(curr_reg);
+                    self.use_reg(curr_reg);
+
+                    if curr_reg != res_reg {
+                        let offset = -(self.curr_fn().stack_allocs as i64 + 8);
+                        self.insert(Instruction::Fsd(FldType::Stack(
+                            curr_reg.into(),
+                            IntRegister::Fp,
+                            offset,
+                        )));
+                        self.curr_fn_mut().stack_allocs += 8;
+                        self.insert(Instruction::Fmv(curr_reg.into(), res_reg.into()));
+                    }
+
+                    float_cnt += 1;
                 }
                 _ => unreachable!("either filtered out or impossible"),
             }
-            // TODO: save args which are currently in use
         }
 
         // perform function call
@@ -155,11 +176,23 @@ impl Compiler {
                         Pointer::Stack(IntRegister::Fp, offset),
                     ));
                 }
-                Register::Float(reg) => self.insert(Instruction::Fld(FldType::Stack(
-                    reg,
-                    self.alloc_ireg(),
-                    offset,
-                ))),
+                Register::Float(reg) => {
+                    // in this case, restoring `fa0` would destroy the call return value.
+                    // therefore, the return value is copied into a new temporary register
+                    if res_reg == Some(Register::Float(FloatRegister::Fa0))
+                        && reg == FloatRegister::Fa0
+                    {
+                        let new_res_reg = self.alloc_freg();
+                        res_reg = Some(new_res_reg.to_reg());
+                        // copy the return value into the new result value
+                        self.insert(Instruction::Fmv(new_res_reg, FloatRegister::Fa0));
+                    }
+                    self.insert(Instruction::Fld(FldType::Stack(
+                        reg,
+                        IntRegister::Fp,
+                        offset,
+                    )));
+                }
             };
         }
 
