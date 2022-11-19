@@ -5,9 +5,10 @@ use std::collections::{HashMap, VecDeque};
 use rush_analyzer::{
     ast::{
         AnalyzedBlock, AnalyzedCastExpr, AnalyzedExpression, AnalyzedFunctionDefinition,
-        AnalyzedIfExpr, AnalyzedInfixExpr, AnalyzedLetStmt, AnalyzedProgram, AnalyzedStatement,
+        AnalyzedIfExpr, AnalyzedInfixExpr, AnalyzedLetStmt, AnalyzedPrefixExpr, AnalyzedProgram,
+        AnalyzedStatement,
     },
-    InfixOp, Type,
+    InfixOp, PrefixOp, Type,
 };
 
 use crate::{
@@ -386,7 +387,7 @@ impl Compiler {
                     None => None,
                 }
             }
-            AnalyzedExpression::Prefix(_) => todo!(),
+            AnalyzedExpression::Prefix(node) => self.prefix_expr(*node),
             AnalyzedExpression::Infix(node) => self.infix_expr(*node),
             AnalyzedExpression::Assign(_) => todo!(),
             AnalyzedExpression::Call(node) => self.call_expr(*node),
@@ -498,6 +499,24 @@ impl Compiler {
                 Some(dest_reg.to_reg())
             }
             (Type::Int, InfixOp::Pow) => todo!("figure out calls first"),
+            (
+                Type::Int,
+                InfixOp::Eq
+                | InfixOp::Neq
+                | InfixOp::Lt
+                | InfixOp::Lte
+                | InfixOp::Gt
+                | InfixOp::Gte,
+            ) => {
+                let dest_reg = self.alloc_ireg();
+                self.insert(Instruction::SetIntCondition(
+                    Condition::from(node.op),
+                    dest_reg,
+                    lhs_reg.into(),
+                    rhs_reg.into(),
+                ));
+                Some(dest_reg.to_reg())
+            }
             (Type::Float, InfixOp::Plus) => {
                 let dest_reg = self.alloc_freg();
                 self.insert(Instruction::Fadd(dest_reg, lhs_reg.into(), rhs_reg.into()));
@@ -526,6 +545,30 @@ impl Compiler {
         self.release_reg(rhs_reg);
 
         res
+    }
+
+    fn prefix_expr(&mut self, node: AnalyzedPrefixExpr) -> Option<Register> {
+        let lhs_type = node.expr.result_type();
+        let lhs_reg = self.expression(node.expr)?;
+
+        match (lhs_type, node.op) {
+            (Type::Int, PrefixOp::Neg) => {
+                let dest_reg = self.alloc_ireg();
+                self.insert(Instruction::Neg(dest_reg, lhs_reg.into()));
+                Some(dest_reg.to_reg())
+            }
+            (Type::Float, PrefixOp::Neg) => {
+                let dest_reg = self.alloc_freg();
+                self.insert(Instruction::FNeg(dest_reg, lhs_reg.into()));
+                Some(dest_reg.to_reg())
+            }
+            (Type::Bool, PrefixOp::Not) => {
+                let dest_reg = self.alloc_ireg();
+                self.insert(Instruction::Seqz(dest_reg, lhs_reg.into()));
+                Some(dest_reg.to_reg())
+            }
+            _ => unreachable!("other types cannot occur in infix expressions"),
+        }
     }
 
     fn cast_expr(&mut self, node: AnalyzedCastExpr) -> Option<Register> {

@@ -2,6 +2,8 @@
 
 use std::fmt::Display;
 
+use rush_analyzer::InfixOp;
+
 use crate::register::{FloatRegister, IntRegister};
 
 pub enum Instruction {
@@ -16,8 +18,10 @@ pub enum Instruction {
     // base integer instructions
     SetIntCondition(Condition, IntRegister, IntRegister, IntRegister),
     Snez(IntRegister, IntRegister),
+    Seqz(IntRegister, IntRegister),
     Li(IntRegister, i64),
     Mov(IntRegister, IntRegister),
+    Neg(IntRegister, IntRegister),
     Add(IntRegister, IntRegister, IntRegister),
     Addi(IntRegister, IntRegister, i64),
     Sub(IntRegister, IntRegister, IntRegister),
@@ -38,6 +42,7 @@ pub enum Instruction {
 
     // floats (arithmetic instructions use `.d` suffix)
     SetFloatCondition(Condition, FloatRegister, FloatRegister, FloatRegister),
+    FNeg(FloatRegister, FloatRegister),
     Fld(FldType),
     Fsd(FldType),
     Fmov(FloatRegister, FloatRegister),
@@ -145,11 +150,14 @@ impl Display for Instruction {
                 Condition::Ge => write!(f, "fge.d {dest}, {l}, {r}"),
             },
             Instruction::Snez(dest, arg) => write!(f, "snez {dest}, {arg}"),
+            Instruction::Seqz(dest, arg) => write!(f, "seqz {dest}, {arg}"),
             Instruction::Mov(dest, src) => write!(f, "mv {dest}, {src}"),
             Instruction::Fmov(dest, src) => write!(f, "fmov.d {dest}, {src}"),
             Instruction::CastIntToFloat(_, _) => todo!(),
             Instruction::CastFloatToInt(dest, src) => write!(f, "fcvt.l.d {dest}, {src}, rdn"),
             Instruction::CastByteToFloat(_, _) => todo!(),
+            Instruction::Neg(dest, src) => write!(f, "neg {dest}, {src}"),
+            Instruction::FNeg(dest, src) => write!(f, "fneg.d {dest}, {src}"),
         }
     }
 }
@@ -177,6 +185,20 @@ impl Display for Condition {
                 Self::Ne => "ne",
             }
         )
+    }
+}
+
+impl From<InfixOp> for Condition {
+    fn from(src: InfixOp) -> Self {
+        match src {
+            InfixOp::Eq => Self::Eq,
+            InfixOp::Neq => Self::Ne,
+            InfixOp::Lt => Self::Lt,
+            InfixOp::Lte => Self::Le,
+            InfixOp::Gt => Self::Gt,
+            InfixOp::Gte => Self::Ge,
+            _ => unreachable!("infixOp {src} is not used in this way"),
+        }
     }
 }
 
