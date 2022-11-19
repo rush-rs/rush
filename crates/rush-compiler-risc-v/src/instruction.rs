@@ -148,7 +148,7 @@ impl Display for Instruction {
             Instruction::Mov(dest, src) => write!(f, "mv {dest}, {src}"),
             Instruction::Fmov(dest, src) => write!(f, "fmov.d {dest}, {src}"),
             Instruction::CastIntToFloat(_, _) => todo!(),
-            Instruction::CastFloatToInt(_, _) => todo!(),
+            Instruction::CastFloatToInt(dest, src) => write!(f, "fcvt.l.d {dest}, {src}, rdn"),
             Instruction::CastByteToFloat(_, _) => todo!(),
         }
     }

@@ -1,21 +1,20 @@
 #![allow(dead_code)] // TODO: remove this attribute
 
-use std::{
-    collections::{HashMap, VecDeque},
-    fmt::Display,
-};
+use std::collections::{HashMap, VecDeque};
 
 use rush_analyzer::{
     ast::{
-        AnalyzedBlock, AnalyzedCallExpr, AnalyzedExpression, AnalyzedFunctionDefinition,
-        AnalyzedInfixExpr, AnalyzedLetStmt, AnalyzedProgram, AnalyzedStatement,
+        AnalyzedBlock, AnalyzedCallExpr, AnalyzedCastExpr, AnalyzedExpression,
+        AnalyzedFunctionDefinition, AnalyzedIfExpr, AnalyzedInfixExpr, AnalyzedLetStmt,
+        AnalyzedProgram, AnalyzedStatement,
     },
     InfixOp, Type,
 };
 
 use crate::{
-    instruction::{FldType, Instruction, Pointer},
+    instruction::{Condition, FldType, Instruction, Pointer},
     register::{FloatRegister, IntRegister, Register},
+    utils::{Block, DataObj, DataObjType, Function},
 };
 
 pub struct Compiler {
@@ -37,63 +36,6 @@ pub struct Compiler {
     pub(crate) used_registers: Vec<IntRegister>,
     /// Specifies all float registers which are currently in use and may not be overwritten.
     pub(crate) used_float_registers: Vec<FloatRegister>,
-}
-
-pub(crate) struct Block {
-    pub(crate) label: String,
-    pub(crate) instructions: VecDeque<Instruction>,
-}
-
-impl Display for Block {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "\n{}:\n{}",
-            self.label,
-            self.instructions
-                .iter()
-                .map(|i| format!("    {i}\n"))
-                .collect::<String>()
-        )
-    }
-}
-
-pub(crate) struct Function {
-    /// Specifies how many bytes of stack space need to be allocated for the current function.
-    /// Include the necessary allocation for `ra` or `fp`
-    pub(crate) stack_allocs: usize,
-}
-
-pub(crate) struct DataObj {
-    pub(crate) label: String,
-    pub(crate) data: DataObjType,
-}
-
-impl Display for DataObj {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:\n    {}", self.label, self.data)
-    }
-}
-
-pub(crate) enum DataObjType {
-    Float(f64),
-    Dword(i64),
-    Byte(i64),
-}
-
-impl Display for DataObjType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Float(inner) => write!(
-                f,
-                ".dword {:#018x}  # = {inner}{zero}",
-                inner.to_bits(),
-                zero = if inner.fract() == 0.0 { ".0" } else { "" }
-            ),
-            Self::Dword(inner) => write!(f, ".dword {inner:#018x}  # = {inner}"),
-            Self::Byte(inner) => write!(f, ".byte {inner:#04x}"),
-        }
-    }
 }
 
 impl Compiler {
@@ -180,7 +122,9 @@ impl Compiler {
         self.exports.push(block_label.into());
         self.insert_at(block_label);
 
+        self.push_scope();
         self.function_body(node);
+        self.pop_scope();
 
         // exit with code 0
         self.insert(Instruction::Li(IntRegister::A0, 0));
@@ -197,93 +141,61 @@ impl Compiler {
         self.append_block(block_label.clone());
         self.insert_at(&block_label);
 
-        // push a scope
-        self.push_scope();
-
-        // push arguments into the function's scope
-        let mut curr_int_reg = IntRegister::A0;
-        let mut curr_flt_reg = FloatRegister::Fa0;
-
-        for param in node.params.iter() {
-            // save current parameter inside the function's scope
-            let var_offset = match param.type_ {
-                // TODO: implement stack access correctly
-                Type::Int | Type::Char | Type::Bool => {
-                    // get the current param's register
-                    let reg = self.alloc_ireg();
-
-                    // advance the register
-                    match curr_int_reg.next_param() {
-                        Some(next) => curr_int_reg = next,
-                        None => todo!("stack args are not yet implemented"),
-                    }
-
-                    let fp = self.curr_fn.stack_allocs as i64;
-                    self.curr_fn.stack_allocs += 16; // add room for saving `fp` and `ra`
-                    self.insert(Instruction::Sd(reg, Pointer::Stack(IntRegister::Fp, fp)));
-                    Some(fp)
-                }
-                Type::Float => {
-                    // get the current param's register
-                    let reg = self.alloc_freg();
-
-                    // advance the register
-                    match curr_flt_reg.next_param() {
-                        Some(next) => curr_flt_reg = next,
-                        None => todo!("stack args are not yet implemented"),
-                    }
-
-                    let fp = self.curr_fn.stack_allocs as i64;
-                    self.curr_fn.stack_allocs += 8;
-                    self.insert(Instruction::Fsd(FldType::Stack(reg, self.alloc_ireg(), fp)));
-                    Some(fp)
-                }
-                Type::Unit | Type::Never => None,
-                Type::Unknown => unreachable!("cannot use {{unknown}} as a param"),
-            };
-            self.scope_mut().insert(param.name.to_string(), var_offset);
-        }
-
-        self.function_body(node.block);
-        let epilogue_label = format!("epilogue_{}", self.blocks.len());
-        self.insert(Instruction::Jmp(epilogue_label.clone()));
-        self.pop_scope();
+        let prologue_label = self.gen_label("prologue".to_string());
+        let body_label = self.gen_label("body".to_string());
+        self.insert(Instruction::Jmp(prologue_label.to_string()));
 
         //// PROLOGUE ////
-        self.insert_start(Instruction::Comment("end prologue".to_string()));
-        self.insert_start(Instruction::Addi(
-            IntRegister::Fp,
-            IntRegister::Sp,
-            self.curr_fn.stack_allocs as i64,
-        ));
-        self.insert_start(Instruction::Sd(
-            IntRegister::Ra,
-            Pointer::Stack(IntRegister::Sp, (self.curr_fn.stack_allocs - 8) as i64),
-        ));
-        self.insert_start(Instruction::Sd(
-            IntRegister::Fp,
-            Pointer::Stack(IntRegister::Sp, (self.curr_fn.stack_allocs - 16) as i64),
-        ));
-        self.insert_start(Instruction::Addi(
+        self.blocks.push(Block {
+            label: prologue_label.clone(),
+            instructions: VecDeque::new(),
+        });
+        self.insert_at(&prologue_label);
+        self.insert(Instruction::Addi(
             IntRegister::Sp,
             IntRegister::Sp,
             -(self.curr_fn.stack_allocs as i64),
         ));
-        self.insert_start(Instruction::Comment("start prologue".to_string()));
+        self.insert(Instruction::Sd(
+            IntRegister::Fp,
+            Pointer::Stack(IntRegister::Sp, 0),
+        ));
+        self.insert(Instruction::Sd(
+            IntRegister::Ra,
+            Pointer::Stack(IntRegister::Sp, 8),
+        ));
+        self.insert(Instruction::Addi(
+            IntRegister::Fp,
+            IntRegister::Sp,
+            self.curr_fn.stack_allocs as i64,
+        ));
+        self.insert(Instruction::Jmp(body_label.clone()));
+
+        //// BODY ////
+        self.push_scope();
+        // TODO: implement args
+        self.blocks.push(Block {
+            label: body_label.clone(),
+            instructions: VecDeque::new(),
+        });
+        self.insert_at(&body_label);
+        self.function_body(node.block);
+        self.pop_scope();
 
         //// EPILOGUE ////
-        self.append_block(epilogue_label.clone());
-        self.insert_at(&epilogue_label);
+        let epilogue = self.append_block("epilogue".to_string());
+        self.insert(Instruction::Jmp(epilogue.clone()));
+        self.insert_at(&epilogue);
 
         // restore ra
         self.insert(Instruction::Ld(
             IntRegister::Ra,
-            Pointer::Stack(IntRegister::Sp, (self.curr_fn.stack_allocs - 8) as i64),
+            Pointer::Stack(IntRegister::Sp, 0),
         ));
         // restore fp
         self.insert(Instruction::Ld(
             IntRegister::Fp,
-            Pointer::Stack(IntRegister::Sp, self.curr_fn.stack_allocs as i64 - 16),
+            Pointer::Stack(IntRegister::Sp, 8),
         ));
         // deallocate stack space
         self.insert(Instruction::Addi(
@@ -326,14 +238,16 @@ impl Compiler {
             self.statement(stmt)
         }
 
+        // return expression register if there is an expr
+        let res = match node.expr {
+            Some(expr) => self.expression(expr),
+            None => None,
+        };
+
         // pop the scope again
         self.pop_scope();
 
-        // return expression register if there is an expr
-        match node.expr {
-            Some(expr) => self.expression(expr),
-            None => None,
-        }
+        res
     }
 
     fn statement(&mut self, node: AnalyzedStatement) {
@@ -360,12 +274,12 @@ impl Compiler {
         match value_reg {
             Some(Register::Int(reg)) => self.insert(Instruction::Sd(
                 reg,
-                Pointer::Stack(IntRegister::Fp, self.curr_fn.stack_allocs as i64),
+                Pointer::Stack(IntRegister::Fp, -(self.curr_fn.stack_allocs as i64)),
             )),
             Some(Register::Float(reg)) => self.insert(Instruction::Fsd(FldType::Stack(
                 reg,
-                IntRegister::T0,
-                self.curr_fn.stack_allocs as i64,
+                IntRegister::Fp,
+                -(self.curr_fn.stack_allocs as i64),
             ))),
             None => {
                 // insert a dummy variable into the HashMap
@@ -392,7 +306,7 @@ impl Compiler {
     fn expression(&mut self, node: AnalyzedExpression) -> Option<Register> {
         match node {
             AnalyzedExpression::Block(node) => self.block(*node),
-            AnalyzedExpression::If(_) => todo!(),
+            AnalyzedExpression::If(node) => self.if_expr(*node),
             AnalyzedExpression::Int(value) => {
                 let dest_reg = self.alloc_ireg();
                 self.insert(Instruction::Li(dest_reg, value));
@@ -425,12 +339,7 @@ impl Compiler {
                 Some(Register::Int(dest_reg))
             }
             AnalyzedExpression::Ident(node) => {
-                let ptr = self
-                    .scopes
-                    .last()
-                    .expect("there is a scope")
-                    .get(node.ident)
-                    .expect("variable exits");
+                let ptr = self.resolve_name(node.ident);
 
                 match ptr {
                     Some(offset) => match node.result_type {
@@ -438,7 +347,7 @@ impl Compiler {
                             let dest_reg = self.alloc_ireg();
                             self.insert(Instruction::Lb(
                                 dest_reg,
-                                Pointer::Stack(IntRegister::Fp, *offset),
+                                Pointer::Stack(IntRegister::Fp, -offset),
                             ));
                             Some(Register::Int(dest_reg))
                         }
@@ -446,7 +355,7 @@ impl Compiler {
                             let dest_reg = self.alloc_ireg();
                             self.insert(Instruction::Ld(
                                 dest_reg,
-                                Pointer::Stack(IntRegister::Fp, *offset),
+                                Pointer::Stack(IntRegister::Fp, -offset),
                             ));
                             Some(Register::Int(dest_reg))
                         }
@@ -454,8 +363,8 @@ impl Compiler {
                             let dest_reg = self.alloc_freg();
                             self.insert(Instruction::Fld(FldType::Stack(
                                 dest_reg,
-                                self.alloc_ireg(),
-                                *offset,
+                                IntRegister::Fp,
+                                -offset,
                             )));
                             Some(Register::Float(dest_reg))
                         }
@@ -469,9 +378,74 @@ impl Compiler {
             AnalyzedExpression::Infix(node) => self.infix_expr(*node),
             AnalyzedExpression::Assign(_) => todo!(),
             AnalyzedExpression::Call(node) => self.call_expr(*node),
-            AnalyzedExpression::Cast(_) => todo!(),
+            AnalyzedExpression::Cast(node) => self.cast_expr(*node),
             AnalyzedExpression::Grouped(node) => self.expression(*node),
         }
+    }
+
+    fn if_expr(&mut self, node: AnalyzedIfExpr) -> Option<Register> {
+        // save the bool condition in this register
+        let cond_reg = self
+            .expression(node.cond)
+            .expect("cond is not unit / never");
+
+        // will later hold the result of this expr
+        let res_reg = match node.result_type {
+            Type::Float => Some(self.alloc_freg().to_reg()),
+            Type::Int | Type::Bool | Type::Char => Some(self.alloc_ireg().to_reg()),
+            _ => None,
+        };
+
+        let then_block = self.append_block("then".to_string());
+        let merge_block = self.append_block("merge".to_string());
+
+        self.insert(Instruction::BrCond(
+            Condition::Ne,
+            cond_reg.into(),
+            IntRegister::Zero,
+            then_block.clone(),
+        ));
+
+        if let Some(else_block) = node.else_block {
+            let else_block_label = self.append_block("else".to_string());
+            self.insert(Instruction::Jmp(else_block_label.clone()));
+            self.insert_at(&else_block_label);
+            let else_reg = self.block(else_block);
+
+            // if the block returns a register other than res, move the block register into res
+            match (res_reg, else_reg) {
+                (Some(Register::Int(res)), Some(Register::Int(else_reg))) if res != else_reg => {
+                    self.insert(Instruction::Mov(res, else_reg));
+                }
+                (Some(Register::Float(res)), Some(Register::Float(else_reg)))
+                    if res != else_reg =>
+                {
+                    self.insert(Instruction::Fmov(res, else_reg));
+                }
+                _ => {}
+            }
+
+            self.insert(Instruction::Jmp(merge_block.clone()));
+        }
+
+        self.insert_at(&then_block);
+        let then_reg = self.block(node.then_block);
+
+        // if the block returns a register other than res, move the block register into res
+        match (res_reg, then_reg) {
+            (Some(Register::Int(res)), Some(Register::Int(then_reg))) if res != then_reg => {
+                self.insert(Instruction::Mov(res, then_reg));
+            }
+            (Some(Register::Float(res)), Some(Register::Float(then_reg))) if res != then_reg => {
+                self.insert(Instruction::Fmov(res, then_reg));
+            }
+            _ => {}
+        }
+
+        self.insert(Instruction::Jmp(merge_block.clone()));
+        self.insert_at(&merge_block);
+
+        res_reg
     }
 
     fn infix_expr(&mut self, node: AnalyzedInfixExpr) -> Option<Register> {
@@ -491,6 +465,47 @@ impl Compiler {
                 self.insert(Instruction::Add(dest_reg, lhs_reg.into(), rhs_reg.into()));
                 Some(dest_reg.to_reg())
             }
+            (Type::Int, InfixOp::Minus) => {
+                let dest_reg = self.alloc_ireg();
+                self.insert(Instruction::Sub(dest_reg, lhs_reg.into(), rhs_reg.into()));
+                Some(dest_reg.to_reg())
+            }
+            (Type::Int, InfixOp::Mul) => {
+                let dest_reg = self.alloc_ireg();
+                self.insert(Instruction::Mul(dest_reg, lhs_reg.into(), rhs_reg.into()));
+                Some(dest_reg.to_reg())
+            }
+            (Type::Int, InfixOp::Div) => {
+                let dest_reg = self.alloc_ireg();
+                self.insert(Instruction::Div(dest_reg, lhs_reg.into(), rhs_reg.into()));
+                Some(dest_reg.to_reg())
+            }
+            (Type::Int, InfixOp::Rem) => {
+                let dest_reg = self.alloc_ireg();
+                self.insert(Instruction::Rem(dest_reg, lhs_reg.into(), rhs_reg.into()));
+                Some(dest_reg.to_reg())
+            }
+            (Type::Int, InfixOp::Pow) => todo!("figure out calls first"),
+            (Type::Float, InfixOp::Plus) => {
+                let dest_reg = self.alloc_freg();
+                self.insert(Instruction::Fadd(dest_reg, lhs_reg.into(), rhs_reg.into()));
+                Some(dest_reg.to_reg())
+            }
+            (Type::Float, InfixOp::Minus) => {
+                let dest_reg = self.alloc_freg();
+                self.insert(Instruction::Fsub(dest_reg, lhs_reg.into(), rhs_reg.into()));
+                Some(dest_reg.to_reg())
+            }
+            (Type::Float, InfixOp::Mul) => {
+                let dest_reg = self.alloc_freg();
+                self.insert(Instruction::Fmul(dest_reg, lhs_reg.into(), rhs_reg.into()));
+                Some(dest_reg.to_reg())
+            }
+            (Type::Float, InfixOp::Div) => {
+                let dest_reg = self.alloc_freg();
+                self.insert(Instruction::Fdiv(dest_reg, lhs_reg.into(), rhs_reg.into()));
+                Some(dest_reg.to_reg())
+            }
             _ => todo!("implement these cases"), // TODO: implement this
         };
 
@@ -501,76 +516,33 @@ impl Compiler {
         res
     }
 
-    fn call_expr(&mut self, node: AnalyzedCallExpr) -> Option<Register> {
-        // initial argument register
-        let mut curr_int_reg = IntRegister::A0;
-        let mut curr_flt_reg = FloatRegister::Fa0;
+    fn cast_expr(&mut self, node: AnalyzedCastExpr) -> Option<Register> {
+        let lhs_type = node.expr.result_type();
+        let lhs_reg = self.expression(node.expr)?;
 
-        // TODO: release all reserved registers after call
-        let mut used_registers = vec![];
-
-        for arg in node
-            .args
-            .into_iter()
-            // skip any unit or never values
-            .filter(|a| !matches!(a.result_type(), Type::Unit | Type::Never))
-        {
-            match arg.result_type() {
-                Type::Int | Type::Char | Type::Bool => {
-                    // TODO: is curr used?
-                    // TODO: push on stack, save in vec
-
-                    // expr result will be in correct reg
-                    self.expression(arg).expect("filtered out above");
-
-                    // mark the curr_reg as used
-                    self.used_registers.push(curr_int_reg);
-                    used_registers.push(curr_int_reg.to_reg());
-
-                    match curr_int_reg.next_param() {
-                        Some(next) => curr_int_reg = next,
-                        None => todo!("stack args are not yet implemented"),
-                    }
-                }
-                Type::Float => {
-                    // TODO: is curr used?
-                    // TODO: push on stack, save in vec
-
-                    // expr result will be in correct reg
-                    self.expression(arg).expect("filtered out above");
-
-                    // mark the curr_reg as used
-                    self.used_float_registers.push(curr_flt_reg);
-                    used_registers.push(curr_flt_reg.to_reg());
-
-                    match curr_flt_reg.next_param() {
-                        Some(next) => curr_flt_reg = next,
-                        None => todo!("stack args are not yet implemented"),
-                    }
-                }
-                Type::Unit | Type::Never => {} // ignore these types
-                Type::Unknown => unreachable!("cannot use values of type `{{unknown}}` as params"),
+        match (lhs_type, node.type_) {
+            (Type::Float, Type::Int) => {
+                let dest_reg = self.alloc_ireg();
+                self.insert(Instruction::CastFloatToInt(dest_reg, lhs_reg.into()));
+                Some(dest_reg.to_reg())
             }
+            (Type::Bool, Type::Int) | (Type::Char, Type::Int) => Some(lhs_reg),
+            _ => todo!(),
         }
-        // TODO: restore all previously pushed from vec?
+    }
 
-        for reg in used_registers {
-            self.release_reg(reg)
-        }
-
-        // perform the actual call
-        // TODO: improve this
+    /// TODO: add real implementation
+    fn call_expr(&mut self, node: AnalyzedCallExpr) -> Option<Register> {
         if node.func == "exit" {
+            let dest = self.expression(node.args[0].clone())?;
+            if dest != IntRegister::A0.to_reg() {
+                self.insert(Instruction::Mov(IntRegister::A0, dest.into()));
+            }
             self.insert(Instruction::Call("exit".into()));
+            None
         } else {
             self.insert(Instruction::Call(format!(".{}", node.func)));
-        }
-
-        // return the call return value
-        match node.result_type {
-            Type::Unit | Type::Never => None,
-            Type::Unknown => unreachable!("the analyze would have failed"),
-            _ => Some(Register::Int(IntRegister::A0)),
+            None
         }
     }
 }
@@ -580,6 +552,7 @@ mod tests {
     use std::{
         fs,
         process::{Command, Stdio},
+        time::Instant,
     };
 
     use super::*;
@@ -589,12 +562,15 @@ mod tests {
         let path = "./test.rush";
         let code = fs::read_to_string(path).unwrap();
         let (ast, _) = rush_analyzer::analyze(&code, path).unwrap();
+        let start = Instant::now();
         let mut compiler = Compiler::new();
         let out = compiler.compile(ast);
         fs::write("test.s", out).unwrap();
+        println!("compile: {:?}", start.elapsed());
 
         Command::new("riscv64-linux-gnu-gcc")
             .args([
+                "-mno-relax",
                 "-nostdlib",
                 "-static",
                 "test.s",

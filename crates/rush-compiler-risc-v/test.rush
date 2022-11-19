@@ -1,9 +1,36 @@
-fn add(n: int, m: int) -> int {
-    n + m
+fn foo() {
+    let b = 1.5;
+    let a = 40.5 + 1.5 + b;
+    //let c = a + b;
+    //let c = (a +b) as int;
+    exit(a as int)
 }
 
-// TODO: both are broken 
+fn a() {
+    let a = if true {
+        if true {
+            let a = 42 + 40;
+            a
+        } else {
+            43
+        }
+    } else {
+        69
+    };
+    exit(a)
+}
+
 fn main() {
-    // exit(add(1, add(2, 3)))
-    // exit(1 + 2 + 3)
+    b()
+}
+
+fn b() {
+    let res = if false {
+        let cod = 42;
+        cod
+    } else {
+        let cod = 69;
+        cod
+    };
+    exit(res)
 }
