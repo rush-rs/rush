@@ -1,36 +1,13 @@
-fn foo() {
-    let b = 1.5;
-    let a = 40.5 + 1.5 + b;
-    //let c = a + b;
-    //let c = (a +b) as int;
-    exit(a as int)
-}
-
-fn a() {
-    let a = if true {
-        if true {
-            let a = 42 + 40;
-            a
-        } else {
-            43
-        }
-    } else {
-        69
-    };
-    exit(a)
-}
-
 fn main() {
-    b()
+    exit(fib(10))
 }
 
-fn b() {
-    let res = if false {
-        let cod = 42;
-        cod
+fn fib(n: int) -> int {
+    if n < 2 {
+        n
     } else {
-        let cod = 69;
-        cod
-    };
-    exit(res)
+        let a = fib(n - 1);
+        let b = fib(n - 2);
+        a + b
+    }
 }

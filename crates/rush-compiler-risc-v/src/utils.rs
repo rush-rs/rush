@@ -33,7 +33,7 @@ impl Compiler {
     /// Allocates (and returns) the next unused, general purpose int register
     pub(crate) fn alloc_ireg(&self) -> IntRegister {
         for reg in INT_REGISTERS {
-            if !self.used_registers.contains(reg) {
+            if !self.used_registers.contains(&Register::Int(*reg)) {
                 return *reg;
             }
         }
@@ -43,7 +43,7 @@ impl Compiler {
     /// Allocates (and returns) the next unused, general purpose float register
     pub(crate) fn alloc_freg(&self) -> FloatRegister {
         for reg in FLOAT_REGISTERS {
-            if !self.used_float_registers.contains(reg) {
+            if !self.used_registers.contains(&Register::Float(*reg)) {
                 return *reg;
             }
         }
@@ -52,26 +52,23 @@ impl Compiler {
 
     /// Returns whether a register is currently in use or not
     pub(crate) fn reg_used(&self, reg: &Register) -> bool {
-        match reg {
-            Register::Int(reg) => self.used_registers.contains(reg),
-            Register::Float(reg) => self.used_float_registers.contains(reg),
-        }
+        self.used_registers.contains(reg)
     }
 
     /// Marks a register as used
     pub(crate) fn use_reg(&mut self, reg: Register) {
-        match reg {
-            Register::Int(reg) => self.used_registers.push(reg),
-            Register::Float(reg) => self.used_float_registers.push(reg),
-        }
+        self.used_registers.push(reg)
     }
 
-    /// Marks a register as unused
+    /// Marks a register as unused.
+    /// If the register appears twice in the vec, only remove one occurrence
     pub(crate) fn release_reg(&mut self, reg: Register) {
-        match reg {
-            Register::Int(reg) => self.used_registers.retain(|r| *r != reg),
-            Register::Float(reg) => self.used_float_registers.retain(|r| *r != reg),
-        }
+        self.used_registers.remove(
+            self.used_registers
+                .iter()
+                .position(|r| *r == reg)
+                .expect("register not in used_registers"),
+        );
     }
 
     /// Appends a new basic block.
@@ -89,16 +86,13 @@ impl Compiler {
     }
 
     pub(crate) fn gen_label(&self, label: String) -> String {
-        let block_name_cnt = self
-            .blocks
-            .iter()
-            .filter(|block| block.label == label)
-            .count();
-
-        match block_name_cnt > 0 {
-            true => format!("{label}_{block_name_cnt}"),
-            false => label,
+        let mut count = 1;
+        let mut out = label.clone();
+        while self.blocks.iter().any(|b| b.label == out) {
+            out = format!("{label}_{}", count);
+            count += 1;
         }
+        out
     }
 
     /// Helper function for resolving identifier names.

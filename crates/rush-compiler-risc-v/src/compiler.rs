@@ -33,9 +33,7 @@ pub struct Compiler {
     /// Saves the scopes. The last element is the most recent scope.
     pub(crate) scopes: Vec<HashMap<String, Option<Variable>>>,
     /// Specifies all registers which are currently in use and may not be overwritten.
-    pub(crate) used_registers: Vec<IntRegister>,
-    /// Specifies all float registers which are currently in use and may not be overwritten.
-    pub(crate) used_float_registers: Vec<FloatRegister>,
+    pub(crate) used_registers: Vec<Register>,
 }
 
 impl Compiler {
@@ -49,7 +47,6 @@ impl Compiler {
             scopes: vec![],
             curr_fn: None,
             used_registers: vec![],
-            used_float_registers: vec![],
         }
     }
 
@@ -171,6 +168,7 @@ impl Compiler {
 
         // TODO: implement args
 
+        let mut param_regs = vec![];
         for (idx, param) in node.params.iter().enumerate() {
             match param.type_ {
                 Type::Int => {
@@ -180,6 +178,10 @@ impl Compiler {
                         .to_reg();
                     self.scope_mut()
                         .insert(param.name.to_string(), Some(Variable::Register(reg)));
+
+                    // mark the argument registers as used
+                    param_regs.push(reg);
+                    self.use_reg(reg)
                 }
                 Type::Char | Type::Bool => {}
                 Type::Float => {}
@@ -206,6 +208,11 @@ impl Compiler {
         self.function_body(node.block);
         self.insert(Instruction::Jmp(epilogue_label.clone()));
         self.pop_scope();
+
+        for reg in param_regs {
+            println!("AF FUNC:{}: REL: {reg:?}", node.name);
+            self.release_reg(reg)
+        }
 
         // generate prologue
         self.prologue(&prologue_label);
@@ -296,7 +303,7 @@ impl Compiler {
             Some(Register::Float(reg)) => self.insert(Instruction::Fsd(FldType::Stack(
                 reg,
                 IntRegister::Fp,
-                -(self.curr_fn().stack_allocs as i64),
+                -(self.curr_fn().stack_allocs as i64 + 8),
             ))),
             None => {
                 // insert a dummy variable into the HashMap
@@ -464,39 +471,44 @@ impl Compiler {
     fn infix_expr(&mut self, node: AnalyzedInfixExpr) -> Option<Register> {
         let type_ = node.lhs.result_type();
 
-        let lhs_reg = self.expression(node.lhs)?;
         // mark the lhs register as used
+        let lhs_reg = self.expression(node.lhs)?;
         self.use_reg(lhs_reg);
+        println!("infix-use: {lhs_reg:?}: {:?}", self.used_registers);
 
-        let rhs_reg = self.expression(node.rhs)?;
         // mark the rhs register as used
+        let rhs_reg = self.expression(node.rhs)?;
         self.use_reg(rhs_reg);
 
-        let res = match (type_, node.op) {
+        // release the usage block of the operands
+        self.release_reg(lhs_reg);
+        self.release_reg(rhs_reg);
+
+        Some(match (type_, node.op) {
             (Type::Int, InfixOp::Plus) => {
                 let dest_reg = self.alloc_ireg();
                 self.insert(Instruction::Add(dest_reg, lhs_reg.into(), rhs_reg.into()));
-                Some(dest_reg.to_reg())
+                dest_reg.to_reg()
             }
             (Type::Int, InfixOp::Minus) => {
                 let dest_reg = self.alloc_ireg();
                 self.insert(Instruction::Sub(dest_reg, lhs_reg.into(), rhs_reg.into()));
-                Some(dest_reg.to_reg())
+                dest_reg.to_reg()
             }
             (Type::Int, InfixOp::Mul) => {
                 let dest_reg = self.alloc_ireg();
                 self.insert(Instruction::Mul(dest_reg, lhs_reg.into(), rhs_reg.into()));
-                Some(dest_reg.to_reg())
+                dest_reg.to_reg()
             }
             (Type::Int, InfixOp::Div) => {
                 let dest_reg = self.alloc_ireg();
                 self.insert(Instruction::Div(dest_reg, lhs_reg.into(), rhs_reg.into()));
-                Some(dest_reg.to_reg())
+                dest_reg.to_reg()
             }
             (Type::Int, InfixOp::Rem) => {
                 let dest_reg = self.alloc_ireg();
                 self.insert(Instruction::Rem(dest_reg, lhs_reg.into(), rhs_reg.into()));
-                Some(dest_reg.to_reg())
+                dest_reg.to_reg()
             }
             (Type::Int, InfixOp::Pow) => todo!("figure out calls first"),
             (
@@ -508,6 +520,7 @@ impl Compiler {
                 | InfixOp::Gt
                 | InfixOp::Gte,
             ) => {
+                println!("USED REG IN SLT: {:?}", self.used_registers);
                 let dest_reg = self.alloc_ireg();
                 self.insert(Instruction::SetIntCondition(
                     Condition::from(node.op),
@@ -515,36 +528,30 @@ impl Compiler {
                     lhs_reg.into(),
                     rhs_reg.into(),
                 ));
-                Some(dest_reg.to_reg())
+                dest_reg.to_reg()
             }
             (Type::Float, InfixOp::Plus) => {
                 let dest_reg = self.alloc_freg();
                 self.insert(Instruction::Fadd(dest_reg, lhs_reg.into(), rhs_reg.into()));
-                Some(dest_reg.to_reg())
+                dest_reg.to_reg()
             }
             (Type::Float, InfixOp::Minus) => {
                 let dest_reg = self.alloc_freg();
                 self.insert(Instruction::Fsub(dest_reg, lhs_reg.into(), rhs_reg.into()));
-                Some(dest_reg.to_reg())
+                dest_reg.to_reg()
             }
             (Type::Float, InfixOp::Mul) => {
                 let dest_reg = self.alloc_freg();
                 self.insert(Instruction::Fmul(dest_reg, lhs_reg.into(), rhs_reg.into()));
-                Some(dest_reg.to_reg())
+                dest_reg.to_reg()
             }
             (Type::Float, InfixOp::Div) => {
                 let dest_reg = self.alloc_freg();
                 self.insert(Instruction::Fdiv(dest_reg, lhs_reg.into(), rhs_reg.into()));
-                Some(dest_reg.to_reg())
+                dest_reg.to_reg()
             }
             _ => todo!("implement these cases"), // TODO: implement this
-        };
-
-        // release the usage block of the operands
-        self.release_reg(lhs_reg);
-        self.release_reg(rhs_reg);
-
-        res
+        })
     }
 
     fn prefix_expr(&mut self, node: AnalyzedPrefixExpr) -> Option<Register> {
@@ -613,6 +620,7 @@ mod tests {
                 "-mno-relax",
                 "-nostdlib",
                 "-static",
+                "-g",
                 "test.s",
                 "-L",
                 "corelib",

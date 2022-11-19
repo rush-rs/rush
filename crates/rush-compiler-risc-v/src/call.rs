@@ -4,7 +4,7 @@ use rush_analyzer::{ast::AnalyzedCallExpr, Type};
 
 use crate::{
     compiler::Compiler,
-    instruction::{Instruction, Pointer},
+    instruction::{FldType, Instruction, Pointer},
     register::{FloatRegister, IntRegister, Register},
 };
 
@@ -67,6 +67,28 @@ impl Compiler {
 
         let mut param_regs = vec![];
 
+        // before the function is called, all used registers must be pushed on the stack
+        let mut regs_on_stack = vec![];
+
+        // save all registers which are currently in use
+        for reg in self.used_registers.clone() {
+            let offset = -(self.curr_fn().stack_allocs as i64 + 8);
+            match reg {
+                Register::Int(reg) => {
+                    let ptr = Pointer::Stack(IntRegister::Fp, offset);
+                    self.insert(Instruction::Sd(reg, ptr));
+                }
+
+                Register::Float(reg) => self.insert(Instruction::Fsd(FldType::Stack(
+                    reg,
+                    self.alloc_ireg(),
+                    offset,
+                ))),
+            };
+            self.curr_fn_mut().stack_allocs += 8;
+            regs_on_stack.push((reg, offset));
+        }
+
         // prepare arguments
         for arg in node
             .args
@@ -88,8 +110,16 @@ impl Compiler {
 
                     if curr_reg != res_reg {
                         dbg!(&self.used_registers);
-                        todo!("call: {}/{int_cnt}: register {curr_reg:?} is already in use, must save /load -> got {res_reg:?}", node.func)
+                        let offset = -(self.curr_fn().stack_allocs as i64);
+                        self.insert(Instruction::Sd(
+                            IntRegister::A0,
+                            Pointer::Stack(IntRegister::Fp, offset),
+                        ));
+                        self.curr_fn_mut().stack_allocs += 8;
+                        self.insert(Instruction::Mov(curr_reg.into(), res_reg.into()));
+                        //todo!("call: {}/{int_cnt}: register {curr_reg:?} is already in use, must save /load -> got {res_reg:?}", node.func)
                     }
+
                     int_cnt += 1;
                 }
                 Type::Float => {
@@ -103,16 +133,44 @@ impl Compiler {
         // perform function call
         self.insert(Instruction::Call(func_label));
 
+        let mut res_reg = match node.result_type {
+            Type::Int | Type::Char | Type::Bool => Some(IntRegister::A0.to_reg()),
+            Type::Float => Some(FloatRegister::Fa0.to_reg()),
+            Type::Unit | Type::Never => None,
+            Type::Unknown => unreachable!("analyzer would have failed"),
+        };
+
+        // restore all saved registers
+        for (reg, offset) in regs_on_stack {
+            println!("restored: {reg:?}");
+            match reg {
+                Register::Int(reg) => {
+                    // in this case, restoring `a0` would destroy the call return value.
+                    // therefore, the return value is copied into a new temporary register
+                    if res_reg == Some(Register::Int(IntRegister::A0)) && reg == IntRegister::A0 {
+                        let new_res_reg = self.alloc_ireg();
+                        res_reg = Some(new_res_reg.to_reg());
+                        // copy the return value into the new result value
+                        self.insert(Instruction::Mov(new_res_reg, IntRegister::A0));
+                    }
+                    self.insert(Instruction::Ld(
+                        reg,
+                        Pointer::Stack(IntRegister::Fp, offset),
+                    ));
+                }
+                Register::Float(reg) => self.insert(Instruction::Fld(FldType::Stack(
+                    reg,
+                    self.alloc_ireg(),
+                    offset,
+                ))),
+            };
+        }
+
         // free all blocked registers
         for reg in param_regs {
             self.release_reg(reg)
         }
 
-        match node.result_type {
-            Type::Int | Type::Char | Type::Bool => Some(IntRegister::A0.to_reg()),
-            Type::Float => Some(FloatRegister::Fa0.to_reg()),
-            Type::Unit | Type::Never => None,
-            Type::Unknown => unreachable!("analyzer would have failed"),
-        }
+        res_reg
     }
 }
