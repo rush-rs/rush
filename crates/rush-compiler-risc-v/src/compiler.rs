@@ -29,7 +29,7 @@ pub struct Compiler {
     /// Read-only data section for storing constant values.
     pub(crate) rodata_section: Vec<DataObj>,
     /// Holds metadata about the current function
-    pub(crate) curr_fn: Function,
+    pub(crate) curr_fn: Option<Function>,
     /// Saves the scopes. The last element is the most recent scope.
     pub(crate) scopes: Vec<HashMap<String, Option<i64> /* sp offset */>>,
     /// Specifies all registers which are currently in use and may not be overwritten.
@@ -39,14 +39,6 @@ pub struct Compiler {
 }
 
 impl Compiler {
-    fn insert_at(&mut self, label: &str) {
-        self.curr_block = self
-            .blocks
-            .iter()
-            .position(|s| s.label == label)
-            .expect("cannot insert at invalid label: {label}")
-    }
-
     pub fn new() -> Self {
         Self {
             blocks: vec![],
@@ -55,7 +47,7 @@ impl Compiler {
             data_section: vec![],
             rodata_section: vec![],
             scopes: vec![],
-            curr_fn: Function { stack_allocs: 0 },
+            curr_fn: None,
             used_registers: vec![],
             used_float_registers: vec![],
         }
@@ -143,68 +135,46 @@ impl Compiler {
 
         let prologue_label = self.gen_label("prologue".to_string());
         let body_label = self.gen_label("body".to_string());
+        let epilogue_label = self.gen_label("epilogue".to_string());
         self.insert(Instruction::Jmp(prologue_label.to_string()));
 
-        //// PROLOGUE ////
+        self.curr_fn = Some(Function {
+            stack_allocs: 16, // initial value (for ra + fp)
+            prologue_label: prologue_label.clone(),
+            body_label: body_label.clone(),
+            epilogue_label: epilogue_label.clone(),
+        });
+
+        // TODO: implement args
+        self.push_scope();
+
+        // add the prologue block
         self.blocks.push(Block {
-            label: prologue_label.clone(),
+            label: prologue_label,
             instructions: VecDeque::new(),
         });
-        self.insert_at(&prologue_label);
-        self.insert(Instruction::Addi(
-            IntRegister::Sp,
-            IntRegister::Sp,
-            -(self.curr_fn.stack_allocs as i64),
-        ));
-        self.insert(Instruction::Sd(
-            IntRegister::Fp,
-            Pointer::Stack(IntRegister::Sp, 0),
-        ));
-        self.insert(Instruction::Sd(
-            IntRegister::Ra,
-            Pointer::Stack(IntRegister::Sp, 8),
-        ));
-        self.insert(Instruction::Addi(
-            IntRegister::Fp,
-            IntRegister::Sp,
-            self.curr_fn.stack_allocs as i64,
-        ));
-        self.insert(Instruction::Jmp(body_label.clone()));
 
-        //// BODY ////
-        self.push_scope();
-        // TODO: implement args
+        // generate function body
         self.blocks.push(Block {
             label: body_label.clone(),
             instructions: VecDeque::new(),
         });
         self.insert_at(&body_label);
         self.function_body(node.block);
+        self.insert(Instruction::Jmp(epilogue_label.clone()));
         self.pop_scope();
 
-        //// EPILOGUE ////
-        let epilogue = self.append_block("epilogue".to_string());
-        self.insert(Instruction::Jmp(epilogue.clone()));
-        self.insert_at(&epilogue);
+        // generate prologue
+        self.prologue();
 
-        // restore ra
-        self.insert(Instruction::Ld(
-            IntRegister::Ra,
-            Pointer::Stack(IntRegister::Sp, 0),
-        ));
-        // restore fp
-        self.insert(Instruction::Ld(
-            IntRegister::Fp,
-            Pointer::Stack(IntRegister::Sp, 8),
-        ));
-        // deallocate stack space
-        self.insert(Instruction::Addi(
-            IntRegister::Sp,
-            IntRegister::Sp,
-            self.curr_fn.stack_allocs as i64,
-        ));
-        // return control back to caller
-        self.insert(Instruction::Ret);
+        // generate epilogue
+        self.blocks.push(Block {
+            label: epilogue_label,
+            instructions: VecDeque::new(),
+        });
+
+        // generate epilogue
+        self.epilogue()
     }
 
     fn function_body(&mut self, node: AnalyzedBlock) {
@@ -269,17 +239,21 @@ impl Compiler {
     /// Also increments the `additional_stack_space` of the current function
     fn let_statement(&mut self, node: AnalyzedLetStmt) {
         let value_reg = self.expression(node.expr);
+
         // store the value of the expr on the stack
-        self.insert(Instruction::Comment(format!("let {} = ...", node.name)));
+        self.insert(Instruction::Comment(format!("let {}", node.name)));
+
+        let stack_allocs = self.curr_fn().stack_allocs as i64;
+
         match value_reg {
             Some(Register::Int(reg)) => self.insert(Instruction::Sd(
                 reg,
-                Pointer::Stack(IntRegister::Fp, -(self.curr_fn.stack_allocs as i64)),
+                Pointer::Stack(IntRegister::Fp, -(stack_allocs as i64 - 16)),
             )),
             Some(Register::Float(reg)) => self.insert(Instruction::Fsd(FldType::Stack(
                 reg,
                 IntRegister::Fp,
-                -(self.curr_fn.stack_allocs as i64),
+                -(stack_allocs as i64 - 16),
             ))),
             None => {
                 // insert a dummy variable into the HashMap
@@ -294,13 +268,11 @@ impl Compiler {
         self.scopes
             .last_mut()
             .expect("there must be a scope")
-            .insert(
-                node.name.to_string(),
-                Some(self.curr_fn.stack_allocs as i64),
-            );
+            .insert(node.name.to_string(), Some(stack_allocs));
 
-        // increment frame pointer
-        self.curr_fn.stack_allocs += 8;
+        // increment stack allocations
+        // TODO: is 8 a good value?
+        self.curr_fn_mut().stack_allocs += 8;
     }
 
     fn expression(&mut self, node: AnalyzedExpression) -> Option<Register> {

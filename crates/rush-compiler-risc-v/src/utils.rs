@@ -16,6 +16,14 @@ impl Compiler {
         self.scopes.last_mut().expect("always called from a scope")
     }
 
+    pub(crate) fn curr_fn(&self) -> &Function {
+        self.curr_fn.as_ref().expect("always called from functions")
+    }
+
+    pub(crate) fn curr_fn_mut(&mut self) -> &mut Function {
+        self.curr_fn.as_mut().expect("always called from functions")
+    }
+
     /// Allocates (and returns) the next unused, general purpose int register
     pub(crate) fn alloc_ireg(&self) -> IntRegister {
         for reg in INT_REGISTERS {
@@ -98,11 +106,12 @@ impl Compiler {
             .push_back(instruction);
     }
 
-    #[inline]
-    pub(crate) fn insert_start(&mut self, instruction: Instruction) {
-        self.blocks[self.curr_block]
-            .instructions
-            .push_front(instruction);
+    pub(crate) fn insert_at(&mut self, label: &str) {
+        self.curr_block = self
+            .blocks
+            .iter()
+            .position(|s| s.label == label)
+            .expect("cannot insert at invalid label: {label}")
     }
 
     #[inline]
@@ -139,6 +148,12 @@ pub(crate) struct Function {
     /// Specifies how many bytes of stack space need to be allocated for the current function.
     /// Include the necessary allocation for `ra` or `fp`
     pub(crate) stack_allocs: usize,
+    /// Holds the value of the label which contains the prologue of the current function.
+    pub(crate) prologue_label: String,
+    /// Holds the value of the label which contains the function body.
+    pub(crate) body_label: String,
+    /// Holds the value of the label which contains the epilogue of the current function.
+    pub(crate) epilogue_label: String,
 }
 
 pub(crate) struct DataObj {
