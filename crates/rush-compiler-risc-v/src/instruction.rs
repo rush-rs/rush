@@ -180,6 +180,7 @@ impl Display for Condition {
     }
 }
 
+#[derive(Debug, Clone)]
 pub enum Pointer {
     Stack(IntRegister, i64),
     Label(String),

@@ -113,16 +113,17 @@ pub enum IntRegister {
 }
 
 impl IntRegister {
-    pub(crate) fn next_param(&self) -> Option<Self> {
-        Some(match self {
-            Self::A0 => Self::A1,
-            Self::A1 => Self::A2,
-            Self::A2 => Self::A3,
-            Self::A3 => Self::A4,
-            Self::A4 => Self::A5,
-            Self::A5 => Self::A6,
-            Self::A6 => return None,
-            _ => unreachable!("cannot use other int registers as params"),
+    pub(crate) fn nth_param(n: usize) -> Option<Self> {
+        Some(match n {
+            0 => Self::A0,
+            1 => Self::A1,
+            2 => Self::A2,
+            3 => Self::A3,
+            4 => Self::A4,
+            5 => Self::A5,
+            6 => Self::A6,
+            7 => Self::A7,
+            _ => return None,
         })
     }
 

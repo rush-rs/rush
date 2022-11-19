@@ -7,12 +7,18 @@ use std::{
 
 use crate::{
     compiler::Compiler,
-    instruction::Instruction,
+    instruction::{Instruction, Pointer},
     register::{FloatRegister, IntRegister, Register, FLOAT_REGISTERS, INT_REGISTERS},
 };
 
+#[derive(Debug)]
+pub(crate) enum Variable {
+    Pointer(Pointer),
+    Register(Register),
+}
+
 impl Compiler {
-    pub(crate) fn scope_mut(&mut self) -> &mut HashMap<String, Option<i64>> {
+    pub(crate) fn scope_mut(&mut self) -> &mut HashMap<String, Option<Variable>> {
         self.scopes.last_mut().expect("always called from a scope")
     }
 
@@ -42,6 +48,14 @@ impl Compiler {
             }
         }
         unreachable!("out of float registers!")
+    }
+
+    /// Returns whether a register is currently in use or not
+    pub(crate) fn reg_used(&self, reg: &Register) -> bool {
+        match reg {
+            Register::Int(reg) => self.used_registers.contains(reg),
+            Register::Float(reg) => self.used_float_registers.contains(reg),
+        }
     }
 
     /// Marks a register as used
@@ -89,9 +103,9 @@ impl Compiler {
 
     /// Helper function for resolving identifier names.
     /// Searches the scopes first. If no match was found, the fitting global variable is returned.
-    pub(crate) fn resolve_name(&self, name: &str) -> Option<i64> {
+    pub(crate) fn resolve_name(&self, name: &str) -> &Option<Variable> {
         for scope in self.scopes.iter().rev() {
-            if let Some(&variable) = scope.get(name) {
+            if let Some(variable) = scope.get(name) {
                 return variable;
             }
         }
@@ -146,10 +160,8 @@ impl Display for Block {
 
 pub(crate) struct Function {
     /// Specifies how many bytes of stack space need to be allocated for the current function.
-    /// Include the necessary allocation for `ra` or `fp`
+    /// Does not include the necessary allocations for `ra` or `fp`
     pub(crate) stack_allocs: usize,
-    /// Holds the value of the label which contains the prologue of the current function.
-    pub(crate) prologue_label: String,
     /// Holds the value of the label which contains the function body.
     pub(crate) body_label: String,
     /// Holds the value of the label which contains the epilogue of the current function.

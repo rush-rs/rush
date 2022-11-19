@@ -4,9 +4,8 @@ use std::collections::{HashMap, VecDeque};
 
 use rush_analyzer::{
     ast::{
-        AnalyzedBlock, AnalyzedCallExpr, AnalyzedCastExpr, AnalyzedExpression,
-        AnalyzedFunctionDefinition, AnalyzedIfExpr, AnalyzedInfixExpr, AnalyzedLetStmt,
-        AnalyzedProgram, AnalyzedStatement,
+        AnalyzedBlock, AnalyzedCastExpr, AnalyzedExpression, AnalyzedFunctionDefinition,
+        AnalyzedIfExpr, AnalyzedInfixExpr, AnalyzedLetStmt, AnalyzedProgram, AnalyzedStatement,
     },
     InfixOp, Type,
 };
@@ -14,7 +13,7 @@ use rush_analyzer::{
 use crate::{
     instruction::{Condition, FldType, Instruction, Pointer},
     register::{FloatRegister, IntRegister, Register},
-    utils::{Block, DataObj, DataObjType, Function},
+    utils::{Block, DataObj, DataObjType, Function, Variable},
 };
 
 pub struct Compiler {
@@ -31,7 +30,7 @@ pub struct Compiler {
     /// Holds metadata about the current function
     pub(crate) curr_fn: Option<Function>,
     /// Saves the scopes. The last element is the most recent scope.
-    pub(crate) scopes: Vec<HashMap<String, Option<i64> /* sp offset */>>,
+    pub(crate) scopes: Vec<HashMap<String, Option<Variable>>>,
     /// Specifies all registers which are currently in use and may not be overwritten.
     pub(crate) used_registers: Vec<IntRegister>,
     /// Specifies all float registers which are currently in use and may not be overwritten.
@@ -108,17 +107,41 @@ impl Compiler {
     }
 
     fn declare_main_fn(&mut self, node: AnalyzedBlock) {
+        let prologue = self.append_block("prologue".to_string());
+
         // append block for the function
-        let block_label = "_start";
-        self.append_block(block_label.into());
-        self.exports.push(block_label.into());
-        self.insert_at(block_label);
+        let _start = "_start";
+        self.append_block(_start.into());
+        self.exports.push(_start.into());
+
+        let body = self.append_block("body".to_string());
+
+        self.insert_at(_start);
+        self.insert(Instruction::Jmp(prologue.clone()));
+
+        let epilogue_label = self.gen_label("epilogue".to_string());
+
+        self.curr_fn = Some(Function {
+            stack_allocs: 0,
+            body_label: body.clone(),
+            epilogue_label: epilogue_label.clone(),
+        });
 
         self.push_scope();
+        self.insert_at(&body);
         self.function_body(node);
+        self.insert(Instruction::Jmp(epilogue_label.clone()));
         self.pop_scope();
 
+        // make prologue
+        self.prologue(&prologue);
+
         // exit with code 0
+        self.blocks.push(Block {
+            label: epilogue_label.clone(),
+            instructions: VecDeque::new(),
+        });
+        self.insert_at(&epilogue_label);
         self.insert(Instruction::Li(IntRegister::A0, 0));
         self.insert(Instruction::Call("exit".into()));
     }
@@ -136,21 +159,40 @@ impl Compiler {
         let prologue_label = self.gen_label("prologue".to_string());
         let body_label = self.gen_label("body".to_string());
         let epilogue_label = self.gen_label("epilogue".to_string());
-        self.insert(Instruction::Jmp(prologue_label.to_string()));
 
         self.curr_fn = Some(Function {
-            stack_allocs: 16, // initial value (for ra + fp)
-            prologue_label: prologue_label.clone(),
+            stack_allocs: 0,
             body_label: body_label.clone(),
             epilogue_label: epilogue_label.clone(),
         });
 
-        // TODO: implement args
         self.push_scope();
+
+        // TODO: implement args
+
+        for (idx, param) in node.params.iter().enumerate() {
+            match param.type_ {
+                Type::Int => {
+                    // TODO: account for mixed types
+                    let reg = IntRegister::nth_param(idx)
+                        .expect("argument spilling is not yet implemented")
+                        .to_reg();
+                    self.scope_mut()
+                        .insert(param.name.to_string(), Some(Variable::Register(reg)));
+                }
+                Type::Char | Type::Bool => {}
+                Type::Float => {}
+                Type::Unit | Type::Never => {} // ignore these types
+                Type::Unknown => unreachable!("analyzer would have failed"),
+            }
+        }
+
+        // jump into the function prologue
+        self.insert(Instruction::Jmp(prologue_label.to_string()));
 
         // add the prologue block
         self.blocks.push(Block {
-            label: prologue_label,
+            label: prologue_label.clone(),
             instructions: VecDeque::new(),
         });
 
@@ -165,7 +207,7 @@ impl Compiler {
         self.pop_scope();
 
         // generate prologue
-        self.prologue();
+        self.prologue(&prologue_label);
 
         // generate epilogue
         self.blocks.push(Block {
@@ -248,12 +290,12 @@ impl Compiler {
         match value_reg {
             Some(Register::Int(reg)) => self.insert(Instruction::Sd(
                 reg,
-                Pointer::Stack(IntRegister::Fp, -(stack_allocs as i64 - 16)),
+                Pointer::Stack(IntRegister::Fp, -(self.curr_fn().stack_allocs as i64)),
             )),
             Some(Register::Float(reg)) => self.insert(Instruction::Fsd(FldType::Stack(
                 reg,
                 IntRegister::Fp,
-                -(stack_allocs as i64 - 16),
+                -(self.curr_fn().stack_allocs as i64),
             ))),
             None => {
                 // insert a dummy variable into the HashMap
@@ -265,17 +307,17 @@ impl Compiler {
         }
 
         // insert variable into current scope
+        let variable = Variable::Pointer(Pointer::Stack(IntRegister::Fp, -stack_allocs));
         self.scopes
             .last_mut()
             .expect("there must be a scope")
-            .insert(node.name.to_string(), Some(stack_allocs));
+            .insert(node.name.to_string(), Some(variable));
 
-        // increment stack allocations
         // TODO: is 8 a good value?
         self.curr_fn_mut().stack_allocs += 8;
     }
 
-    fn expression(&mut self, node: AnalyzedExpression) -> Option<Register> {
+    pub(crate) fn expression(&mut self, node: AnalyzedExpression) -> Option<Register> {
         match node {
             AnalyzedExpression::Block(node) => self.block(*node),
             AnalyzedExpression::If(node) => self.if_expr(*node),
@@ -311,38 +353,36 @@ impl Compiler {
                 Some(Register::Int(dest_reg))
             }
             AnalyzedExpression::Ident(node) => {
-                let ptr = self.resolve_name(node.ident);
+                let var = self.resolve_name(node.ident);
 
-                match ptr {
-                    Some(offset) => match node.result_type {
+                match var {
+                    Some(Variable::Pointer(ptr)) => match node.result_type {
                         Type::Bool | Type::Char => {
                             let dest_reg = self.alloc_ireg();
-                            self.insert(Instruction::Lb(
-                                dest_reg,
-                                Pointer::Stack(IntRegister::Fp, -offset),
-                            ));
+                            self.insert(Instruction::Lb(dest_reg, ptr.clone()));
                             Some(Register::Int(dest_reg))
                         }
                         Type::Int => {
                             let dest_reg = self.alloc_ireg();
-                            self.insert(Instruction::Ld(
-                                dest_reg,
-                                Pointer::Stack(IntRegister::Fp, -offset),
-                            ));
+                            self.insert(Instruction::Ld(dest_reg, ptr.clone()));
                             Some(Register::Int(dest_reg))
                         }
                         Type::Float => {
                             let dest_reg = self.alloc_freg();
-                            self.insert(Instruction::Fld(FldType::Stack(
-                                dest_reg,
-                                IntRegister::Fp,
-                                -offset,
-                            )));
+                            match ptr {
+                                Pointer::Stack(reg, offset) => {
+                                    self.insert(Instruction::Fld(FldType::Stack(
+                                        dest_reg, *reg, *offset,
+                                    )));
+                                }
+                                Pointer::Label(_) => todo!(),
+                            }
                             Some(Register::Float(dest_reg))
                         }
                         Type::Unit | Type::Never => None,
                         Type::Unknown => unreachable!("analyzer would have failed"),
                     },
+                    Some(Variable::Register(reg)) => Some(*reg),
                     None => None,
                 }
             }
@@ -500,21 +540,6 @@ impl Compiler {
             }
             (Type::Bool, Type::Int) | (Type::Char, Type::Int) => Some(lhs_reg),
             _ => todo!(),
-        }
-    }
-
-    /// TODO: add real implementation
-    fn call_expr(&mut self, node: AnalyzedCallExpr) -> Option<Register> {
-        if node.func == "exit" {
-            let dest = self.expression(node.args[0].clone())?;
-            if dest != IntRegister::A0.to_reg() {
-                self.insert(Instruction::Mov(IntRegister::A0, dest.into()));
-            }
-            self.insert(Instruction::Call("exit".into()));
-            None
-        } else {
-            self.insert(Instruction::Call(format!(".{}", node.func)));
-            None
         }
     }
 }
