@@ -1,13 +1,11 @@
 fn main() {
-    exit(fib(10))
+    exit(fib(36) / 1_000_000)
 }
 
 fn fib(n: int) -> int {
     if n < 2 {
         n
     } else {
-        let a = fib(n - 1);
-        let b = fib(n - 2);
-        a + b
+        fib(n - 1) + fib(n - 2)
     }
 }
