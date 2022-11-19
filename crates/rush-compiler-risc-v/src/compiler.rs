@@ -210,7 +210,6 @@ impl Compiler {
         self.pop_scope();
 
         for reg in param_regs {
-            println!("AF FUNC:{}: REL: {reg:?}", node.name);
             self.release_reg(reg)
         }
 
@@ -298,7 +297,7 @@ impl Compiler {
         match value_reg {
             Some(Register::Int(reg)) => self.insert(Instruction::Sd(
                 reg,
-                Pointer::Stack(IntRegister::Fp, -(self.curr_fn().stack_allocs as i64)),
+                Pointer::Stack(IntRegister::Fp, -(self.curr_fn().stack_allocs as i64 + 8)),
             )),
             Some(Register::Float(reg)) => self.insert(Instruction::Fsd(FldType::Stack(
                 reg,
@@ -313,15 +312,13 @@ impl Compiler {
                     .insert(node.name.to_string(), None);
             }
         }
-
         // insert variable into current scope
-        let variable = Variable::Pointer(Pointer::Stack(IntRegister::Fp, -stack_allocs));
+        let variable = Variable::Pointer(Pointer::Stack(IntRegister::Fp, -(stack_allocs + 8)));
         self.scopes
             .last_mut()
             .expect("there must be a scope")
             .insert(node.name.to_string(), Some(variable));
 
-        // TODO: is 8 a good value?
         self.curr_fn_mut().stack_allocs += 8;
     }
 
@@ -474,7 +471,6 @@ impl Compiler {
         // mark the lhs register as used
         let lhs_reg = self.expression(node.lhs)?;
         self.use_reg(lhs_reg);
-        println!("infix-use: {lhs_reg:?}: {:?}", self.used_registers);
 
         // mark the rhs register as used
         let rhs_reg = self.expression(node.rhs)?;
@@ -510,7 +506,7 @@ impl Compiler {
                 self.insert(Instruction::Rem(dest_reg, lhs_reg.into(), rhs_reg.into()));
                 dest_reg.to_reg()
             }
-            (Type::Int, InfixOp::Pow) => todo!("figure out calls first"),
+            (Type::Int, InfixOp::Pow) => todo!("implement call"), // TODO: implement this
             (
                 Type::Int,
                 InfixOp::Eq
@@ -520,7 +516,6 @@ impl Compiler {
                 | InfixOp::Gt
                 | InfixOp::Gte,
             ) => {
-                println!("USED REG IN SLT: {:?}", self.used_registers);
                 let dest_reg = self.alloc_ireg();
                 self.insert(Instruction::SetIntCondition(
                     Condition::from(node.op),

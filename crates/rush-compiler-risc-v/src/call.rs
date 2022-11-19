@@ -140,7 +140,6 @@ impl Compiler {
 
         // restore all saved registers
         for (reg, offset) in regs_on_stack {
-            println!("restored: {reg:?}");
             match reg {
                 Register::Int(reg) => {
                     // in this case, restoring `a0` would destroy the call return value.

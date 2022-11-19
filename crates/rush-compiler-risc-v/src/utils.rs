@@ -146,7 +146,7 @@ impl Display for Block {
             self.label,
             self.instructions
                 .iter()
-                .map(|i| format!("    {i}\n"))
+                .map(|i| format!("    {}\n", i.to_string().replace('\n', "\n    ")))
                 .collect::<String>()
         )
     }
