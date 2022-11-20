@@ -9,10 +9,6 @@
 .global __rush_internal_pow_int
 
 __rush_internal_pow_int:
-	addi sp, sp, -8		# allocate 8 bytes (for ra)
-	sd ra, 0(sp)		# push ra
-	addi s0, sp, 8		# increase frame ptr
-
 	# if exp < 0; return 0
 	blt a1, zero, return
 	j body
@@ -34,5 +30,4 @@ __rush_internal_pow_int:
 
 	after_loop:
 		add a0, zero, t0	# return accumulator
-		addi sp, sp, 8		# free stack memory again
 		ret
