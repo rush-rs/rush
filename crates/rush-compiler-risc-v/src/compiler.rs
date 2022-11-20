@@ -352,7 +352,21 @@ impl Compiler {
     fn statement(&mut self, node: AnalyzedStatement) {
         match node {
             AnalyzedStatement::Let(node) => self.let_statement(node),
-            AnalyzedStatement::Return(_) => todo!(),
+            AnalyzedStatement::Return(node) => {
+                // if there is an expression, compile it
+                if let Some(expr) = node {
+                    match self.expression(expr) {
+                        Some(Register::Int(reg)) => {
+                            self.insert(Instruction::Mov(IntRegister::A0, reg))
+                        }
+                        Some(Register::Float(reg)) => {
+                            self.insert(Instruction::Fmv(FloatRegister::Fa0, reg))
+                        }
+                        None => {}
+                    }
+                }
+                self.insert(Instruction::Jmp(self.curr_fn().epilogue_label.clone()));
+            }
             AnalyzedStatement::Loop(_) => todo!(),
             AnalyzedStatement::While(_) => todo!(),
             AnalyzedStatement::For(_) => todo!(),
@@ -572,6 +586,7 @@ impl Compiler {
             IntRegister::Zero,
             then_block.clone(),
         ));
+        self.insert(Instruction::Jmp(merge_block.clone()));
 
         if let Some(else_block) = node.else_block {
             let else_block_label = self.append_block("else".to_string());
