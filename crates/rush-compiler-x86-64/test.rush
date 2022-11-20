@@ -1,6 +1,59 @@
+fn _add(b: int) -> int {
+    1 + b
+}
+
+fn _ops(b: int) -> int {
+    3 + b;
+    4 - b;
+    5 * b;
+    6 | b;
+    7 ^ b;
+    8 & b
+}
+
 fn main() {
     1;
     3.0;
     'a';
     true;
+}
+
+fn _lel() -> bool {
+    true
+}
+
+fn _lol() -> float {
+    42.5
+}
+
+fn _vars() -> char {
+    let c = true;
+    let d = 'a';
+    let a = 1;
+    let b = 2f;
+    d
+}
+
+fn _params(
+    a: int, // %rdi
+    b: float, // %xmm0
+    c: char, // %sil
+    d: bool, // %dl
+    e: int, // %rcx
+    f: int, // %r8
+    g: int, // %r9
+    h: int, // [%rbp+16]
+    i: int, // [%rbp+24]
+    j: float, // %xmm1
+    k: float, // %xmm2
+    l: float, // %xmm3
+    m: float, // %xmm4
+    n: float, // %xmm5
+    o: float, // %xmm6
+    p: float, // %xmm7
+    q: float, // [%rbp+32]
+    r: float, // [%rbp+40]
+    s: float, // [%rbp+48]
+) -> float {
+    s
 }

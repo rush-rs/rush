@@ -2,9 +2,12 @@
 
 use std::fmt::{self, Display, Formatter};
 
-use crate::{register::IntRegister, value::{IntValue, IntValueOrImm, FloatValue}};
+use crate::{
+    register::IntRegister,
+    value::{FloatValue, IntValue},
+};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
     IntelSyntax,
     Global(String),
@@ -13,11 +16,16 @@ pub enum Instruction {
     Byte(u8),
     Short(u16),
     Long(u32),
-    Quad(u64),
+    QuadInt(u64),
+    QuadFloat(f64),
     Octa(u128),
 
+    Leave,
     Ret,
     Syscall,
+    Call(String),
+    Push(IntRegister),
+    Pop(IntRegister),
 
     Jmp(String),
     JCond(Condition, String),
@@ -26,11 +34,11 @@ pub enum Instruction {
     //////////////////////////
     //////// Integers ////////
     //////////////////////////
-    Mov(IntValue, IntValueOrImm),
+    Mov(IntValue, IntValue),
 
-    Add(IntValue, IntValueOrImm),
-    Sub(IntValue, IntValueOrImm),
-    Imul(IntValue, IntValueOrImm),
+    Add(IntValue, IntValue),
+    Sub(IntValue, IntValue),
+    Imul(IntValue, IntValue),
     Idiv(IntValue),
 
     Inc(IntValue),
@@ -38,15 +46,15 @@ pub enum Instruction {
     Neg(IntValue),
 
     /// Logical shift left
-    Shl(IntValue, IntValueOrImm),
+    Shl(IntValue, IntValue),
     /// Arithmetic shift right
-    Sar(IntValue, IntValueOrImm),
+    Sar(IntValue, IntValue),
 
-    And(IntValue, IntValueOrImm),
-    Or(IntValue, IntValueOrImm),
-    Xor(IntValue, IntValueOrImm),
+    And(IntValue, IntValue),
+    Or(IntValue, IntValue),
+    Xor(IntValue, IntValue),
 
-    Cmp(IntValue, IntValueOrImm),
+    Cmp(IntValue, IntValue),
     /// Convert int to float. (**c**on**v**er**t** **s**igned **i**nteger to **s**calar **d**ouble)
     Cvtsi2sd(FloatValue, IntValue),
 
@@ -107,39 +115,51 @@ impl Display for Instruction {
             Instruction::Global(name) => writeln!(f, ".global {name}"),
             Instruction::Section(section) => writeln!(f, "\n.section {section}"),
             Instruction::Symbol(name) => writeln!(f, "\n{name}:"),
-            Instruction::Byte(num) => writeln!(f, "    .byte {num:#04x}"),
-            Instruction::Short(num) => writeln!(f, "    .short {num:#06x}"),
-            Instruction::Long(num) => writeln!(f, "    .long {num:#010x}"),
-            Instruction::Quad(num) => writeln!(f, "    .quad {num:#018x}"),
-            Instruction::Octa(num) => writeln!(f, "    .octa {num:#034x}"),
+            Instruction::Byte(num) => writeln!(f, "    .byte\t{num:#04x}\t# = {num}"),
+            Instruction::Short(num) => writeln!(f, "    .short\t{num:#06x}\t# = {num}"),
+            Instruction::Long(num) => writeln!(f, "    .long\t{num:#010x}\t# = {num}"),
+            Instruction::QuadInt(num) => writeln!(f, "    .quad\t{num:#018x}\t# = {num}"),
+            Instruction::QuadFloat(num) => {
+                writeln!(
+                    f,
+                    "    .quad\t{bits:#018x}\t# = {num}{zero}",
+                    zero = if num.fract() == 0.0 { ".0" } else { "" },
+                    bits = num.to_bits()
+                )
+            }
+            Instruction::Octa(num) => writeln!(f, "    .octa\t{num:#034x}\t# = {num}"),
+            Instruction::Leave => writeln!(f, "    leave"),
             Instruction::Ret => writeln!(f, "    ret"),
             Instruction::Syscall => writeln!(f, "    syscall"),
-            Instruction::Jmp(symbol) => writeln!(f, "    jmp {symbol}"),
-            Instruction::JCond(cond, symbol) => writeln!(f, "    j{cond} {symbol}"),
-            Instruction::SetCond(cond, reg) => writeln!(f, "    set{cond} {reg}"),
-            Instruction::Mov(dest, src) => writeln!(f, "    mov {dest}, {src}"),
-            Instruction::Add(dest, src) => writeln!(f, "    add {dest}, {src}"),
-            Instruction::Sub(dest, src) => writeln!(f, "    sub {dest}, {src}"),
-            Instruction::Imul(dest, src) => writeln!(f, "    imul {dest}, {src}"),
-            Instruction::Idiv(divisor) => writeln!(f, "    idiv {divisor}"),
-            Instruction::Inc(reg) => writeln!(f, "    inc {reg}"),
-            Instruction::Dec(reg) => writeln!(f, "    dec {reg}"),
-            Instruction::Neg(reg) => writeln!(f, "    neg {reg}"),
-            Instruction::Shl(dest, src) => writeln!(f, "    shl {dest}, {src}"),
-            Instruction::Sar(dest, src) => writeln!(f, "    sar {dest}, {src}"),
-            Instruction::And(dest, src) => writeln!(f, "    and {dest}, {src}"),
-            Instruction::Or(dest, src) => writeln!(f, "    or {dest}, {src}"),
-            Instruction::Xor(dest, src) => writeln!(f, "    xor {dest}, {src}"),
-            Instruction::Cmp(left, right) => writeln!(f, "    cmp {left}, {right}"),
-            Instruction::Cvtsi2sd(dest, src) => writeln!(f, "    cvtsi2sd {dest}, {src}"),
-            Instruction::Movsd(dest, src) => writeln!(f, "    movsd {dest}, {src}"),
-            Instruction::Addsd(dest, src) => writeln!(f, "    addsd {dest}, {src}"),
-            Instruction::Subsd(dest, src) => writeln!(f, "    subsd {dest}, {src}"),
-            Instruction::Mulsd(dest, src) => writeln!(f, "    mulsd {dest}, {src}"),
-            Instruction::Divsd(dest, src) => writeln!(f, "    divsd {dest}, {src}"),
-            Instruction::Xorpd(dest, src) => writeln!(f, "    xorpd {dest}, {src}"),
-            Instruction::Ucomisd(left, right) => writeln!(f, "    ucomisd {left}, {right}"),
-            Instruction::Cvttsd2si(dest, src) => writeln!(f, "    cvttsd2si {dest}, {src}"),
+            Instruction::Call(symbol) => writeln!(f, "    call\t{symbol}"),
+            Instruction::Push(reg) => writeln!(f, "    push\t{reg}"),
+            Instruction::Pop(reg) => writeln!(f, "    pop \t{reg}"),
+            Instruction::Jmp(symbol) => writeln!(f, "    jmp \t{symbol}"),
+            Instruction::JCond(cond, symbol) => writeln!(f, "    j{cond:3}\t{symbol}"),
+            Instruction::SetCond(cond, reg) => writeln!(f, "    set{cond}\t{reg}"),
+            Instruction::Mov(dest, src) => writeln!(f, "    mov \t{dest}, {src}"),
+            Instruction::Add(dest, src) => writeln!(f, "    add \t{dest}, {src}"),
+            Instruction::Sub(dest, src) => writeln!(f, "    sub \t{dest}, {src}"),
+            Instruction::Imul(dest, src) => writeln!(f, "    imul\t{dest}, {src}"),
+            Instruction::Idiv(divisor) => writeln!(f, "    idiv\t{divisor}"),
+            Instruction::Inc(reg) => writeln!(f, "    inc \t{reg}"),
+            Instruction::Dec(reg) => writeln!(f, "    dec \t{reg}"),
+            Instruction::Neg(reg) => writeln!(f, "    neg \t{reg}"),
+            Instruction::Shl(dest, src) => writeln!(f, "    shl \t{dest}, {src}"),
+            Instruction::Sar(dest, src) => writeln!(f, "    sar \t{dest}, {src}"),
+            Instruction::And(dest, src) => writeln!(f, "    and \t{dest}, {src}"),
+            Instruction::Or(dest, src) => writeln!(f, "    or  \t{dest}, {src}"),
+            Instruction::Xor(dest, src) => writeln!(f, "    xor \t{dest}, {src}"),
+            Instruction::Cmp(left, right) => writeln!(f, "    cmp \t{left}, {right}"),
+            Instruction::Cvtsi2sd(dest, src) => writeln!(f, "    cvtsi2sd\t{dest}, {src}"),
+            Instruction::Movsd(dest, src) => writeln!(f, "    movsd\t{dest}, {src}"),
+            Instruction::Addsd(dest, src) => writeln!(f, "    addsd\t{dest}, {src}"),
+            Instruction::Subsd(dest, src) => writeln!(f, "    subsd\t{dest}, {src}"),
+            Instruction::Mulsd(dest, src) => writeln!(f, "    mulsd\t{dest}, {src}"),
+            Instruction::Divsd(dest, src) => writeln!(f, "    divsd\t{dest}, {src}"),
+            Instruction::Xorpd(dest, src) => writeln!(f, "    xorpd\t{dest}, {src}"),
+            Instruction::Ucomisd(left, right) => writeln!(f, "    ucomisd\t{left}, {right}"),
+            Instruction::Cvttsd2si(dest, src) => writeln!(f, "    cvttsd2si\t{dest}, {src}"),
         }
     }
 }
@@ -183,33 +203,30 @@ impl Display for Condition {
 
 #[cfg(test)]
 mod tests {
-    use crate::{register::FloatRegister, value::{Size, Offset}};
+    use crate::{
+        register::FloatRegister,
+        value::{Offset, Pointer, Size},
+    };
 
     use super::*;
 
     #[test]
     fn test() {
         let instrs = [
-            Instruction::Cmp(
-                IntValue::Register(IntRegister::Rsi),
-                IntValueOrImm::Immediate(0),
-            ),
+            Instruction::Cmp(IntValue::Register(IntRegister::Rsi), IntValue::Immediate(0)),
             Instruction::JCond(Condition::Less, "return_0".to_string()),
-            Instruction::Mov(
-                IntValue::Register(IntRegister::Rax),
-                IntValueOrImm::Immediate(1),
-            ),
+            Instruction::Mov(IntValue::Register(IntRegister::Rax), IntValue::Immediate(1)),
             Instruction::Ucomisd(
                 FloatValue::Register(FloatRegister::Xmm0),
-                FloatValue::Ptr(
+                FloatValue::Ptr(Pointer::new(
                     Size::Qword,
                     IntRegister::Rip,
                     Offset::Symbol("float_0".to_string()),
-                ),
+                )),
             ),
             Instruction::Section(Section::ReadOnlyData),
             Instruction::Symbol("float_127".to_string()),
-            Instruction::Quad(127_f64.to_bits()),
+            Instruction::QuadInt(127_f64.to_bits()),
         ];
         for instr in instrs {
             print!("{instr}");

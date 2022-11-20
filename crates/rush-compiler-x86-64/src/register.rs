@@ -1,114 +1,50 @@
 #![allow(dead_code)] // TODO: remove this attribute
 
-use std::fmt::{self, Display, Formatter};
+use std::{
+    fmt::{self, Display, Formatter},
+    mem,
+};
+
+use crate::value::Size;
+
+pub const INT_PARAM_REGISTERS: &[IntRegister] = &[
+    IntRegister::Rdi,
+    IntRegister::Rsi,
+    IntRegister::Rdx,
+    IntRegister::Rcx,
+    IntRegister::R8,
+    IntRegister::R9,
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[rustfmt::skip]
 pub enum IntRegister {
     Rip,
-
-    Rax,
-    Rbx,
-    Rcx,
-    Rdx,
-    Rsi,
-    Rdi,
-    Rbp,
-    Rsp,
-    R8,
-    R9,
-    R10,
-    R11,
-    R12,
-    R13,
-    R14,
-    R15,
-
-    Eax,
-    Ebx,
-    Ecx,
-    Edx,
-    Esi,
-    Edi,
-    Ebp,
-    Esp,
-    R8d,
-    R9d,
-    R10d,
-    R11d,
-    R12d,
-    R13d,
-    R14d,
-    R15d,
-
-    Ax,
-    Bx,
-    Cx,
-    Dx,
-    Si,
-    Di,
-    Bp,
-    Sp,
-    R8w,
-    R9w,
-    R10w,
-    R11w,
-    R12w,
-    R13w,
-    R14w,
-    R15w,
-
-    Al,
-    Bl,
-    Cl,
-    Dl,
-    Sil,
-    Dil,
-    Bpl,
-    Spl,
-    R8b,
-    R9b,
-    R10b,
-    R11b,
-    R12b,
-    R13b,
-    R14b,
-    R15b,
+    Rax, Rbx, Rcx, Rdx, Rsi, Rdi, Rbp, Rsp, R8,  R9,  R10,  R11,  R12,  R13,  R14,  R15,
+    Eax, Ebx, Ecx, Edx, Esi, Edi, Ebp, Esp, R8d, R9d, R10d, R11d, R12d, R13d, R14d, R15d,
+    Ax,  Bx,  Cx,  Dx,  Si,  Di,  Bp,  Sp,  R8w, R9w, R10w, R11w, R12w, R13w, R14w, R15w,
+    Al,  Bl,  Cl,  Dl,  Sil, Dil, Bpl, Spl, R8b, R9b, R10b, R11b, R12b, R13b, R14b, R15b,
 }
 
+pub const FLOAT_PARAM_REGISTERS: &[FloatRegister] = &[
+    FloatRegister::Xmm0,
+    FloatRegister::Xmm1,
+    FloatRegister::Xmm2,
+    FloatRegister::Xmm3,
+    FloatRegister::Xmm4,
+    FloatRegister::Xmm5,
+    FloatRegister::Xmm6,
+    FloatRegister::Xmm7,
+];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+#[rustfmt::skip]
 pub enum FloatRegister {
-    Xmm0,
-    Xmm1,
-    Xmm2,
-    Xmm3,
-    Xmm4,
-    Xmm5,
-    Xmm6,
-    Xmm7,
-    Xmm8,
-    Xmm9,
-    Xmm10,
-    Xmm11,
-    Xmm12,
-    Xmm13,
-    Xmm14,
-    Xmm15,
-    Xmm16,
-    Xmm17,
-    Xmm18,
-    Xmm19,
-    Xmm20,
-    Xmm21,
-    Xmm22,
-    Xmm23,
-    Xmm24,
-    Xmm25,
-    Xmm26,
-    Xmm27,
-    Xmm28,
-    Xmm29,
-    Xmm30,
-    Xmm31,
+    Xmm0,  Xmm1,  Xmm2,  Xmm3,  Xmm4,  Xmm5,  Xmm6,  Xmm7,
+    Xmm8,  Xmm9,  Xmm10, Xmm11, Xmm12, Xmm13, Xmm14, Xmm15,
+    Xmm16, Xmm17, Xmm18, Xmm19, Xmm20, Xmm21, Xmm22, Xmm23,
+    Xmm24, Xmm25, Xmm26, Xmm27, Xmm28, Xmm29, Xmm30, Xmm31,
 }
 
 impl Display for IntRegister {
@@ -212,53 +148,83 @@ impl IntRegister {
         }
     }
 
+    pub fn in_size(&self, size: Size) -> Self {
+        match size {
+            Size::Byte => self.byte_variant(),
+            Size::Word => self.word_variant(),
+            Size::Dword => self.dword_variant(),
+            Size::Qword => self.qword_variant(),
+            Size::Oword => panic!("general purpose registers have no 128-bit variant"),
+        }
+    }
+
     pub fn next_param(&self) -> Option<Self> {
-        match self {
+        match self.qword_variant() {
             Self::Rdi => Some(Self::Rsi),
             Self::Rsi => Some(Self::Rsi),
             Self::Rdx => Some(Self::Rdx),
             Self::Rcx => Some(Self::Rcx),
             Self::R8 => Some(Self::R9),
             Self::R9 => None,
-
-            Self::Edi => Some(Self::Esi),
-            Self::Esi => Some(Self::Esi),
-            Self::Edx => Some(Self::Edx),
-            Self::Ecx => Some(Self::Ecx),
-            Self::R8d => Some(Self::R9d),
-            Self::R9d => None,
-
-            Self::Di => Some(Self::Si),
-            Self::Si => Some(Self::Si),
-            Self::Dx => Some(Self::Dx),
-            Self::Cx => Some(Self::Cx),
-            Self::R8w => Some(Self::R9w),
-            Self::R9w => None,
-
-            Self::Dil => Some(Self::Sil),
-            Self::Sil => Some(Self::Sil),
-            Self::Dl => Some(Self::Dl),
-            Self::Cl => Some(Self::Cl),
-            Self::R8b => Some(Self::R9b),
-            Self::R9b => None,
-
             reg => panic!("not a param register `{reg}`"),
         }
+    }
+
+    pub fn next(&self) -> Self {
+        match self.qword_variant() {
+            Self::Rax => Self::Rdi,
+            Self::Rdi => Self::Rsi,
+            Self::Rsi => Self::Rdx,
+            Self::Rdx => Self::Rcx,
+            Self::Rcx => Self::R8,
+            Self::R8 => Self::R9,
+            Self::R9 => Self::R10,
+            Self::R10 => Self::R11,
+            Self::R11 => Self::R12,
+            Self::R12 => Self::R13,
+            Self::R13 => Self::R14,
+            Self::R14 => Self::R15,
+            Self::R15 => Self::Rbx,
+            reg => panic!("no registers left after `{reg}`"),
+        }
+    }
+
+    pub fn is_caller_saved(&self) -> bool {
+        [
+            IntRegister::Rax,
+            IntRegister::Rcx,
+            IntRegister::Rdx,
+            IntRegister::Rdi,
+            IntRegister::Rsi,
+            IntRegister::Rsp,
+            IntRegister::R8,
+            IntRegister::R9,
+            IntRegister::R10,
+            IntRegister::R11,
+        ]
+        .contains(&self.qword_variant())
     }
 }
 
 impl FloatRegister {
     pub fn next_param(&self) -> Option<Self> {
-        match self {
-            Self::Xmm0 => Some(Self::Xmm1),
-            Self::Xmm1 => Some(Self::Xmm2),
-            Self::Xmm2 => Some(Self::Xmm3),
-            Self::Xmm3 => Some(Self::Xmm4),
-            Self::Xmm4 => Some(Self::Xmm5),
-            Self::Xmm5 => Some(Self::Xmm6),
-            Self::Xmm6 => Some(Self::Xmm7),
-            Self::Xmm7 => None,
-            reg => panic!("not a param register `{reg}`"),
+        if (*self as u8) < 7 {
+            Some(self.next())
+        } else if *self == Self::Xmm7 {
+            None
+        } else {
+            panic!("not a param register `{self}`");
         }
+    }
+
+    pub fn next(&self) -> Self {
+        if *self == Self::Xmm31 {
+            panic!("no registers left after `{self}`");
+        }
+
+        // SAFETY: There is always a variant following the current one, except for the last variant
+        // which is caught above. The enum is annotated with `#[repr(u8)]`, so variants of this
+        // enum use the same internal representation as a `u8`, so it is save to transmute.
+        unsafe { mem::transmute((*self as u8) + 1) }
     }
 }
