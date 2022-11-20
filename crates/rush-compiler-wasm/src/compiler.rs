@@ -203,7 +203,7 @@ impl<'src> Compiler<'src> {
         if let Some(idx) = self.global_scope.get(name) {
             return Variable::Global(idx);
         }
-        panic!("the analyzer guarantees valid variable references");
+        unreachable!("the analyzer guarantees valid variable references");
     }
 
     /////////////////////////
@@ -447,7 +447,7 @@ impl<'src> Compiler<'src> {
                 (self.function_body.len() + locals.len()).to_uleb128(),
                 // locals
                 locals,
-                // function budy
+                // function body
                 mem::take(&mut self.function_body),
             ]
             .concat(),
