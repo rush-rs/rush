@@ -6,7 +6,7 @@ use rush_analyzer::{
     ast::{
         AnalyzedAssignExpr, AnalyzedBlock, AnalyzedCastExpr, AnalyzedExpression,
         AnalyzedFunctionDefinition, AnalyzedIfExpr, AnalyzedInfixExpr, AnalyzedLetStmt,
-        AnalyzedPrefixExpr, AnalyzedProgram, AnalyzedStatement,
+        AnalyzedLoopStmt, AnalyzedPrefixExpr, AnalyzedProgram, AnalyzedStatement,
     },
     AssignOp, InfixOp, PrefixOp, Type,
 };
@@ -14,7 +14,7 @@ use rush_analyzer::{
 use crate::{
     instruction::{Condition, Instruction, Pointer},
     register::{FloatRegister, IntRegister, Register},
-    utils::{Block, DataObj, DataObjType, Function, Variable, VariableValue},
+    utils::{Block, DataObj, DataObjType, Function, Loop, Variable, VariableValue},
 };
 
 pub struct Compiler {
@@ -30,6 +30,8 @@ pub struct Compiler {
     pub(crate) rodata_section: Vec<DataObj>,
     /// Holds metadata about the current function
     pub(crate) curr_fn: Option<Function>,
+    /// Holds metadata about the current loop
+    pub(crate) curr_loop: Option<Loop>,
     /// Saves the scopes. The last element is the most recent scope.
     pub(crate) scopes: Vec<HashMap<String, Option<Variable>>>,
     /// Holds the global variables of the program
@@ -51,6 +53,7 @@ impl Compiler {
             scopes: vec![],
             globals: HashMap::new(),
             curr_fn: None,
+            curr_loop: None,
             used_registers: vec![],
         }
     }
@@ -367,7 +370,7 @@ impl Compiler {
                 }
                 self.insert(Instruction::Jmp(self.curr_fn().epilogue_label.clone()));
             }
-            AnalyzedStatement::Loop(_) => todo!(),
+            AnalyzedStatement::Loop(node) => self.loop_stmt(node),
             AnalyzedStatement::While(_) => todo!(),
             AnalyzedStatement::For(_) => todo!(),
             AnalyzedStatement::Break => todo!(),
@@ -376,6 +379,10 @@ impl Compiler {
                 self.expression(node);
             }
         }
+    }
+
+    fn loop_stmt(&mut self, _node: AnalyzedLoopStmt) {
+        todo!()
     }
 
     /// Allocates the variable on the stack.

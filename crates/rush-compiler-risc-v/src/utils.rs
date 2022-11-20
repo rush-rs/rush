@@ -171,6 +171,13 @@ pub(crate) struct Function {
     pub(crate) epilogue_label: String,
 }
 
+pub(crate) struct Loop {
+    /// Specifies the `loop_head` label of the current loop
+    pub(crate) loop_head: String,
+    /// Specifies the `after_loop` label of the current loop
+    pub(crate) after_loop: String,
+}
+
 pub(crate) struct DataObj {
     pub(crate) label: String,
     pub(crate) data: DataObjType,
