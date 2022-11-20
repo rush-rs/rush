@@ -203,7 +203,7 @@ impl<'src> Compiler<'src> {
         if let Some(idx) = self.global_scope.get(name) {
             return Variable::Global(idx);
         }
-        panic!("the analyzer guarantees valid variable references");
+        unreachable!("the analyzer guarantees valid variable references");
     }
 
     /////////////////////////
