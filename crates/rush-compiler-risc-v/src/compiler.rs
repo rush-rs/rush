@@ -502,11 +502,7 @@ impl Compiler {
         let rhs_reg = self.expression(node.rhs)?;
         self.use_reg(rhs_reg);
 
-        // release the usage block of the operands
-        self.release_reg(lhs_reg);
-        self.release_reg(rhs_reg);
-
-        Some(match (type_, node.op) {
+        let res = Some(match (type_, node.op) {
             (Type::Int, InfixOp::Plus) => {
                 let dest_reg = self.alloc_ireg();
                 self.insert(Instruction::Add(dest_reg, lhs_reg.into(), rhs_reg.into()));
@@ -532,7 +528,9 @@ impl Compiler {
                 self.insert(Instruction::Rem(dest_reg, lhs_reg.into(), rhs_reg.into()));
                 dest_reg.to_reg()
             }
-            (Type::Int, InfixOp::Pow) => todo!("implement call"), // TODO: implement this
+            (Type::Int, InfixOp::Pow) => self
+                .__rush_internal_pow_int(lhs_reg.into(), rhs_reg.into())
+                .to_reg(),
             (
                 Type::Int,
                 InfixOp::Eq
@@ -572,7 +570,13 @@ impl Compiler {
                 dest_reg.to_reg()
             }
             _ => todo!("implement these cases"), // TODO: implement this
-        })
+        });
+
+        // release the usage block of the operands
+        self.release_reg(lhs_reg);
+        self.release_reg(rhs_reg);
+
+        res
     }
 
     fn prefix_expr(&mut self, node: AnalyzedPrefixExpr) -> Option<Register> {
@@ -619,6 +623,9 @@ impl Compiler {
                 self.insert(Instruction::Snez(dest_reg, lhs_reg.into()));
                 dest_reg.to_reg()
             }
+            (Type::Int, Type::Char) => self
+                .__rush_internal_cast_int_to_char(lhs_reg.into())
+                .to_reg(),
             (Type::Char, Type::Float) | (Type::Bool, Type::Float) => {
                 let dest_reg = self.alloc_freg();
                 self.insert(Instruction::CastByteToFloat(dest_reg, lhs_reg.into()));
@@ -629,6 +636,9 @@ impl Compiler {
                 self.insert(Instruction::CastFloatToInt(dest_reg, lhs_reg.into()));
                 dest_reg.to_reg()
             }
+            (Type::Float, Type::Char) => self
+                .__rush_internal_cast_float_to_char(lhs_reg.into())
+                .to_reg(),
             (Type::Float, Type::Bool) => {
                 // get a .rodata label which holds a float zero
                 let float_zero_label = match self

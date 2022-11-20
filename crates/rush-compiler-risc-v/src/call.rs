@@ -55,7 +55,6 @@ impl Compiler {
         self.insert(Instruction::Ret);
     }
 
-    /// TODO: add real implementation
     pub(crate) fn call_expr(&mut self, node: AnalyzedCallExpr) -> Option<Register> {
         let func_label = match node.func {
             "exit" => "exit".to_string(),
@@ -81,7 +80,7 @@ impl Compiler {
 
                 Register::Float(reg) => self.insert(Instruction::Fsd(FldType::Stack(
                     reg,
-                    self.alloc_ireg(),
+                    IntRegister::Fp,
                     offset,
                 ))),
             };
