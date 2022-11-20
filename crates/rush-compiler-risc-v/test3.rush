@@ -1,0 +1,32 @@
+fn main() {
+    let b = b(1,
+        if false {
+            1
+        } else {
+            if true {
+                3
+            } else {
+                2
+            }
+        }
+    );
+    exit(b);
+    let a = add(1.0, 2, 2.0, if false { 1 } else { 2 });
+    //exit(a as int);
+}
+
+fn b(n: int, m: int) -> int {
+    n + m
+}
+
+fn add(n: float, m: int, o: float, p: int) -> float {
+    n + m as float + o + p as float
+}
+
+fn fib(n: int) -> int {
+    if n < 2 {
+        n
+    } else {
+        fib(n - 1) + fib(n - 2)
+    }
+}

@@ -173,6 +173,7 @@ impl Display for DataObj {
     }
 }
 
+#[derive(Debug, PartialEq)]
 pub(crate) enum DataObjType {
     Float(f64),
     Dword(i64),

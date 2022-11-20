@@ -41,7 +41,7 @@ pub enum Instruction {
     Sd(IntRegister, Pointer),
 
     // floats (arithmetic instructions use `.d` suffix)
-    SetFloatCondition(Condition, FloatRegister, FloatRegister, FloatRegister),
+    SetFloatCondition(Condition, IntRegister, FloatRegister, FloatRegister),
     FNeg(FloatRegister, FloatRegister),
     Fld(FldType),
     Fsd(FldType),
@@ -154,8 +154,8 @@ impl Display for Instruction {
             Instruction::Mov(dest, src) => write!(f, "mv {dest}, {src}"),
             Instruction::Fmv(dest, src) => write!(f, "fmv.d {dest}, {src}"),
             Instruction::CastIntToFloat(dest, src) => write!(f, "fcvt.d.l {dest}, {src}"),
+            Instruction::CastByteToFloat(dest, src) => write!(f, "fcvt.d.wu {dest}, {src}"),
             Instruction::CastFloatToInt(dest, src) => write!(f, "fcvt.l.d {dest}, {src}, rdn"),
-            Instruction::CastByteToFloat(_, _) => todo!(),
             Instruction::Neg(dest, src) => write!(f, "neg {dest}, {src}"),
             Instruction::FNeg(dest, src) => write!(f, "fneg.d {dest}, {src}"),
         }

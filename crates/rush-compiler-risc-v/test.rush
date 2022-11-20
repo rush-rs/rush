@@ -1,17 +1,4 @@
 fn main() {
-    let a = add(1.0, 2, 2.0, 1);
-
-    exit(a as int);
-}
-
-fn add(n: float, m: int, o: float, p: int) -> float {
-    n + m as float + o + p as float
-}
-
-fn fib(n: int) -> int {
-    if n < 2 {
-        n
-    } else {
-        fib(n - 1) + fib(n - 2)
-    }
+    let a = '0' as bool;
+    exit(a as int)
 }

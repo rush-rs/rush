@@ -603,21 +603,76 @@ impl Compiler {
         let lhs_type = node.expr.result_type();
         let lhs_reg = self.expression(node.expr)?;
 
-        match (lhs_type, node.type_) {
-            (lhs, rhs) if lhs == rhs => Some(lhs_reg),
-            (Type::Bool, Type::Int) | (Type::Char, Type::Int) => Some(lhs_reg),
-            (Type::Float, Type::Int) => {
-                let dest_reg = self.alloc_ireg();
-                self.insert(Instruction::CastFloatToInt(dest_reg, lhs_reg.into()));
-                Some(dest_reg.to_reg())
-            }
+        // block the use of the lhs temporarily
+        self.use_reg(lhs_reg);
+
+        let res = match (lhs_type, node.type_) {
+            (lhs, rhs) if lhs == rhs => lhs_reg,
+            (Type::Bool, Type::Int) | (Type::Bool, Type::Char) | (Type::Char, Type::Int) => lhs_reg,
             (Type::Int, Type::Float) => {
                 let dest_reg = self.alloc_freg();
                 self.insert(Instruction::CastIntToFloat(dest_reg, lhs_reg.into()));
-                Some(dest_reg.to_reg())
+                dest_reg.to_reg()
+            }
+            (Type::Int, Type::Bool) | (Type::Char, Type::Bool) => {
+                let dest_reg = self.alloc_ireg();
+                self.insert(Instruction::Snez(dest_reg, lhs_reg.into()));
+                dest_reg.to_reg()
+            }
+            (Type::Char, Type::Float) | (Type::Bool, Type::Float) => {
+                let dest_reg = self.alloc_freg();
+                self.insert(Instruction::CastByteToFloat(dest_reg, lhs_reg.into()));
+                dest_reg.to_reg()
+            }
+            (Type::Float, Type::Int) => {
+                let dest_reg = self.alloc_ireg();
+                self.insert(Instruction::CastFloatToInt(dest_reg, lhs_reg.into()));
+                dest_reg.to_reg()
+            }
+            (Type::Float, Type::Bool) => {
+                // get a .rodata label which holds a float zero
+                let float_zero_label = match self
+                    .rodata_section
+                    .iter()
+                    .find(|o| o.data == DataObjType::Float(0.0))
+                {
+                    Some(obj) => obj.label.clone(),
+                    None => {
+                        // create a float constant with the value 0
+                        let label = format!("float_constant_{}", self.rodata_section.len());
+                        self.rodata_section.push(DataObj {
+                            label: label.clone(),
+                            data: DataObjType::Float(0.0),
+                        });
+                        label
+                    }
+                };
+
+                // load value from float constant into a free float register
+                let zero_float_reg = self.alloc_freg();
+                self.insert(Instruction::Fld(FldType::Label(
+                    zero_float_reg,
+                    float_zero_label,
+                    self.alloc_ireg(),
+                )));
+
+                // compare the float to 0.0
+                let dest_reg = self.alloc_ireg();
+                self.insert(Instruction::SetFloatCondition(
+                    Condition::Ne,
+                    dest_reg,
+                    zero_float_reg,
+                    lhs_reg.into(),
+                ));
+
+                // return the result of the comparison
+                dest_reg.to_reg()
             }
             _ => todo!(),
-        }
+        };
+
+        self.release_reg(lhs_reg);
+        Some(res)
     }
 }
 
