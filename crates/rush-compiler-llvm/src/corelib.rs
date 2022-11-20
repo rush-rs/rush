@@ -8,7 +8,7 @@ use crate::Compiler;
 
 impl<'ctx> Compiler<'ctx> {
     /// Helper function for the `**` and `**=` operators.
-    /// Because LLVM does not support the pow instruction, the core function is used.
+    /// Because LLVM does not support the pow instruction, the corelib is used.
     /// This function will declare the `pow` function if not already done previously.
     /// The `pow` function is then called using the `lhs` and `rhs` arguments.
     pub(crate) fn __rush_internal_pow(
@@ -147,13 +147,13 @@ impl<'ctx> Compiler<'ctx> {
         self.builder.position_at_end(origin_block);
     }
 
-    pub(crate) fn __rush_internal_float_to_char(
+    pub(crate) fn __rush_internal_cast_float_to_char(
         &mut self,
         src: FloatValue<'ctx>,
     ) -> BasicValueEnum<'ctx> {
         // declare the `core::float_to_char` function if not declared already
         if self.declared_builtins.insert("core::float_to_char") {
-            self.declare_rush_internal_float_to_char()
+            self.declare_rush_internal_cast_float_to_char()
         }
         let func = self
             .module
@@ -175,7 +175,7 @@ impl<'ctx> Compiler<'ctx> {
     /// If the float is < 0.0, the char is 0.
     /// Otherwise, if the float is > 127.0, the char is 127.
     /// If the float is 0.0 < f < 127, the char is the truncated value of the float
-    pub(crate) fn declare_rush_internal_float_to_char(&mut self) {
+    pub(crate) fn declare_rush_internal_cast_float_to_char(&mut self) {
         // save the basic block to jump to when done
         // this is required because the function is generated when needed
         let origin_block = self
@@ -259,7 +259,7 @@ impl<'ctx> Compiler<'ctx> {
         self.builder.position_at_end(origin_block);
     }
 
-    pub(crate) fn __rush_internal_int_to_char(
+    pub(crate) fn __rush_internal_cast_int_to_char(
         &mut self,
         src: IntValue<'ctx>,
     ) -> BasicValueEnum<'ctx> {

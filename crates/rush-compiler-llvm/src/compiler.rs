@@ -996,7 +996,7 @@ impl<'ctx> Compiler<'ctx> {
             // converting a type to a char requires additional bounds checks
             // because valid ASCII chars lie in the range 0 - 127, these checks must be done.
             // the cast operation therefore invokes a builtin helper function.
-            (Type::Int, Type::Char) => self.__rush_internal_int_to_char(lhs.into_int_value()),
+            (Type::Int, Type::Char) => self.__rush_internal_cast_int_to_char(lhs.into_int_value()),
             (Type::Char, Type::Int) => self
                 .builder
                 .build_int_cast(lhs.into_int_value(), self.context.i64_type(), "ci_cast")
@@ -1021,7 +1021,9 @@ impl<'ctx> Compiler<'ctx> {
             // converting a type to a char requires additional bounds checks
             // because valid ASCII chars lie in the range 0 - 127, these checks must be done.
             // the cast operation therefore invokes a builtin helper function.
-            (Type::Float, Type::Char) => self.__rush_internal_float_to_char(lhs.into_float_value()),
+            (Type::Float, Type::Char) => {
+                self.__rush_internal_cast_float_to_char(lhs.into_float_value())
+            }
             (Type::Float, Type::Bool) => self
                 .builder
                 .build_float_compare(
