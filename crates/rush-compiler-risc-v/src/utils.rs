@@ -5,14 +5,22 @@ use std::{
     fmt::Display,
 };
 
+use rush_analyzer::Type;
+
 use crate::{
     compiler::Compiler,
     instruction::{Instruction, Pointer},
     register::{FloatRegister, IntRegister, Register, FLOAT_REGISTERS, INT_REGISTERS},
 };
 
-#[derive(Debug)]
-pub(crate) enum Variable {
+#[derive(Debug, Clone)]
+pub(crate) struct Variable {
+    pub(crate) type_: Type,
+    pub(crate) value: VariableValue,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum VariableValue {
     Pointer(Pointer),
     Register(Register),
 }

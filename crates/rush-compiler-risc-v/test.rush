@@ -1,5 +1,4 @@
-//let answer = 42;
-let mut truth = false;
+/* let mut truth = false;
 
 fn main() {
     set();
@@ -8,4 +7,15 @@ fn main() {
 
 fn set() {
     truth = true;
+} */
+
+fn main() {
+    let mut a = 2;
+    a **= add_1(3);
+    exit(a)
+}
+
+fn add_1(mut n: int) -> int {
+    n += 1;
+    n
 }
