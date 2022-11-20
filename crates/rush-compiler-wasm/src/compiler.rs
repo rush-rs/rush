@@ -447,7 +447,7 @@ impl<'src> Compiler<'src> {
                 (self.function_body.len() + locals.len()).to_uleb128(),
                 // locals
                 locals,
-                // function budy
+                // function body
                 mem::take(&mut self.function_body),
             ]
             .concat(),
