@@ -346,16 +346,29 @@ impl Compiler {
             }
             AnalyzedExpression::Float(value) => {
                 let dest_reg = self.alloc_freg();
-                // add a float constant with the value
-                let label = format!("float_constant_{}", self.rodata_section.len());
-                self.rodata_section.push(DataObj {
-                    label: label.clone(),
-                    data: DataObjType::Float(value),
-                });
+
+                // if there is already a float constant with this label, use it
+                // otherwise, create a new float constant and use its label
+                let float_value_label = match self
+                    .rodata_section
+                    .iter()
+                    .find(|o| o.data == DataObjType::Float(value))
+                {
+                    Some(obj) => obj.label.clone(),
+                    None => {
+                        let label = format!("float_constant_{}", self.rodata_section.len());
+                        self.rodata_section.push(DataObj {
+                            label: label.clone(),
+                            data: DataObjType::Float(value),
+                        });
+                        label
+                    }
+                };
+
                 // load value from float constant into `dest_reg`
                 self.insert(Instruction::Fld(FldType::Label(
                     dest_reg,
-                    label,
+                    float_value_label,
                     self.alloc_ireg(),
                 )));
                 Some(Register::Float(dest_reg))
