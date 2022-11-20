@@ -49,7 +49,7 @@ return_127:
 ### CONSTANTS ###
 .section .rodata
 float_0:
-	.quad 0x0000000000000000
+	.dword 0x0000000000000000
 
 float_127:
-	.quad 0x405fc00000000000
+	.dword 0x405fc00000000000
