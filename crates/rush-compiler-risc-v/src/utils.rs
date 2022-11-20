@@ -98,13 +98,14 @@ impl Compiler {
     /// Helper function for resolving identifier names.
     /// Searches the scopes first. If no match was found, the fitting global variable is returned.
     pub(crate) fn resolve_name(&self, name: &str) -> &Option<Variable> {
+        // look for normal variables first
         for scope in self.scopes.iter().rev() {
             if let Some(variable) = scope.get(name) {
                 return variable;
             }
         }
-        dbg!(name, &self.scopes);
-        unreachable!("every variable exists")
+        // return reference to global variable
+        self.globals.get(name).expect("every variable exists")
     }
 
     #[inline]

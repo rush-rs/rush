@@ -43,8 +43,8 @@ pub enum Instruction {
     // floats (arithmetic instructions use `.d` suffix)
     SetFloatCondition(Condition, IntRegister, FloatRegister, FloatRegister),
     FNeg(FloatRegister, FloatRegister),
-    Fld(FldType),
-    Fsd(FldType),
+    Fld(FloatRegister, Pointer),
+    Fsd(FloatRegister, Pointer),
     Fmv(FloatRegister, FloatRegister),
     Fadd(FloatRegister, FloatRegister, FloatRegister),
     Fsub(FloatRegister, FloatRegister, FloatRegister),
@@ -55,21 +55,6 @@ pub enum Instruction {
     CastIntToFloat(FloatRegister, IntRegister),
     CastFloatToInt(IntRegister, FloatRegister),
     CastByteToFloat(FloatRegister, IntRegister),
-}
-
-pub enum FldType {
-    Stack(FloatRegister, IntRegister, i64),
-    /// Requires additional temp register at the end (fld ft0, test, t0)
-    Label(FloatRegister, String, IntRegister),
-}
-
-impl Display for FldType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Stack(dest, reg, offset) => write!(f, "{dest}, {offset}({reg})"),
-            Self::Label(dest, label, tmp_reg) => write!(f, "{dest}, {label}, {tmp_reg}"),
-        }
-    }
 }
 
 impl Display for Instruction {
@@ -130,10 +115,22 @@ impl Display for Instruction {
             Instruction::Sr(dest, lhs, rhs) => write!(f, "sra {dest}, {lhs},{rhs}"),
             Instruction::Lb(dest, ptr) => write!(f, "lb {dest}, {ptr}"),
             Instruction::Ld(dest, ptr) => write!(f, "ld {dest}, {ptr}"),
-            Instruction::Sb(dest, ptr) => write!(f, "sb {dest}, {ptr}"),
-            Instruction::Sd(dest, ptr) => write!(f, "sd {dest}, {ptr}"),
-            Instruction::Fld(type_) => write!(f, "fld {type_}"),
-            Instruction::Fsd(type_) => write!(f, "fsd {type_}"),
+            Instruction::Sb(src, ptr) => match ptr {
+                Pointer::Stack(_, _) => write!(f, "sb {src}, {ptr}"),
+                Pointer::Label(_) => write!(f, "sb {src}, {ptr}, t6"),
+            },
+            Instruction::Sd(src, ptr) => match ptr {
+                Pointer::Stack(_, _) => write!(f, "sd {src}, {ptr}"),
+                Pointer::Label(_) => write!(f, "sd {src}, {ptr}, t6"),
+            },
+            Instruction::Fld(dest, ptr) => match ptr {
+                Pointer::Stack(_, _) => write!(f, "fld {dest}, {ptr}"),
+                Pointer::Label(_) => write!(f, "fld {dest}, {ptr}, t6"),
+            },
+            Instruction::Fsd(src, ptr) => match ptr {
+                Pointer::Stack(_, _) => write!(f, "fsd {src}, {ptr}"),
+                Pointer::Label(_) => write!(f, "fsd {src}, {ptr}, t6"),
+            },
             Instruction::Fadd(dest, lhs, rhs) => write!(f, "fadd.d {dest}, {lhs}, {rhs}"),
             Instruction::Fsub(dest, lhs, rhs) => write!(f, "fsub.d {dest}, {lhs}, {rhs}"),
             Instruction::Fmul(dest, lhs, rhs) => write!(f, "fmul.d {dest}, {lhs}, {rhs}"),
@@ -141,13 +138,13 @@ impl Display for Instruction {
             Instruction::SetFloatCondition(cond, dest, l, r) => match cond {
                 Condition::Lt => write!(f, "flt.d {dest}, {l}, {r}"),
                 Condition::Le => write!(f, "file.d {dest}, {l}, {r}"),
+                Condition::Gt => write!(f, "fgt.d {dest}, {l}, {r}"),
+                Condition::Ge => write!(f, "fge.d {dest}, {l}, {r}"),
                 Condition::Eq => write!(f, "feq.d {dest}, {l}, {r}"),
                 Condition::Ne => {
                     writeln!(f, "feq.d {dest}, {l}, {r}")?;
                     write!(f, "seqz {dest}, {dest}")
                 }
-                Condition::Gt => write!(f, "fgt.d {dest}, {l}, {r}"),
-                Condition::Ge => write!(f, "fge.d {dest}, {l}, {r}"),
             },
             Instruction::Snez(dest, arg) => write!(f, "snez {dest}, {arg}"),
             Instruction::Seqz(dest, arg) => write!(f, "seqz {dest}, {arg}"),
@@ -244,15 +241,13 @@ mod tests {
                 "lb t0, int",
             ),
             (
-                Instruction::Fld(FldType::Label(
-                    FloatRegister::Ft0,
+                Instruction::Fld(FloatRegister::Ft0, Pointer::Label(
                     "a".to_string(),
-                    IntRegister::T0,
                 )),
-                "fld ft0, a, t0",
+                "fld ft0, a, t6",
             ),
             (
-                Instruction::Fld(FldType::Stack(FloatRegister::Ft0, IntRegister::Sp, 32)),
+                Instruction::Fld(FloatRegister::Ft0, Pointer::Stack(IntRegister::Sp, 32)),
                 "fld ft0, 32(sp)",
             ),
             (

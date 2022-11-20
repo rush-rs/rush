@@ -4,15 +4,15 @@ use std::collections::{HashMap, VecDeque};
 
 use rush_analyzer::{
     ast::{
-        AnalyzedBlock, AnalyzedCastExpr, AnalyzedExpression, AnalyzedFunctionDefinition,
-        AnalyzedIfExpr, AnalyzedInfixExpr, AnalyzedLetStmt, AnalyzedPrefixExpr, AnalyzedProgram,
-        AnalyzedStatement,
+        AnalyzedAssignExpr, AnalyzedBlock, AnalyzedCastExpr, AnalyzedExpression,
+        AnalyzedFunctionDefinition, AnalyzedIfExpr, AnalyzedInfixExpr, AnalyzedLetStmt,
+        AnalyzedPrefixExpr, AnalyzedProgram, AnalyzedStatement,
     },
-    InfixOp, PrefixOp, Type,
+    AssignOp, InfixOp, PrefixOp, Type,
 };
 
 use crate::{
-    instruction::{Condition, FldType, Instruction, Pointer},
+    instruction::{Condition, Instruction, Pointer},
     register::{FloatRegister, IntRegister, Register},
     utils::{Block, DataObj, DataObjType, Function, Variable},
 };
@@ -32,9 +32,13 @@ pub struct Compiler {
     pub(crate) curr_fn: Option<Function>,
     /// Saves the scopes. The last element is the most recent scope.
     pub(crate) scopes: Vec<HashMap<String, Option<Variable>>>,
+    /// Holds the global variables of the program
+    pub(crate) globals: HashMap<String, Option<Variable>>,
     /// Specifies all registers which are currently in use and may not be overwritten.
     pub(crate) used_registers: Vec<Register>,
 }
+
+const GLOBALS_INIT_LABEL: &str = "globals_init";
 
 impl Compiler {
     pub fn new() -> Self {
@@ -45,17 +49,14 @@ impl Compiler {
             data_section: vec![],
             rodata_section: vec![],
             scopes: vec![],
+            globals: HashMap::new(),
             curr_fn: None,
             used_registers: vec![],
         }
     }
 
     pub fn compile(&mut self, ast: AnalyzedProgram) -> String {
-        for _var in ast.globals {
-            // TODO: add zero initializer, init variables in
-        }
-
-        self.declare_main_fn(ast.main_fn);
+        self.declare_main_fn(ast.main_fn, ast.globals);
 
         for func in ast.functions.into_iter().filter(|f| f.used) {
             self.function_declaration(func)
@@ -104,18 +105,31 @@ impl Compiler {
         output
     }
 
-    fn declare_main_fn(&mut self, node: AnalyzedBlock) {
-        let prologue = self.append_block("prologue".to_string());
-
-        // append block for the function
+    fn declare_main_fn(&mut self, node: AnalyzedBlock, globals: Vec<AnalyzedLetStmt>) {
         let _start = "_start";
         self.append_block(_start.into());
         self.exports.push(_start.into());
 
-        let body = self.append_block("body".to_string());
+        let prologue_label = self.gen_label("main_prologue".to_string());
 
-        self.insert_at(_start);
-        self.insert(Instruction::Jmp(prologue.clone()));
+        if !globals.is_empty() {
+            self.insert(Instruction::Jmp(GLOBALS_INIT_LABEL.to_string()));
+            self.append_block(GLOBALS_INIT_LABEL.to_string());
+            self.insert_at(GLOBALS_INIT_LABEL);
+            for var in globals {
+                self.declare_global(var.name.to_string(), var.expr)
+            }
+            self.insert(Instruction::Jmp(prologue_label.clone()));
+        } else {
+            self.insert(Instruction::Jmp(prologue_label.clone()));
+        }
+
+        self.blocks.push(Block {
+            label: prologue_label.clone(),
+            instructions: VecDeque::new(),
+        });
+
+        let body = self.append_block("body".to_string());
 
         let epilogue_label = self.gen_label("epilogue".to_string());
 
@@ -132,7 +146,7 @@ impl Compiler {
         self.pop_scope();
 
         // make prologue
-        self.prologue(&prologue);
+        self.prologue(&prologue_label);
 
         // exit with code 0
         self.blocks.push(Block {
@@ -144,8 +158,45 @@ impl Compiler {
         self.insert(Instruction::Call("exit".into()));
     }
 
-    fn declare_global(&mut self, _ident: String, _value: AnalyzedExpression) {
-        todo!()
+    fn declare_global(&mut self, label: String, value: AnalyzedExpression) {
+        // initialize global value at the start of the program
+        self.insert(Instruction::Comment(format!("let {label} (global)")));
+
+        let type_ = value.result_type();
+        let res_reg = self
+            .expression(value)
+            .expect("cannot use unit value in globals");
+
+        let data = match type_ {
+            Type::Int => {
+                self.insert(Instruction::Sd(
+                    res_reg.into(),
+                    Pointer::Label(label.clone()),
+                ));
+                DataObjType::Dword(0)
+            }
+            Type::Bool | Type::Char => {
+                self.insert(Instruction::Sb(
+                    res_reg.into(),
+                    Pointer::Label(label.clone()),
+                ));
+                DataObjType::Byte(0)
+            }
+            Type::Float => {
+                self.insert(Instruction::Fsd(
+                    res_reg.into(),
+                    Pointer::Label(label.clone()),
+                ));
+                DataObjType::Float(0.0)
+            }
+            _ => unreachable!("other types cannot be used in globals"),
+        };
+
+        self.globals.insert(
+            label.clone(),
+            Some(Variable::Pointer(Pointer::Label(label.clone()))),
+        );
+        self.data_section.push(DataObj { label, data });
     }
 
     fn function_declaration(&mut self, node: AnalyzedFunctionDefinition) {
@@ -312,11 +363,10 @@ impl Compiler {
                 reg,
                 Pointer::Stack(IntRegister::Fp, -(self.curr_fn().stack_allocs as i64 + 8)),
             )),
-            Some(Register::Float(reg)) => self.insert(Instruction::Fsd(FldType::Stack(
+            Some(Register::Float(reg)) => self.insert(Instruction::Fsd(
                 reg,
-                IntRegister::Fp,
-                -(self.curr_fn().stack_allocs as i64 + 8),
-            ))),
+                Pointer::Stack(IntRegister::Fp, -(self.curr_fn().stack_allocs as i64 + 8)),
+            )),
             None => {
                 // insert a dummy variable into the HashMap
                 self.scopes
@@ -366,11 +416,11 @@ impl Compiler {
                 };
 
                 // load value from float constant into `dest_reg`
-                self.insert(Instruction::Fld(FldType::Label(
+                self.insert(Instruction::Fld(
                     dest_reg,
-                    float_value_label,
-                    self.alloc_ireg(),
-                )));
+                    Pointer::Label(float_value_label),
+                ));
+
                 Some(Register::Float(dest_reg))
             }
             AnalyzedExpression::Bool(value) => {
@@ -400,14 +450,7 @@ impl Compiler {
                         }
                         Type::Float => {
                             let dest_reg = self.alloc_freg();
-                            match ptr {
-                                Pointer::Stack(reg, offset) => {
-                                    self.insert(Instruction::Fld(FldType::Stack(
-                                        dest_reg, *reg, *offset,
-                                    )));
-                                }
-                                Pointer::Label(_) => todo!(),
-                            }
+                            self.insert(Instruction::Fld(dest_reg, ptr.clone()));
                             Some(Register::Float(dest_reg))
                         }
                         Type::Unit | Type::Never => None,
@@ -419,10 +462,56 @@ impl Compiler {
             }
             AnalyzedExpression::Prefix(node) => self.prefix_expr(*node),
             AnalyzedExpression::Infix(node) => self.infix_expr(*node),
-            AnalyzedExpression::Assign(_) => todo!(),
+            AnalyzedExpression::Assign(node) => {
+                self.assign_expr(*node);
+                None
+            }
             AnalyzedExpression::Call(node) => self.call_expr(*node),
             AnalyzedExpression::Cast(node) => self.cast_expr(*node),
             AnalyzedExpression::Grouped(node) => self.expression(*node),
+        }
+    }
+
+    fn assign_expr(&mut self, node: AnalyzedAssignExpr) {
+        let rhs_type = node.expr.result_type();
+        let rhs_reg = self
+            .expression(node.expr)
+            .expect("this cannot return unit values");
+
+        let Some(assignee) = self.resolve_name(node.assignee) else {
+            // cannot assign to variable of type unit
+            return;
+        };
+
+        match node.op {
+            AssignOp::Basic => match assignee {
+                Variable::Pointer(ptr) => match rhs_type {
+                    Type::Int => self.insert(Instruction::Sd(rhs_reg.into(), ptr.clone())),
+                    Type::Float => self.insert(Instruction::Fsd(rhs_reg.into(), ptr.clone())),
+                    Type::Bool | Type::Char => {
+                        self.insert(Instruction::Sb(rhs_reg.into(), ptr.clone()))
+                    }
+                    _ => unreachable!("other types cannot exist in an assignment"),
+                },
+                Variable::Register(dest) => match rhs_type {
+                    Type::Int | Type::Bool | Type::Char => {
+                        self.insert(Instruction::Mov((*dest).into(), rhs_reg.into()))
+                    }
+                    Type::Float => todo!(),
+                    _ => unreachable!("other types cannot exist in an assignment"),
+                },
+            },
+            AssignOp::Plus => todo!(),
+            AssignOp::Minus => todo!(),
+            AssignOp::Mul => todo!(),
+            AssignOp::Div => todo!(),
+            AssignOp::Rem => todo!(),
+            AssignOp::Pow => todo!(),
+            AssignOp::Shl => todo!(),
+            AssignOp::Shr => todo!(),
+            AssignOp::BitOr => todo!(),
+            AssignOp::BitAnd => todo!(),
+            AssignOp::BitXor => todo!(),
         }
     }
 
@@ -502,37 +591,39 @@ impl Compiler {
         let rhs_reg = self.expression(node.rhs)?;
         self.use_reg(rhs_reg);
 
+        // creates the two result registers
+        // eventually, just one of the two is used
+        let dest_regi = self.alloc_ireg();
+        let dest_regf = self.alloc_freg();
+
         let res = Some(match (type_, node.op) {
             (Type::Int, InfixOp::Plus) => {
-                let dest_reg = self.alloc_ireg();
-                self.insert(Instruction::Add(dest_reg, lhs_reg.into(), rhs_reg.into()));
-                dest_reg.to_reg()
+                self.insert(Instruction::Add(dest_regi, lhs_reg.into(), rhs_reg.into()));
+                dest_regi.into()
             }
             (Type::Int, InfixOp::Minus) => {
-                let dest_reg = self.alloc_ireg();
-                self.insert(Instruction::Sub(dest_reg, lhs_reg.into(), rhs_reg.into()));
-                dest_reg.to_reg()
+                self.insert(Instruction::Sub(dest_regi, lhs_reg.into(), rhs_reg.into()));
+                dest_regi.into()
             }
             (Type::Int, InfixOp::Mul) => {
-                let dest_reg = self.alloc_ireg();
-                self.insert(Instruction::Mul(dest_reg, lhs_reg.into(), rhs_reg.into()));
-                dest_reg.to_reg()
+                self.insert(Instruction::Mul(dest_regi, lhs_reg.into(), rhs_reg.into()));
+                dest_regi.into()
             }
             (Type::Int, InfixOp::Div) => {
-                let dest_reg = self.alloc_ireg();
-                self.insert(Instruction::Div(dest_reg, lhs_reg.into(), rhs_reg.into()));
-                dest_reg.to_reg()
+                self.insert(Instruction::Div(dest_regi, lhs_reg.into(), rhs_reg.into()));
+                dest_regi.into()
             }
             (Type::Int, InfixOp::Rem) => {
-                let dest_reg = self.alloc_ireg();
-                self.insert(Instruction::Rem(dest_reg, lhs_reg.into(), rhs_reg.into()));
-                dest_reg.to_reg()
+                self.insert(Instruction::Rem(dest_regi, lhs_reg.into(), rhs_reg.into()));
+                dest_regi.into()
             }
             (Type::Int, InfixOp::Pow) => self
                 .__rush_internal_pow_int(lhs_reg.into(), rhs_reg.into())
                 .to_reg(),
             (
-                Type::Int,
+                // even if not all ops are allowed for char and bool, the analyzer would not accept
+                // illegal programs, threfore this is ok.
+                Type::Int | Type::Char | Type::Bool,
                 InfixOp::Eq
                 | InfixOp::Neq
                 | InfixOp::Lt
@@ -540,36 +631,69 @@ impl Compiler {
                 | InfixOp::Gt
                 | InfixOp::Gte,
             ) => {
-                let dest_reg = self.alloc_ireg();
                 self.insert(Instruction::SetIntCondition(
                     Condition::from(node.op),
-                    dest_reg,
+                    dest_regi,
                     lhs_reg.into(),
                     rhs_reg.into(),
                 ));
-                dest_reg.to_reg()
+                dest_regi.to_reg()
+            }
+            (
+                Type::Float,
+                InfixOp::Eq
+                | InfixOp::Neq
+                | InfixOp::Lt
+                | InfixOp::Lte
+                | InfixOp::Gt
+                | InfixOp::Gte,
+            ) => {
+                let dest_regi = self.alloc_ireg();
+                self.insert(Instruction::SetFloatCondition(
+                    Condition::from(node.op),
+                    dest_regi,
+                    lhs_reg.into(),
+                    rhs_reg.into(),
+                ));
+                dest_regi.into()
             }
             (Type::Float, InfixOp::Plus) => {
-                let dest_reg = self.alloc_freg();
-                self.insert(Instruction::Fadd(dest_reg, lhs_reg.into(), rhs_reg.into()));
-                dest_reg.to_reg()
+                self.insert(Instruction::Fadd(dest_regf, lhs_reg.into(), rhs_reg.into()));
+                dest_regf.into()
             }
             (Type::Float, InfixOp::Minus) => {
-                let dest_reg = self.alloc_freg();
-                self.insert(Instruction::Fsub(dest_reg, lhs_reg.into(), rhs_reg.into()));
-                dest_reg.to_reg()
+                self.insert(Instruction::Fsub(dest_regf, lhs_reg.into(), rhs_reg.into()));
+                dest_regf.into()
             }
             (Type::Float, InfixOp::Mul) => {
-                let dest_reg = self.alloc_freg();
-                self.insert(Instruction::Fmul(dest_reg, lhs_reg.into(), rhs_reg.into()));
-                dest_reg.to_reg()
+                self.insert(Instruction::Fmul(dest_regf, lhs_reg.into(), rhs_reg.into()));
+                dest_regf.into()
             }
             (Type::Float, InfixOp::Div) => {
-                let dest_reg = self.alloc_freg();
-                self.insert(Instruction::Fdiv(dest_reg, lhs_reg.into(), rhs_reg.into()));
-                dest_reg.to_reg()
+                self.insert(Instruction::Fdiv(dest_regf, lhs_reg.into(), rhs_reg.into()));
+                dest_regf.into()
             }
-            _ => todo!("implement these cases"), // TODO: implement this
+            (Type::Int, InfixOp::Shl) => {
+                self.insert(Instruction::Sl(dest_regi, lhs_reg.into(), lhs_reg.into()));
+                dest_regi.into()
+            }
+            (Type::Int, InfixOp::Shr) => {
+                self.insert(Instruction::Sr(dest_regi, lhs_reg.into(), lhs_reg.into()));
+                dest_regi.into()
+            }
+            (Type::Int | Type::Bool, InfixOp::BitOr | InfixOp::Or) => {
+                self.insert(Instruction::Or(dest_regi, lhs_reg.into(), lhs_reg.into()));
+                dest_regi.into()
+            }
+            (Type::Int | Type::Bool, InfixOp::BitAnd | InfixOp::And) => {
+                self.insert(Instruction::And(dest_regi, lhs_reg.into(), lhs_reg.into()));
+                dest_regi.into()
+            }
+            (Type::Int | Type::Bool, InfixOp::BitXor) => {
+                self.insert(Instruction::Xor(dest_regi, lhs_reg.into(), lhs_reg.into()));
+                dest_regi.into()
+            }
+            _ => unreachable!("the analyzer does not allow other combinations"),
         });
 
         // release the usage block of the operands
@@ -660,11 +784,10 @@ impl Compiler {
 
                 // load value from float constant into a free float register
                 let zero_float_reg = self.alloc_freg();
-                self.insert(Instruction::Fld(FldType::Label(
+                self.insert(Instruction::Fld(
                     zero_float_reg,
-                    float_zero_label,
-                    self.alloc_ireg(),
-                )));
+                    Pointer::Label(float_zero_label),
+                ));
 
                 // compare the float to 0.0
                 let dest_reg = self.alloc_ireg();
@@ -678,7 +801,7 @@ impl Compiler {
                 // return the result of the comparison
                 dest_reg.to_reg()
             }
-            _ => todo!(),
+            _ => unreachable!("cannot use this combination in a typecast"),
         };
 
         self.release_reg(lhs_reg);

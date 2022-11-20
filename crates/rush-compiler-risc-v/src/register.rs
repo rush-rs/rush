@@ -8,6 +8,18 @@ pub enum Register {
     Float(FloatRegister),
 }
 
+impl From<IntRegister> for Register {
+    fn from(src: IntRegister) -> Self {
+        Self::Int(src)
+    }
+}
+
+impl From<FloatRegister> for Register {
+    fn from(src: FloatRegister) -> Self {
+        Self::Float(src)
+    }
+}
+
 pub(crate) const INT_REGISTERS: &[IntRegister] = &[
     IntRegister::A0,
     IntRegister::A1,

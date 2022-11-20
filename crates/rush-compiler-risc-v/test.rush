@@ -1,11 +1,11 @@
+//let answer = 42;
+let mut truth = false;
+
 fn main() {
-    /*
-    let a = a(1, a(2 ** 3, 1));
-    exit(a);
-    */
-    exit(a(97.0 as char, a(2 as char, 1)));
+    set();
+    exit(truth as int);
 }
 
-fn a(n: char, m: int) -> int {
-    m + n as int
+fn set() {
+    truth = true;
 }

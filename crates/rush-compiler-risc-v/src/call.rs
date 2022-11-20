@@ -4,7 +4,7 @@ use rush_analyzer::{ast::AnalyzedCallExpr, Type};
 
 use crate::{
     compiler::Compiler,
-    instruction::{FldType, Instruction, Pointer},
+    instruction::{Instruction, Pointer},
     register::{FloatRegister, IntRegister, Register},
 };
 
@@ -77,12 +77,10 @@ impl Compiler {
                     let ptr = Pointer::Stack(IntRegister::Fp, offset);
                     self.insert(Instruction::Sd(reg, ptr));
                 }
-
-                Register::Float(reg) => self.insert(Instruction::Fsd(FldType::Stack(
+                Register::Float(reg) => self.insert(Instruction::Fsd(
                     reg,
-                    IntRegister::Fp,
-                    offset,
-                ))),
+                    Pointer::Stack(IntRegister::Fp, offset),
+                )),
             };
             self.curr_fn_mut().stack_allocs += 8;
             regs_on_stack.push((reg, offset));
@@ -133,11 +131,10 @@ impl Compiler {
 
                     if curr_reg != res_reg {
                         let offset = -(self.curr_fn().stack_allocs as i64 + 8);
-                        self.insert(Instruction::Fsd(FldType::Stack(
+                        self.insert(Instruction::Fsd(
                             curr_reg.into(),
-                            IntRegister::Fp,
-                            offset,
-                        )));
+                            Pointer::Stack(IntRegister::Fp, offset),
+                        ));
                         self.curr_fn_mut().stack_allocs += 8;
                         self.insert(Instruction::Fmv(curr_reg.into(), res_reg.into()));
                     }
@@ -186,11 +183,10 @@ impl Compiler {
                         // copy the return value into the new result value
                         self.insert(Instruction::Fmv(new_res_reg, FloatRegister::Fa0));
                     }
-                    self.insert(Instruction::Fld(FldType::Stack(
+                    self.insert(Instruction::Fld(
                         reg,
-                        IntRegister::Fp,
-                        offset,
-                    )));
+                        Pointer::Stack(IntRegister::Fp, offset),
+                    ));
                 }
             };
         }
