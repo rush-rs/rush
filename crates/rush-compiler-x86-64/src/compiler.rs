@@ -216,9 +216,6 @@ impl<'src> Compiler<'src> {
                     float_param_index += 1;
                 }
                 (_, Ok(size), None, _) | (_, Ok(size), _, None) => {
-                    // add padding for correct alignment
-                    Self::align(&mut memory_offset, size);
-
                     // save pointer in scope
                     self.curr_scope().insert(
                         param.name,
@@ -232,7 +229,7 @@ impl<'src> Compiler<'src> {
                     );
 
                     // add param size to memory offset
-                    memory_offset += size.byte_count();
+                    memory_offset += 8;
 
                     // function requires a stack frame now
                     self.requires_frame = true;
@@ -578,21 +575,100 @@ impl<'src> Compiler<'src> {
         self.in_args += 1;
 
         // compile arg exprs
-        // TODO: stack args
+        let mut int_register_index = 0;
+        let mut float_register_index = 0;
+        let mut memory_offset = 0;
         for arg in node.args {
             match self.expression(arg) {
-                Some(Value::Int(IntValue::Register(_)) | Value::Float(FloatValue::Register(_)))
-                | None => {}
-                Some(Value::Int(src)) => {
-                    let reg = self.get_free_register();
-                    self.function_body.push(Instruction::Mov(reg.into(), src));
+                None => {}
+                Some(Value::Int(value)) => {
+                    match value {
+                        IntValue::Register(reg)
+                            if int_register_index < INT_PARAM_REGISTERS.len() =>
+                        {
+                            debug_assert_eq!(reg, INT_PARAM_REGISTERS[int_register_index]);
+                        }
+                        src @ (IntValue::Ptr(_) | IntValue::Immediate(_))
+                            if int_register_index < INT_PARAM_REGISTERS.len() =>
+                        {
+                            let reg = self.get_free_register();
+                            debug_assert_eq!(reg, INT_PARAM_REGISTERS[int_register_index]);
+                            self.function_body.push(Instruction::Mov(reg.into(), src));
+                        }
+                        src @ (IntValue::Register(_) | IntValue::Immediate(_)) => {
+                            self.function_body.push(Instruction::Mov(
+                                Pointer::new(Size::Qword, IntRegister::Rsp, memory_offset.into())
+                                    .into(),
+                                src,
+                            ));
+                            memory_offset += 8;
+                        }
+                        IntValue::Ptr(ptr) => {
+                            let reg = self.get_free_register();
+                            self.function_body
+                                .push(Instruction::Mov(reg.into(), ptr.into()));
+                            self.function_body.push(Instruction::Mov(
+                                Pointer::new(Size::Qword, IntRegister::Rsp, memory_offset.into())
+                                    .into(),
+                                reg.into(),
+                            ));
+                            let _popped_reg = self.used_registers.pop();
+                            debug_assert_eq!(Some(reg), _popped_reg);
+                            memory_offset += 8;
+                        }
+                    }
+                    int_register_index += 1;
                 }
-                Some(Value::Float(src)) => {
-                    let reg = self.get_free_float_register();
-                    self.function_body.push(Instruction::Movsd(reg.into(), src));
+                Some(Value::Float(value)) => {
+                    match value {
+                        FloatValue::Register(reg) => {
+                            if float_register_index < FLOAT_PARAM_REGISTERS.len() {
+                                debug_assert_eq!(reg, FLOAT_PARAM_REGISTERS[float_register_index]);
+                            } else {
+                                self.function_body.push(Instruction::Movsd(
+                                    Pointer::new(
+                                        Size::Qword,
+                                        IntRegister::Rsp,
+                                        memory_offset.into(),
+                                    )
+                                    .into(),
+                                    reg.into(),
+                                ));
+                                memory_offset += 8;
+                            }
+                        }
+                        FloatValue::Ptr(ptr) => {
+                            if float_register_index < FLOAT_PARAM_REGISTERS.len() {
+                                let reg = self.get_free_float_register();
+                                debug_assert_eq!(reg, FLOAT_PARAM_REGISTERS[float_register_index]);
+                                self.function_body
+                                    .push(Instruction::Movsd(reg.into(), ptr.into()));
+                            } else {
+                                let reg = self.get_free_float_register();
+                                self.function_body
+                                    .push(Instruction::Movsd(reg.into(), ptr.into()));
+                                self.function_body.push(Instruction::Movsd(
+                                    Pointer::new(
+                                        Size::Qword,
+                                        IntRegister::Rsp,
+                                        memory_offset.into(),
+                                    )
+                                    .into(),
+                                    reg.into(),
+                                ));
+                                let _popped_reg = self.used_float_registers.pop();
+                                debug_assert_eq!(Some(reg), _popped_reg);
+                                memory_offset += 8;
+                            }
+                        }
+                    }
+                    float_register_index += 1;
                 }
             }
         }
+
+        // allocate the required param memory
+        self.frame_size += memory_offset;
 
         // call function
         self.function_body.push(Instruction::Call(
