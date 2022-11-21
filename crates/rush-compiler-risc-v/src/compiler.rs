@@ -434,7 +434,7 @@ impl Compiler {
     }
 
     fn for_stmt(&mut self, node: AnalyzedForStmt) {
-        let for_head = self.append_block("for_loop");
+        let for_head = self.append_block("for_head");
         let after_loop = self.append_block("after_for");
 
         // compile the initialization expression
@@ -460,6 +460,8 @@ impl Compiler {
 
         // compile the condition
         self.insert_at(&for_head);
+        #[cfg(debug_assertions)]
+        self.insert(Instruction::Comment("loop condition".to_string()));
         let expr_res = self.expression(node.cond).expect("cond is always a bool");
         self.insert(Instruction::BrCond(
             Condition::Eq,
@@ -473,6 +475,9 @@ impl Compiler {
             after_loop: after_loop.clone(),
         });
 
+        #[cfg(debug_assertions)]
+        self.insert(Instruction::Comment("loop body".to_string()));
+
         // compile the block
         for stmt in node.block.stmts {
             self.statement(stmt)
@@ -483,6 +488,8 @@ impl Compiler {
         }
 
         // compile the update expression
+        #[cfg(debug_assertions)]
+        self.insert(Instruction::Comment("loop update".to_string()));
         self.expression(node.update);
 
         // jump back to the loop start
