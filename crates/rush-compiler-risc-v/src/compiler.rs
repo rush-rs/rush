@@ -593,7 +593,6 @@ impl Compiler {
             IntRegister::Zero,
             then_block.clone(),
         ));
-        self.insert(Instruction::Jmp(merge_block.clone()));
 
         if let Some(else_block) = node.else_block {
             let else_block_label = self.append_block("else".to_string());
@@ -614,6 +613,8 @@ impl Compiler {
                 _ => {}
             }
 
+            self.insert(Instruction::Jmp(merge_block.clone()));
+        } else {
             self.insert(Instruction::Jmp(merge_block.clone()));
         }
 
