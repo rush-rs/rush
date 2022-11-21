@@ -144,6 +144,8 @@ impl Compiler {
         self.insert_jmp(epilogue_label.clone());
         self.pop_scope();
 
+        // align frame size to 16 bytes
+        Self::align(&mut self.curr_fn_mut().stack_allocs, 16);
         // make prologue
         self.prologue(&prologue_label, vec![]);
 
@@ -228,19 +230,26 @@ impl Compiler {
         ];
 
         for param in node.params {
-            let size = Size::from(param.type_).byte_count();
-            Self::align(&mut self.curr_fn_mut().stack_allocs, size);
-            self.curr_fn_mut().stack_allocs += size;
-            let offset = -self.curr_fn().stack_allocs as i64;
-
             match param.type_ {
                 Type::Int | Type::Char | Type::Bool => {
                     match IntRegister::nth_param(int_cnt) {
                         Some(reg) => {
-                            param_store_instructions.push(Instruction::Sd(
-                                reg,
-                                Pointer::Stack(IntRegister::Fp, offset),
-                            ));
+                            let size = Size::from(param.type_);
+                            Self::align(&mut self.curr_fn_mut().stack_allocs, size.byte_count());
+                            self.curr_fn_mut().stack_allocs += size.byte_count();
+                            let offset = -self.curr_fn().stack_allocs as i64 - 16;
+
+                            match size {
+                                Size::Byte => param_store_instructions.push(Instruction::Sb(
+                                    reg,
+                                    Pointer::Stack(IntRegister::Fp, offset),
+                                )),
+                                Size::Dword => param_store_instructions.push(Instruction::Sd(
+                                    reg,
+                                    Pointer::Stack(IntRegister::Fp, offset),
+                                )),
+                            }
+
                             self.scope_mut().insert(
                                 param.name.to_string(),
                                 Some(Variable {
@@ -263,7 +272,6 @@ impl Compiler {
                                     )),
                                 }),
                             );
-                            // TODO: implement alignment correctly
                             mem_offset += 8;
                         }
                     }
@@ -272,6 +280,11 @@ impl Compiler {
                 Type::Float => {
                     match FloatRegister::nth_param(float_cnt) {
                         Some(reg) => {
+                            let size = Size::from(param.type_).byte_count();
+                            Self::align(&mut self.curr_fn_mut().stack_allocs, size);
+                            self.curr_fn_mut().stack_allocs += size;
+                            let offset = -self.curr_fn().stack_allocs as i64 - 16;
+
                             param_store_instructions.push(Instruction::Fsd(
                                 reg,
                                 Pointer::Stack(IntRegister::Fp, offset),
@@ -298,7 +311,6 @@ impl Compiler {
                                     )),
                                 }),
                             );
-                            // TODO: implement alignment correctly
                             mem_offset += 8;
                         }
                     }
@@ -553,7 +565,6 @@ impl Compiler {
     fn let_statement(&mut self, node: AnalyzedLetStmt) {
         let type_ = node.expr.result_type();
 
-        // TODO: alignment
         let size = Size::from(type_).byte_count();
         Self::align(&mut self.curr_fn_mut().stack_allocs, size);
         self.curr_fn_mut().stack_allocs += size as i64;

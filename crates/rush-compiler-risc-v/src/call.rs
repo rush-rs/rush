@@ -6,6 +6,7 @@ use crate::{
     compiler::Compiler,
     instruction::{Instruction, Pointer},
     register::{FloatRegister, IntRegister, Register},
+    utils::Size,
 };
 
 impl Compiler {
@@ -74,7 +75,13 @@ impl Compiler {
 
         // save all registers which are currently in use
         for reg in self.used_registers.clone() {
-            let offset = -(self.curr_fn().stack_allocs as i64 + 8);
+            let size = 8; // TODO: use size of the register instead if 8 bytes -> impl size for the
+                          // used registers
+
+            Self::align(&mut self.curr_fn_mut().stack_allocs, size);
+            self.curr_fn_mut().stack_allocs += size as i64;
+            let offset = -self.curr_fn().stack_allocs as i64 - 16;
+
             match reg {
                 Register::Int(reg) => {
                     let ptr = Pointer::Stack(IntRegister::Fp, offset);
@@ -85,7 +92,6 @@ impl Compiler {
                     Pointer::Stack(IntRegister::Fp, offset),
                 )),
             };
-            self.curr_fn_mut().stack_allocs += 8;
             regs_on_stack.push((reg, offset));
         }
 
@@ -122,7 +128,7 @@ impl Compiler {
             self.insert(Instruction::Addi(
                 IntRegister::Sp,
                 IntRegister::Sp,
-                sp_offset,
+                -sp_offset,
             ));
         }
 
@@ -135,6 +141,7 @@ impl Compiler {
         {
             match arg.result_type() {
                 Type::Int | Type::Bool | Type::Char => {
+                    let type_ = arg.result_type();
                     let res_reg = self
                         .expression(arg)
                         .expect("none variants filtered out above");
@@ -145,12 +152,15 @@ impl Compiler {
                             self.use_reg(curr_reg.to_reg());
 
                             if curr_reg.to_reg() != res_reg {
-                                let offset = -(self.curr_fn().stack_allocs as i64 + 8);
+                                let size = Size::from(type_).byte_count();
+                                Self::align(&mut self.curr_fn_mut().stack_allocs, size);
+                                self.curr_fn_mut().stack_allocs += size as i64;
+                                let offset = -self.curr_fn().stack_allocs as i64 - 16;
+
                                 self.insert(Instruction::Sd(
                                     curr_reg,
                                     Pointer::Stack(IntRegister::Fp, offset),
                                 ));
-                                self.curr_fn_mut().stack_allocs += 8;
                                 self.insert(Instruction::Mov(curr_reg, res_reg.into()));
                             }
                         }
@@ -159,7 +169,6 @@ impl Compiler {
                                 res_reg.into(),
                                 Pointer::Stack(IntRegister::Sp, spill_count * 8),
                             ));
-                            self.curr_fn_mut().stack_allocs += 8;
                             spill_count += 1;
                         }
                     }
@@ -167,6 +176,7 @@ impl Compiler {
                     int_cnt += 1;
                 }
                 Type::Float => {
+                    let type_ = arg.result_type();
                     let res_reg = self
                         .expression(arg)
                         .expect("none variants filtered out above");
@@ -177,12 +187,15 @@ impl Compiler {
                             self.use_reg(curr_reg.to_reg());
 
                             if curr_reg.to_reg() != res_reg {
-                                let offset = -(self.curr_fn().stack_allocs as i64 + 8);
+                                let size = Size::from(type_).byte_count();
+                                Self::align(&mut self.curr_fn_mut().stack_allocs, size);
+                                self.curr_fn_mut().stack_allocs += size as i64;
+                                let offset = -self.curr_fn().stack_allocs as i64 - 16;
+
                                 self.insert(Instruction::Fsd(
                                     curr_reg,
                                     Pointer::Stack(IntRegister::Fp, offset),
                                 ));
-                                self.curr_fn_mut().stack_allocs += 8;
                                 self.insert(Instruction::Fmv(curr_reg, res_reg.into()));
                             }
                         }
@@ -191,11 +204,9 @@ impl Compiler {
                                 res_reg.into(),
                                 Pointer::Stack(IntRegister::Sp, spill_count * 8),
                             ));
-                            self.curr_fn_mut().stack_allocs += 8;
                             spill_count += 1;
                         }
                     }
-
                     float_cnt += 1;
                 }
                 _ => unreachable!("either filtered out or impossible"),
@@ -204,6 +215,14 @@ impl Compiler {
 
         // perform function call
         self.insert(Instruction::Call(func_label));
+
+        if sp_offset > 0 {
+            self.insert(Instruction::Addi(
+                IntRegister::Sp,
+                IntRegister::Sp,
+                sp_offset,
+            ));
+        }
 
         let mut res_reg = match node.result_type {
             Type::Int | Type::Char | Type::Bool => Some(IntRegister::A0.to_reg()),
@@ -224,6 +243,7 @@ impl Compiler {
                         // copy the return value into the new result value
                         self.insert(Instruction::Mov(new_res_reg, IntRegister::A0));
                     }
+
                     self.insert(Instruction::Ld(
                         reg,
                         Pointer::Stack(IntRegister::Fp, offset),
@@ -240,6 +260,7 @@ impl Compiler {
                         // copy the return value into the new result value
                         self.insert(Instruction::Fmv(new_res_reg, FloatRegister::Fa0));
                     }
+
                     self.insert(Instruction::Fld(
                         reg,
                         Pointer::Stack(IntRegister::Fp, offset),
