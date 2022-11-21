@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, mem};
 
 use rush_analyzer::{ast::*, InfixOp, Type};
 
@@ -8,11 +8,16 @@ use crate::{
     value::{FloatValue, IntValue, Offset, Pointer, Size, Value},
 };
 
+const BUILTIN_FUNCS: &[&str] = &["exit"];
+
 #[derive(Debug, Default)]
 pub struct Compiler<'src> {
     function_body: Vec<Instruction>,
     used_registers: Vec<IntRegister>,
     used_float_registers: Vec<FloatRegister>,
+    /// Whether the compiler is currently inside function args, `true` when not `0`. Stored as a
+    /// counter for nested calls.
+    in_args: usize,
     /// Maps variable names to `Option<Pointer>`, or `None` when of type `()` or `!`
     scopes: Vec<HashMap<&'src str, Option<Variable>>>,
     frame_size: i64,
@@ -143,10 +148,14 @@ impl<'src> Compiler<'src> {
     }
 
     fn get_free_register(&mut self) -> IntRegister {
-        let next = self
-            .used_registers
-            .last()
-            .map_or(IntRegister::Rax, |reg| reg.next());
+        let next = self.used_registers.last().map_or(
+            if self.in_args != 0 {
+                IntRegister::Rdi
+            } else {
+                IntRegister::Rax
+            },
+            |reg| reg.next(),
+        );
         self.used_registers.push(next);
         next
     }
@@ -410,7 +419,7 @@ impl<'src> Compiler<'src> {
             AnalyzedExpression::Prefix(_node) => todo!(),
             AnalyzedExpression::Infix(node) => self.infix_expr(*node),
             AnalyzedExpression::Assign(_node) => todo!(),
-            AnalyzedExpression::Call(_node) => todo!(),
+            AnalyzedExpression::Call(node) => self.call_expr(*node),
             AnalyzedExpression::Cast(_node) => todo!(),
             AnalyzedExpression::Grouped(node) => self.expression(*node),
         }
@@ -483,5 +492,105 @@ impl<'src> Compiler<'src> {
             }
             _ => todo!(),
         }
+    }
+
+    fn call_expr(&mut self, node: AnalyzedCallExpr<'src>) -> Option<Value> {
+        let prev_used_registers = mem::take(&mut self.used_registers);
+        let prev_used_float_registers = mem::take(&mut self.used_float_registers);
+
+        // save currently used caller-saved registers on stack
+        for reg in prev_used_registers
+            .iter()
+            .filter(|reg| reg.is_caller_saved())
+        {
+            self.function_body.push(Instruction::Push(*reg));
+        }
+        if !prev_used_float_registers.is_empty() {
+            self.function_body.push(Instruction::Sub(
+                IntRegister::Rsp.into(),
+                (prev_used_float_registers.len() as i64 * 8).into(),
+            ));
+        }
+        for (index, reg) in prev_used_float_registers.iter().rev().enumerate() {
+            self.function_body.push(Instruction::Movsd(
+                Pointer::new(Size::Qword, IntRegister::Rsp, (index as i64 * 8).into()).into(),
+                (*reg).into(),
+            ));
+        }
+
+        self.in_args += 1;
+
+        // compile arg exprs
+        // TODO: stack args
+        for arg in node.args {
+            match self.expression(arg) {
+                Some(Value::Int(IntValue::Register(_)) | Value::Float(FloatValue::Register(_)))
+                | None => {}
+                Some(Value::Int(src)) => {
+                    let reg = self.get_free_register();
+                    self.function_body.push(Instruction::Mov(reg.into(), src));
+                }
+                Some(Value::Float(src)) => {
+                    let reg = self.get_free_float_register();
+                    self.function_body.push(Instruction::Movsd(reg.into(), src));
+                }
+            }
+        }
+
+        // call function
+        self.function_body.push(Instruction::Call(
+            match BUILTIN_FUNCS.contains(&node.func) {
+                true => node.func.to_string(),
+                false => format!("main..{}", node.func),
+            },
+        ));
+
+        // move result to free register
+        self.in_args -= 1;
+        self.used_registers = prev_used_registers.clone();
+        self.used_float_registers = prev_used_float_registers.clone();
+        let result_reg = match node.result_type {
+            Type::Unit | Type::Never => None,
+            Type::Int | Type::Char | Type::Bool => {
+                let size =
+                    Size::try_from(node.result_type).expect("int, char and bool have a size");
+                let reg = self.get_free_register().in_size(size);
+                self.function_body.push(Instruction::Mov(
+                    reg.into(),
+                    IntRegister::Rax.in_size(size).into(),
+                ));
+                Some(Value::Int(reg.into()))
+            }
+            Type::Float => {
+                let reg = self.get_free_float_register();
+                self.function_body
+                    .push(Instruction::Movsd(reg.into(), FloatRegister::Xmm0.into()));
+                Some(Value::Float(reg.into()))
+            }
+            Type::Unknown => unreachable!("the analyzer guarantees one of the above to match"),
+        };
+
+        // restore previously used caller-saved registers from stack
+        for (index, reg) in prev_used_float_registers.iter().rev().enumerate().rev() {
+            self.function_body.push(Instruction::Movsd(
+                (*reg).into(),
+                Pointer::new(Size::Qword, IntRegister::Rsp, (index as i64 * 8).into()).into(),
+            ));
+        }
+        if !prev_used_float_registers.is_empty() {
+            self.function_body.push(Instruction::Add(
+                IntRegister::Rsp.into(),
+                (prev_used_float_registers.len() as i64 * 8).into(),
+            ));
+        }
+        for reg in prev_used_registers
+            .iter()
+            .filter(|reg| reg.is_caller_saved())
+            .rev()
+        {
+            self.function_body.push(Instruction::Pop(*reg));
+        }
+
+        result_reg
     }
 }
