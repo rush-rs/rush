@@ -29,7 +29,7 @@ impl Compiler {
             IntRegister::Sp,
             self.curr_fn().stack_allocs as i64 + 16,
         ));
-        self.insert(Instruction::Jmp(self.curr_fn().body_label.clone()));
+        self.insert_jmp(self.curr_fn().body_label.clone());
     }
 
     pub(crate) fn epilogue(&mut self) {

@@ -1,12 +1,11 @@
-#![allow(dead_code)] // TODO: remove this attribute
-
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 
 use rush_analyzer::{
     ast::{
-        AnalyzedAssignExpr, AnalyzedBlock, AnalyzedCastExpr, AnalyzedExpression,
+        AnalyzedAssignExpr, AnalyzedBlock, AnalyzedCastExpr, AnalyzedExpression, AnalyzedForStmt,
         AnalyzedFunctionDefinition, AnalyzedIfExpr, AnalyzedInfixExpr, AnalyzedLetStmt,
         AnalyzedLoopStmt, AnalyzedPrefixExpr, AnalyzedProgram, AnalyzedStatement,
+        AnalyzedWhileStmt,
     },
     AssignOp, InfixOp, PrefixOp, Type,
 };
@@ -110,31 +109,28 @@ impl Compiler {
 
     fn declare_main_fn(&mut self, node: AnalyzedBlock, globals: Vec<AnalyzedLetStmt>) {
         let _start = "_start";
-        self.append_block(_start.into());
+        self.append_block(_start);
         self.exports.push(_start.into());
 
-        let prologue_label = self.gen_label("main_prologue".to_string());
+        let prologue_label = self.gen_label("main_prologue");
 
         if !globals.is_empty() {
-            self.insert(Instruction::Jmp(GLOBALS_INIT_LABEL.to_string()));
-            self.append_block(GLOBALS_INIT_LABEL.to_string());
+            self.insert_jmp(GLOBALS_INIT_LABEL.to_string());
+            self.append_block(GLOBALS_INIT_LABEL);
             self.insert_at(GLOBALS_INIT_LABEL);
             for var in globals {
                 self.declare_global(var.name.to_string(), var.expr)
             }
-            self.insert(Instruction::Jmp(prologue_label.clone()));
-        } else {
-            self.insert(Instruction::Jmp(prologue_label.clone()));
         }
+        self.insert_jmp(prologue_label.clone());
 
         self.blocks.push(Block {
             label: prologue_label.clone(),
-            instructions: VecDeque::new(),
+            instructions: vec![],
         });
 
-        let body = self.append_block("body".to_string());
-
-        let epilogue_label = self.gen_label("epilogue".to_string());
+        let body = self.append_block("body");
+        let epilogue_label = self.gen_label("epilogue");
 
         self.curr_fn = Some(Function {
             stack_allocs: 0,
@@ -145,7 +141,7 @@ impl Compiler {
         self.push_scope();
         self.insert_at(&body);
         self.function_body(node);
-        self.insert(Instruction::Jmp(epilogue_label.clone()));
+        self.insert_jmp(epilogue_label.clone());
         self.pop_scope();
 
         // make prologue
@@ -154,7 +150,7 @@ impl Compiler {
         // exit with code 0
         self.blocks.push(Block {
             label: epilogue_label.clone(),
-            instructions: VecDeque::new(),
+            instructions: vec![],
         });
         self.insert_at(&epilogue_label);
         self.insert(Instruction::Li(IntRegister::A0, 0));
@@ -163,6 +159,7 @@ impl Compiler {
 
     fn declare_global(&mut self, label: String, value: AnalyzedExpression) {
         // initialize global value at the start of the program
+        #[cfg(debug_assertions)]
         self.insert(Instruction::Comment(format!("let {label} (global)")));
 
         let type_ = value.result_type();
@@ -206,12 +203,12 @@ impl Compiler {
     fn function_declaration(&mut self, node: AnalyzedFunctionDefinition) {
         // append block for the function
         let block_label = format!(".{}", node.name);
-        self.append_block(block_label.clone());
+        self.append_block(&block_label);
         self.insert_at(&block_label);
 
-        let prologue_label = self.gen_label("prologue".to_string());
-        let body_label = self.gen_label("body".to_string());
-        let epilogue_label = self.gen_label("epilogue".to_string());
+        let prologue_label = self.gen_label("prologue");
+        let body_label = self.gen_label("body");
+        let epilogue_label = self.gen_label("epilogue");
 
         self.curr_fn = Some(Function {
             stack_allocs: 0,
@@ -273,22 +270,22 @@ impl Compiler {
         }
 
         // jump into the function prologue
-        self.insert(Instruction::Jmp(prologue_label.to_string()));
+        self.insert_jmp(prologue_label.to_string());
 
         // add the prologue block
         self.blocks.push(Block {
             label: prologue_label.clone(),
-            instructions: VecDeque::new(),
+            instructions: vec![],
         });
 
         // generate function body
         self.blocks.push(Block {
             label: body_label.clone(),
-            instructions: VecDeque::new(),
+            instructions: vec![],
         });
         self.insert_at(&body_label);
         self.function_body(node.block);
-        self.insert(Instruction::Jmp(epilogue_label.clone()));
+        self.insert_jmp(epilogue_label.clone());
         self.pop_scope();
 
         // mark all params as unused when done
@@ -302,7 +299,7 @@ impl Compiler {
         // generate epilogue
         self.blocks.push(Block {
             label: epilogue_label,
-            instructions: VecDeque::new(),
+            instructions: vec![],
         });
 
         // generate epilogue
@@ -368,21 +365,135 @@ impl Compiler {
                         None => {}
                     }
                 }
-                self.insert(Instruction::Jmp(self.curr_fn().epilogue_label.clone()));
+                self.insert_jmp(self.curr_fn().epilogue_label.clone());
             }
             AnalyzedStatement::Loop(node) => self.loop_stmt(node),
-            AnalyzedStatement::While(_) => todo!(),
-            AnalyzedStatement::For(_) => todo!(),
-            AnalyzedStatement::Break => todo!(),
-            AnalyzedStatement::Continue => todo!(),
+            AnalyzedStatement::While(node) => self.while_stmt(node),
+            AnalyzedStatement::For(node) => self.for_stmt(node),
+            AnalyzedStatement::Break => {
+                #[cfg(debug_assertions)]
+                self.insert(Instruction::Comment("break".to_string()));
+                self.insert_jmp(self.curr_loop().after_loop.clone())
+            }
+            AnalyzedStatement::Continue => {
+                #[cfg(debug_assertions)]
+                self.insert(Instruction::Comment("continue".to_string()));
+                self.insert_jmp(self.curr_loop().loop_head.clone())
+            }
             AnalyzedStatement::Expr(node) => {
                 self.expression(node);
             }
         }
     }
 
-    fn loop_stmt(&mut self, _node: AnalyzedLoopStmt) {
-        todo!()
+    fn loop_stmt(&mut self, node: AnalyzedLoopStmt) {
+        let loop_head = self.append_block("loop_head");
+        self.insert_jmp(loop_head.clone());
+        self.insert_at(&loop_head);
+        let after_loop_label = self.gen_label("after_loop");
+        self.curr_loop = Some(Loop {
+            loop_head: loop_head.clone(),
+            after_loop: after_loop_label.clone(),
+        });
+        self.block(node.block);
+        self.insert_jmp(loop_head);
+        self.blocks.push(Block {
+            label: after_loop_label.clone(),
+            instructions: vec![],
+        });
+        self.insert_at(&after_loop_label);
+    }
+
+    fn while_stmt(&mut self, node: AnalyzedWhileStmt) {
+        let while_loop_head = self.append_block("while_head");
+        let after_loop_label = self.gen_label("after_while");
+        self.insert_jmp(while_loop_head.clone());
+        self.insert_at(&while_loop_head);
+
+        // compile the condition
+        let expr_res = self.expression(node.cond).expect("cond is always a bool");
+        self.insert(Instruction::BrCond(
+            Condition::Eq,
+            IntRegister::Zero,
+            expr_res.into(),
+            after_loop_label.clone(),
+        ));
+
+        self.curr_loop = Some(Loop {
+            loop_head: while_loop_head.clone(),
+            after_loop: after_loop_label.clone(),
+        });
+
+        self.block(node.block);
+        self.insert_jmp(while_loop_head);
+        self.blocks.push(Block {
+            label: after_loop_label.clone(),
+            instructions: vec![],
+        });
+        self.insert_at(&after_loop_label);
+    }
+
+    fn for_stmt(&mut self, node: AnalyzedForStmt) {
+        let for_head = self.append_block("for_loop");
+        let after_loop = self.append_block("after_for");
+
+        // compile the initialization expression
+        let init_type = node.initializer.result_type();
+        #[cfg(debug_assertions)]
+        self.insert(Instruction::Comment(format!(
+            "loop initializer: {}",
+            node.ident
+        )));
+        let res = self.expression(node.initializer).map(|reg| {
+            self.use_reg(reg);
+            (
+                Variable {
+                    type_: init_type,
+                    value: VariableValue::Register(reg),
+                },
+                reg,
+            )
+        });
+        self.push_scope();
+        self.scope_mut()
+            .insert(node.ident.to_string(), res.as_ref().map(|r| r.0.clone()));
+
+        // compile the condition
+        self.insert_at(&for_head);
+        let expr_res = self.expression(node.cond).expect("cond is always a bool");
+        self.insert(Instruction::BrCond(
+            Condition::Eq,
+            IntRegister::Zero,
+            expr_res.into(),
+            after_loop.clone(),
+        ));
+
+        self.curr_loop = Some(Loop {
+            loop_head: for_head.clone(),
+            after_loop: after_loop.clone(),
+        });
+
+        // compile the block
+        for stmt in node.block.stmts {
+            self.statement(stmt)
+        }
+
+        if let Some(expr) = node.block.expr {
+            self.expression(expr);
+        }
+
+        // compile the update expression
+        self.expression(node.update);
+
+        // jump back to the loop start
+        self.insert_jmp(for_head);
+
+        self.insert_at(&after_loop);
+
+        self.pop_scope();
+        if let Some(reg) = res.map(|r| r.1) {
+            self.release_reg(reg)
+        }
     }
 
     /// Allocates the variable on the stack.
@@ -390,6 +501,7 @@ impl Compiler {
     fn let_statement(&mut self, node: AnalyzedLetStmt) {
         let type_ = node.expr.result_type();
 
+        #[cfg(debug_assertions)]
         self.insert(Instruction::Comment(format!("let {}", node.name)));
         let value_reg = self.expression(node.expr);
 
@@ -584,8 +696,8 @@ impl Compiler {
             _ => None,
         };
 
-        let then_block = self.append_block("then".to_string());
-        let merge_block = self.append_block("merge".to_string());
+        let then_block = self.append_block("then");
+        let merge_block = self.append_block("merge");
 
         self.insert(Instruction::BrCond(
             Condition::Ne,
@@ -595,8 +707,8 @@ impl Compiler {
         ));
 
         if let Some(else_block) = node.else_block {
-            let else_block_label = self.append_block("else".to_string());
-            self.insert(Instruction::Jmp(else_block_label.clone()));
+            let else_block_label = self.append_block("else");
+            self.insert_jmp(else_block_label.clone());
             self.insert_at(&else_block_label);
             let else_reg = self.block(else_block);
 
@@ -612,11 +724,9 @@ impl Compiler {
                 }
                 _ => {}
             }
-
-            self.insert(Instruction::Jmp(merge_block.clone()));
-        } else {
-            self.insert(Instruction::Jmp(merge_block.clone()));
         }
+
+        self.insert_jmp(merge_block.clone());
 
         self.insert_at(&then_block);
         let then_reg = self.block(node.then_block);
@@ -632,7 +742,7 @@ impl Compiler {
             _ => {}
         }
 
-        self.insert(Instruction::Jmp(merge_block.clone()));
+        self.insert_jmp(merge_block.clone());
         self.insert_at(&merge_block);
 
         res_reg

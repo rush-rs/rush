@@ -1,9 +1,4 @@
-#![allow(dead_code)] // TODO: remove this attribute
-
-use std::{
-    collections::{HashMap, VecDeque},
-    fmt::Display,
-};
+use std::{collections::HashMap, fmt::Display};
 
 use rush_analyzer::Type;
 
@@ -28,6 +23,10 @@ pub(crate) enum VariableValue {
 impl Compiler {
     pub(crate) fn scope_mut(&mut self) -> &mut HashMap<String, Option<Variable>> {
         self.scopes.last_mut().expect("always called from a scope")
+    }
+
+    pub(crate) fn curr_loop(&self) -> &Loop {
+        self.curr_loop.as_ref().expect("always called from loops")
     }
 
     pub(crate) fn curr_fn(&self) -> &Function {
@@ -58,11 +57,6 @@ impl Compiler {
         unreachable!("out of float registers!")
     }
 
-    /// Returns whether a register is currently in use or not
-    pub(crate) fn reg_used(&self, reg: &Register) -> bool {
-        self.used_registers.contains(reg)
-    }
-
     /// Marks a register as used
     pub(crate) fn use_reg(&mut self, reg: Register) {
         self.used_registers.push(reg)
@@ -82,20 +76,20 @@ impl Compiler {
     /// Appends a new basic block.
     /// If the specified label already exists, it is appended with a numeric suffix.
     /// The final label is then returned for later usage.
-    pub(crate) fn append_block(&mut self, label: String) -> String {
+    pub(crate) fn append_block(&mut self, label: &str) -> String {
         let label = self.gen_label(label);
 
         self.blocks.push(Block {
             label: label.clone(),
-            instructions: VecDeque::new(),
+            instructions: vec![],
         });
 
         label
     }
 
-    pub(crate) fn gen_label(&self, label: String) -> String {
+    pub(crate) fn gen_label(&self, label: &str) -> String {
         let mut count = 1;
-        let mut out = label.clone();
+        let mut out = label.to_string();
         while self.blocks.iter().any(|b| b.label == out) {
             out = format!("{label}_{}", count);
             count += 1;
@@ -116,11 +110,24 @@ impl Compiler {
         self.globals.get(name).expect("every variable exists")
     }
 
+    /// Inserts a jump at the current position.
+    /// If the current block is already terminated, the insertion is omitted.
+    pub(crate) fn insert_jmp(&mut self, label: String) {
+        // check if the current block already contains a terminator
+        let contains_jmp = self.blocks[self.curr_block]
+            .instructions
+            .iter()
+            .any(|i| matches!(i, Instruction::Jmp(_)));
+
+        // if there is no terminator, jump
+        if !contains_jmp {
+            self.insert(Instruction::Jmp(label))
+        }
+    }
+
     #[inline]
     pub(crate) fn insert(&mut self, instruction: Instruction) {
-        self.blocks[self.curr_block]
-            .instructions
-            .push_back(instruction);
+        self.blocks[self.curr_block].instructions.push(instruction);
     }
 
     pub(crate) fn insert_at(&mut self, label: &str) {
@@ -144,7 +151,7 @@ impl Compiler {
 
 pub(crate) struct Block {
     pub(crate) label: String,
-    pub(crate) instructions: VecDeque<Instruction>,
+    pub(crate) instructions: Vec<Instruction>,
 }
 
 impl Display for Block {
