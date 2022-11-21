@@ -90,6 +90,42 @@ impl Compiler {
         }
 
         // prepare arguments
+        let mut sp_offset = 0;
+
+        for arg in node
+            .args
+            .iter()
+            .filter(|a| !matches!(a.result_type(), Type::Unit | Type::Never))
+        {
+            match arg.result_type() {
+                Type::Int | Type::Bool | Type::Char => {
+                    if IntRegister::nth_param(int_cnt).is_none() {
+                        sp_offset += 8;
+                    }
+                    int_cnt += 1;
+                }
+                Type::Float => {
+                    if IntRegister::nth_param(float_cnt).is_none() {
+                        sp_offset += 8;
+                    }
+
+                    float_cnt += 1;
+                }
+                _ => unreachable!("either filtered out or unreachable"),
+            }
+        }
+
+        int_cnt = 0;
+        float_cnt = 0;
+
+        if sp_offset > 0 {
+            self.insert(Instruction::Addi(
+                IntRegister::Sp,
+                IntRegister::Sp,
+                sp_offset,
+            ));
+        }
+
         let mut spill_count = 0;
 
         for arg in node
@@ -121,7 +157,7 @@ impl Compiler {
                         None => {
                             self.insert(Instruction::Sd(
                                 res_reg.into(),
-                                Pointer::Stack(IntRegister::Fp, (spill_count + 1) * 8),
+                                Pointer::Stack(IntRegister::Sp, spill_count * 8),
                             ));
                             self.curr_fn_mut().stack_allocs += 8;
                             spill_count += 1;
@@ -151,9 +187,9 @@ impl Compiler {
                             }
                         }
                         None => {
-                            self.insert(Instruction::Sd(
+                            self.insert(Instruction::Fsd(
                                 res_reg.into(),
-                                Pointer::Stack(IntRegister::Fp, (spill_count + 1) * 8),
+                                Pointer::Stack(IntRegister::Sp, spill_count * 8),
                             ));
                             self.curr_fn_mut().stack_allocs += 8;
                             spill_count += 1;

@@ -220,7 +220,7 @@ impl Compiler {
 
         let mut int_cnt = 0;
         let mut float_cnt = 0;
-        let mut spill_cnt = 0;
+        let mut mem_offset = 0;
 
         let mut param_store_instructions = vec![
             #[cfg(debug_assertions)]
@@ -231,59 +231,73 @@ impl Compiler {
             let offset = -(self.curr_fn().stack_allocs as i64 + 8);
             match param.type_ {
                 Type::Int | Type::Char | Type::Bool => {
-                    let Some(reg) = IntRegister::nth_param(int_cnt) else {
-                        spill_cnt += 1;
-                        self.scope_mut().insert(
-                            param.name.to_string(),
-                            Some(Variable {
-                                type_: param.type_,
-                                value: VariableValue::Pointer(Pointer::Stack(IntRegister::Fp, todo!("decide offset"))),
-                            }),
-                        );
-                        break;
-                    };
-
-                    param_store_instructions.push(Instruction::Sd(
-                        reg,
-                        Pointer::Stack(IntRegister::Fp, offset),
-                    ));
-                    self.scope_mut().insert(
-                        param.name.to_string(),
-                        Some(Variable {
-                            type_: param.type_,
-                            value: VariableValue::Pointer(Pointer::Stack(IntRegister::Fp, offset)),
-                        }),
-                    );
-                    self.curr_fn_mut().stack_allocs += 8;
+                    match IntRegister::nth_param(int_cnt) {
+                        Some(reg) => {
+                            param_store_instructions.push(Instruction::Sd(
+                                reg,
+                                Pointer::Stack(IntRegister::Fp, offset),
+                            ));
+                            self.scope_mut().insert(
+                                param.name.to_string(),
+                                Some(Variable {
+                                    type_: param.type_,
+                                    value: VariableValue::Pointer(Pointer::Stack(
+                                        IntRegister::Fp,
+                                        offset,
+                                    )),
+                                }),
+                            );
+                            self.curr_fn_mut().stack_allocs += 8;
+                        }
+                        None => {
+                            self.scope_mut().insert(
+                                param.name.to_string(),
+                                Some(Variable {
+                                    type_: param.type_,
+                                    value: VariableValue::Pointer(Pointer::Stack(
+                                        IntRegister::Fp,
+                                        mem_offset,
+                                    )),
+                                }),
+                            );
+                            mem_offset += 8;
+                        }
+                    }
                     int_cnt += 1;
                 }
                 Type::Float => {
-                    let Some(reg) = FloatRegister::nth_param(float_cnt) else {
-                        spill_cnt += 1;
-                        self.scope_mut().insert(
-                            param.name.to_string(),
-                            Some(Variable {
-                                type_: param.type_,
-                                value: VariableValue::Pointer(Pointer::Stack(IntRegister::Fp, todo!("decide offset"))),
-                            }),
-                        );
-                        break;
-                    };
-
-                    // push the parameter value to the stack
-                    param_store_instructions.push(Instruction::Fsd(
-                        reg,
-                        Pointer::Stack(IntRegister::Fp, offset),
-                    ));
-                    self.scope_mut().insert(
-                        param.name.to_string(),
-                        Some(Variable {
-                            type_: param.type_,
-                            value: VariableValue::Register(reg.to_reg()),
-                        }),
-                    );
-                    self.curr_fn_mut().stack_allocs += 8;
-
+                    match FloatRegister::nth_param(float_cnt) {
+                        Some(reg) => {
+                            param_store_instructions.push(Instruction::Fsd(
+                                reg,
+                                Pointer::Stack(IntRegister::Fp, offset),
+                            ));
+                            self.scope_mut().insert(
+                                param.name.to_string(),
+                                Some(Variable {
+                                    type_: param.type_,
+                                    value: VariableValue::Pointer(Pointer::Stack(
+                                        IntRegister::Fp,
+                                        offset,
+                                    )),
+                                }),
+                            );
+                            self.curr_fn_mut().stack_allocs += 8;
+                        }
+                        None => {
+                            self.scope_mut().insert(
+                                param.name.to_string(),
+                                Some(Variable {
+                                    type_: param.type_,
+                                    value: VariableValue::Pointer(Pointer::Stack(
+                                        IntRegister::Fp,
+                                        mem_offset,
+                                    )),
+                                }),
+                            );
+                            mem_offset += 8;
+                        }
+                    }
                     float_cnt += 1;
                 }
                 Type::Unit | Type::Never => {
