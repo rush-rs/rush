@@ -884,23 +884,23 @@ impl Compiler {
                 dest_regf.into()
             }
             (Type::Int, InfixOp::Shl) => {
-                self.insert(Instruction::Sl(dest_regi, lhs.into(), lhs.into()));
+                self.insert(Instruction::Sl(dest_regi, lhs.into(), rhs.into()));
                 dest_regi.into()
             }
             (Type::Int, InfixOp::Shr) => {
-                self.insert(Instruction::Sr(dest_regi, lhs.into(), lhs.into()));
+                self.insert(Instruction::Sr(dest_regi, lhs.into(), rhs.into()));
                 dest_regi.into()
             }
             (Type::Int | Type::Bool, InfixOp::BitOr | InfixOp::Or) => {
-                self.insert(Instruction::Or(dest_regi, lhs.into(), lhs.into()));
+                self.insert(Instruction::Or(dest_regi, lhs.into(), rhs.into()));
                 dest_regi.into()
             }
             (Type::Int | Type::Bool, InfixOp::BitAnd | InfixOp::And) => {
-                self.insert(Instruction::And(dest_regi, lhs.into(), lhs.into()));
+                self.insert(Instruction::And(dest_regi, lhs.into(), rhs.into()));
                 dest_regi.into()
             }
             (Type::Int | Type::Bool, InfixOp::BitXor) => {
-                self.insert(Instruction::Xor(dest_regi, lhs.into(), lhs.into()));
+                self.insert(Instruction::Xor(dest_regi, lhs.into(), rhs.into()));
                 dest_regi.into()
             }
             _ => unreachable!("the analyzer does not allow other combinations"),
