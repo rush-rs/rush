@@ -652,14 +652,16 @@ impl<'src> Compiler<'src> {
     }
 
     fn cast_expr(&mut self, node: AnalyzedCastExpr<'src>) -> Option<Value> {
+        let expr_type = node.expr.result_type();
         let expr = self.expression(node.expr);
-        match (expr, node.type_) {
-            (None, _) => None,
-            (Some(Value::Int(val)), Type::Int) => Some(Value::Int(val)),
-            (Some(Value::Int(_val)), Type::Float) => todo!(),
-            (Some(Value::Int(_val)), Type::Bool) => todo!(),
-            (Some(Value::Int(_val)), Type::Char) => todo!(),
-            (Some(Value::Float(val)), Type::Int) => {
+        match (expr, expr_type, node.type_) {
+            (None, _, _) => None,
+            (Some(Value::Int(val)), left, right) if left == right => Some(Value::Int(val)),
+            (Some(Value::Float(val)), left, right) if left == right => Some(Value::Float(val)),
+            (Some(Value::Int(_val)), Type::Int, Type::Float) => todo!(),
+            (Some(Value::Int(_val)), Type::Int, Type::Bool) => todo!(),
+            (Some(Value::Int(_val)), Type::Int, Type::Char) => todo!(),
+            (Some(Value::Float(val)), Type::Float, Type::Int) => {
                 let reg = self.get_free_register().in_qword_size();
                 if let FloatValue::Register(reg) = val {
                     // TODO: .iter().position() slow?
@@ -674,9 +676,22 @@ impl<'src> Compiler<'src> {
                     .push(Instruction::Cvttsd2si(reg.into(), val));
                 Some(Value::Int(reg.into()))
             }
-            (Some(Value::Float(val)), Type::Float) => Some(Value::Float(val)),
-            (Some(Value::Float(_val)), Type::Bool) => todo!(),
-            (Some(Value::Float(_val)), Type::Char) => todo!(),
+            (Some(Value::Float(_val)), Type::Float, Type::Bool) => todo!(),
+            (Some(Value::Float(_val)), Type::Float, Type::Char) => todo!(),
+            (Some(Value::Int(val)), Type::Bool | Type::Char, Type::Int) => match val {
+                IntValue::Ptr(ptr) => {
+                    let reg = self.get_free_register().in_byte_size();
+                    self.function_body
+                        .push(Instruction::Mov(reg.into(), ptr.into()));
+                    Some(Value::Int(reg.in_qword_size().into()))
+                }
+                IntValue::Register(reg) => Some(Value::Int(reg.in_qword_size().into())),
+                IntValue::Immediate(value) => Some(Value::Int((value as i64).into())),
+            },
+            (Some(Value::Int(_val)), Type::Bool, Type::Float) => todo!(),
+            (Some(Value::Int(_val)), Type::Bool, Type::Char) => todo!(),
+            (Some(Value::Int(_val)), Type::Char, Type::Float) => todo!(),
+            (Some(Value::Int(_val)), Type::Char, Type::Bool) => todo!(),
             _ => unreachable!("the analyzer guarantees one of the above to match"),
         }
     }
