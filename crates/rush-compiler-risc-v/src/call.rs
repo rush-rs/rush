@@ -61,7 +61,7 @@ impl Compiler {
     pub(crate) fn call_expr(&mut self, node: AnalyzedCallExpr) -> Option<Register> {
         let func_label = match node.func {
             "exit" => "exit".to_string(),
-            func => format!(".{func}"),
+            func => format!("main..{func}"),
         };
 
         let mut float_cnt = 0;

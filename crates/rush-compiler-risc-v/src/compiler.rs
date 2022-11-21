@@ -202,7 +202,7 @@ impl Compiler {
 
     fn function_declaration(&mut self, node: AnalyzedFunctionDefinition) {
         // append block for the function
-        let block_label = format!(".{}", node.name);
+        let block_label = format!("main..{}", node.name);
         self.append_block(&block_label);
         self.insert_at(&block_label);
 
