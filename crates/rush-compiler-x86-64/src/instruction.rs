@@ -112,8 +112,8 @@ impl Display for Instruction {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Instruction::IntelSyntax => writeln!(f, ".intel_syntax"),
-            Instruction::Global(name) => writeln!(f, "{:11} {name}", ".global"),
-            Instruction::Section(section) => writeln!(f, "\n{:11} {section}", ".section"),
+            Instruction::Global(name) => writeln!(f, ".global {name}"),
+            Instruction::Section(section) => writeln!(f, "\n.section {section}"),
             Instruction::Symbol(name) => writeln!(f, "\n{name}:"),
             Instruction::Byte(num) => writeln!(f, "    {:11} {num:#04x}  # = {num}", ".byte"),
             Instruction::Short(num) => writeln!(f, "    {:11} {num:#06x}  # = {num}", ".short"),
