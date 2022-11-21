@@ -267,7 +267,7 @@ impl<'src> Compiler<'src> {
                 Some(Value::Int(IntValue::Register(reg))) => {
                     // we expect the result to already be in %rax
                     // TODO: is that correct?
-                    debug_assert_eq!(reg.qword_variant(), IntRegister::Rax);
+                    debug_assert_eq!(reg.in_qword_size(), IntRegister::Rax);
                     debug_assert_eq!(self.used_registers, [IntRegister::Rax]);
                 }
                 Some(Value::Int(IntValue::Ptr(ptr))) => self.function_body.push(Instruction::Mov(
@@ -420,7 +420,7 @@ impl<'src> Compiler<'src> {
             AnalyzedExpression::Infix(node) => self.infix_expr(*node),
             AnalyzedExpression::Assign(_node) => todo!(),
             AnalyzedExpression::Call(node) => self.call_expr(*node),
-            AnalyzedExpression::Cast(_node) => todo!(),
+            AnalyzedExpression::Cast(node) => self.cast_expr(*node),
             AnalyzedExpression::Grouped(node) => self.expression(*node),
         }
     }
@@ -489,6 +489,45 @@ impl<'src> Compiler<'src> {
                     self.used_registers.pop();
                 }
                 Some(Value::Int(left))
+            }
+            (
+                Some(Value::Float(left)),
+                Some(Value::Float(right)),
+                InfixOp::Plus | InfixOp::Minus | InfixOp::Mul | InfixOp::Div,
+            ) => {
+                // if two registers were in use before, one can be freed afterwards
+                let pop_rhs_reg = matches!(
+                    (&left, &right),
+                    (FloatValue::Register(_), FloatValue::Register(_))
+                );
+
+                let (left, right) = match (left, right) {
+                    // when one side is already a register, use that
+                    (left @ FloatValue::Register(_), right @ (FloatValue::Register(_) | FloatValue::Ptr(_)))
+                    // note the swapped sides here
+                    | (right @ FloatValue::Ptr(_), left @ FloatValue::Register(_)) => {
+                        (left, right)
+                    }
+                    // else move the left value into a free register and use that
+                    (left @ FloatValue::Ptr(_), right) => {
+                        let reg = self.get_free_float_register();
+                        self.function_body.push(Instruction::Movsd(reg.into(), left));
+                        (reg.into(), right)
+                    }
+                };
+
+                self.function_body.push(match node.op {
+                    InfixOp::Plus => Instruction::Addsd(left.clone(), right),
+                    InfixOp::Minus => Instruction::Subsd(left.clone(), right),
+                    InfixOp::Mul => Instruction::Mulsd(left.clone(), right),
+                    InfixOp::Div => Instruction::Divsd(left.clone(), right),
+                    _ => unreachable!("this arm only matches with above ops"),
+                });
+                if pop_rhs_reg {
+                    // free the rhs register
+                    self.used_registers.pop();
+                }
+                Some(Value::Float(left))
             }
             _ => todo!(),
         }
@@ -592,5 +631,35 @@ impl<'src> Compiler<'src> {
         }
 
         result_reg
+    }
+
+    fn cast_expr(&mut self, node: AnalyzedCastExpr<'src>) -> Option<Value> {
+        let expr = self.expression(node.expr);
+        match (expr, node.type_) {
+            (None, _) => None,
+            (Some(Value::Int(val)), Type::Int) => Some(Value::Int(val)),
+            (Some(Value::Int(_val)), Type::Float) => todo!(),
+            (Some(Value::Int(_val)), Type::Bool) => todo!(),
+            (Some(Value::Int(_val)), Type::Char) => todo!(),
+            (Some(Value::Float(val)), Type::Int) => {
+                let reg = self.get_free_register().in_qword_size();
+                if let FloatValue::Register(reg) = val {
+                    // TODO: .iter().position() slow?
+                    self.used_float_registers.remove(
+                        self.used_float_registers
+                            .iter()
+                            .position(|r| *r == reg)
+                            .expect("returned registers should be marked as used"),
+                    );
+                }
+                self.function_body
+                    .push(Instruction::Cvttsd2si(reg.into(), val));
+                Some(Value::Int(reg.into()))
+            }
+            (Some(Value::Float(val)), Type::Float) => Some(Value::Float(val)),
+            (Some(Value::Float(_val)), Type::Bool) => todo!(),
+            (Some(Value::Float(_val)), Type::Char) => todo!(),
+            _ => unreachable!("the analyzer guarantees one of the above to match"),
+        }
     }
 }

@@ -60,7 +60,7 @@ impl Display for FloatRegister {
 }
 
 impl IntRegister {
-    pub fn byte_variant(&self) -> Self {
+    pub fn in_byte_size(&self) -> Self {
         match self {
             Self::Rip => panic!("no byte variant for `%rip` register"),
             Self::Rax | Self::Eax | Self::Ax | Self::Al => Self::Al,
@@ -82,7 +82,7 @@ impl IntRegister {
         }
     }
 
-    pub fn word_variant(&self) -> Self {
+    pub fn in_word_size(&self) -> Self {
         match self {
             Self::Rip => panic!("no word variant for `%rip` register"),
             Self::Rax | Self::Eax | Self::Ax | Self::Al => Self::Ax,
@@ -104,7 +104,7 @@ impl IntRegister {
         }
     }
 
-    pub fn dword_variant(&self) -> Self {
+    pub fn in_dword_size(&self) -> Self {
         match self {
             Self::Rip => panic!("no dword variant for `%rip` register"),
             Self::Rax | Self::Eax | Self::Ax | Self::Al => Self::Eax,
@@ -126,7 +126,7 @@ impl IntRegister {
         }
     }
 
-    pub fn qword_variant(&self) -> Self {
+    pub fn in_qword_size(&self) -> Self {
         match self {
             Self::Rip => panic!("no qword variant for `%rip` register"),
             Self::Rax | Self::Eax | Self::Ax | Self::Al => Self::Rax,
@@ -150,16 +150,16 @@ impl IntRegister {
 
     pub fn in_size(&self, size: Size) -> Self {
         match size {
-            Size::Byte => self.byte_variant(),
-            Size::Word => self.word_variant(),
-            Size::Dword => self.dword_variant(),
-            Size::Qword => self.qword_variant(),
+            Size::Byte => self.in_byte_size(),
+            Size::Word => self.in_word_size(),
+            Size::Dword => self.in_dword_size(),
+            Size::Qword => self.in_qword_size(),
             Size::Oword => panic!("general purpose registers have no 128-bit variant"),
         }
     }
 
     pub fn next_param(&self) -> Option<Self> {
-        match self.qword_variant() {
+        match self.in_qword_size() {
             Self::Rdi => Some(Self::Rsi),
             Self::Rsi => Some(Self::Rsi),
             Self::Rdx => Some(Self::Rdx),
@@ -171,7 +171,7 @@ impl IntRegister {
     }
 
     pub fn next(&self) -> Self {
-        match self.qword_variant() {
+        match self.in_qword_size() {
             Self::Rax => Self::Rdi,
             Self::Rdi => Self::Rsi,
             Self::Rsi => Self::Rdx,
@@ -202,7 +202,7 @@ impl IntRegister {
             IntRegister::R10,
             IntRegister::R11,
         ]
-        .contains(&self.qword_variant())
+        .contains(&self.in_qword_size())
     }
 }
 

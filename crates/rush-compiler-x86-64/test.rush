@@ -8,7 +8,11 @@ fn main() {
     3.0;
     'a';
     true;
-    exit(1 + 2 + a + call());
+    exit(1 + 2 + a + call() - float(3.5) as int); // = 3
+}
+
+fn float(a: float) -> float {
+    a * 2.0 - 4.0
 }
 
 fn _ops(b: int) -> int {
@@ -21,32 +25,32 @@ fn _ops(b: int) -> int {
 }
 
 fn _vars() -> char {
-    let c = true;
+    let _c = true;
     let d = 'a';
-    let a = 1;
-    let b = 2f;
+    let _a = 1;
+    let _b = 2f;
     d
 }
 
 fn _params(
-    a: int, // %rdi
-    b: float, // %xmm0
-    c: char, // %sil
-    d: bool, // %dl
-    e: int, // %rcx
-    f: int, // %r8
-    g: int, // %r9
-    h: int, // [%rbp+16]
-    i: int, // [%rbp+24]
-    j: float, // %xmm1
-    k: float, // %xmm2
-    l: float, // %xmm3
-    m: float, // %xmm4
-    n: float, // %xmm5
-    o: float, // %xmm6
-    p: float, // %xmm7
-    q: float, // [%rbp+32]
-    r: float, // [%rbp+40]
+    _a: int, // %rdi
+    _b: float, // %xmm0
+    _c: char, // %sil
+    _d: bool, // %dl
+    _e: int, // %rcx
+    _f: int, // %r8
+    _g: int, // %r9
+    _h: int, // [%rbp+16]
+    _i: int, // [%rbp+24]
+    _j: float, // %xmm1
+    _k: float, // %xmm2
+    _l: float, // %xmm3
+    _m: float, // %xmm4
+    _n: float, // %xmm5
+    _o: float, // %xmm6
+    _p: float, // %xmm7
+    _q: float, // [%rbp+32]
+    _r: float, // [%rbp+40]
     s: float, // [%rbp+48]
 ) -> float {
     s
