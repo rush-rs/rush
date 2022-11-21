@@ -33,11 +33,16 @@ pub struct Compiler<'src> {
     byte_globals: Vec<Instruction>,
 
     //////// .rodata section ////////
-    octa_constants: Vec<Instruction>,
-    quad_constants: Vec<Instruction>,
-    // long_constants: Vec<Instruction>,
-    // short_constants: Vec<Instruction>,
-    // byte_constants: Vec<Instruction>,
+    /// Constants with 128-bits, saved as `[symbol, value]`
+    octa_constants: Vec<[Instruction; 2]>,
+    /// Constants with 64-bits, saved as `[symbol, value]`
+    quad_constants: Vec<[Instruction; 2]>,
+    // /// Constants with 32-bits, saved as `[symbol, value]`
+    // long_constants: Vec<[Instruction; 2]>,
+    // /// Constants with 16-bits, saved as `[symbol, value]`
+    // short_constants: Vec<[Instruction; 2]>,
+    // /// Constants with 8-bits, saved as `[symbol, value]`
+    // byte_constants: Vec<[Instruction; 2]>,
 }
 
 #[derive(Debug, Clone)]
@@ -80,11 +85,11 @@ impl<'src> Compiler<'src> {
 
         if !self.octa_constants.is_empty() || !self.quad_constants.is_empty() {
             buf.push(Instruction::Section(Section::ReadOnlyData));
-            buf.append(&mut self.octa_constants);
-            buf.append(&mut self.quad_constants);
-            // buf.append(&mut self.long_constants);
-            // buf.append(&mut self.short_constants);
-            // buf.append(&mut self.byte_constants);
+            buf.extend(self.octa_constants.into_iter().flatten());
+            buf.extend(self.quad_constants.into_iter().flatten());
+            // buf.extend(self.long_constants.into_iter().flatten());
+            // buf.extend(self.short_constants.into_iter().flatten());
+            // buf.extend(self.byte_constants.into_iter().flatten());
         }
 
         buf.into_iter().map(|instr| instr.to_string()).collect()
@@ -403,10 +408,23 @@ impl<'src> Compiler<'src> {
             AnalyzedExpression::If(_node) => todo!(),
             AnalyzedExpression::Int(num) => Some(Value::Int(IntValue::Immediate(num))),
             AnalyzedExpression::Float(num) => {
-                let symbol_name = format!(".quad_constant_{}", self.quad_constants.len() / 2);
-                self.quad_constants
-                    .push(Instruction::Symbol(symbol_name.clone()));
-                self.quad_constants.push(Instruction::QuadFloat(num));
+                let symbol_name = match self
+                    .quad_constants
+                    .iter()
+                    .find(|[_name, value]| value == &Instruction::QuadFloat(num))
+                {
+                    // when a constant with the same value already exists, reuse it
+                    Some([Instruction::Symbol(name), _]) => name.clone(),
+                    // else create a new one
+                    _ => {
+                        let name = format!(".quad_constant_{}", self.quad_constants.len());
+                        self.quad_constants.push([
+                            Instruction::Symbol(name.clone()),
+                            Instruction::QuadFloat(num),
+                        ]);
+                        name
+                    }
+                };
                 Some(Value::Float(FloatValue::Ptr(Pointer::new(
                     Size::Qword,
                     IntRegister::Rip,
