@@ -20,7 +20,35 @@ pub(crate) enum VariableValue {
     Register(Register),
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Size {
+    Byte = 1,
+    Dword = 8,
+}
+
+impl Size {
+    pub(crate) fn byte_count(&self) -> i64 {
+        *self as i64
+    }
+}
+
+impl From<Type> for Size {
+    fn from(src: Type) -> Self {
+        match src {
+            Type::Int | Type::Float => Size::Dword,
+            Type::Bool | Type::Char => Size::Byte,
+            Type::Unknown | Type::Never | Type::Unit => unreachable!("these types have no size"),
+        }
+    }
+}
+
 impl Compiler {
+    pub(crate) fn align(ptr: &mut i64, size: i64) {
+        if *ptr % size != 0 {
+            *ptr += size - *ptr % size;
+        }
+    }
+
     pub(crate) fn scope_mut(&mut self) -> &mut HashMap<String, Option<Variable>> {
         self.scopes.last_mut().expect("always called from a scope")
     }
@@ -171,7 +199,7 @@ impl Display for Block {
 pub(crate) struct Function {
     /// Specifies how many bytes of stack space need to be allocated for the current function.
     /// Does not include the necessary allocations for `ra` or `fp`
-    pub(crate) stack_allocs: usize,
+    pub(crate) stack_allocs: i64,
     /// Holds the value of the label which contains the function body.
     pub(crate) body_label: String,
     /// Holds the value of the label which contains the epilogue of the current function.

@@ -13,7 +13,7 @@ use rush_analyzer::{
 use crate::{
     instruction::{Condition, Instruction, Pointer},
     register::{FloatRegister, IntRegister, Register},
-    utils::{Block, DataObj, DataObjType, Function, Loop, Variable, VariableValue},
+    utils::{Block, DataObj, DataObjType, Function, Loop, Size, Variable, VariableValue},
 };
 
 pub struct Compiler {
@@ -228,7 +228,11 @@ impl Compiler {
         ];
 
         for param in node.params {
-            let offset = -(self.curr_fn().stack_allocs as i64 + 8);
+            let size = Size::from(param.type_).byte_count();
+            Self::align(&mut self.curr_fn_mut().stack_allocs, size);
+            self.curr_fn_mut().stack_allocs += size;
+            let offset = -self.curr_fn().stack_allocs as i64;
+
             match param.type_ {
                 Type::Int | Type::Char | Type::Bool => {
                     match IntRegister::nth_param(int_cnt) {
@@ -247,7 +251,6 @@ impl Compiler {
                                     )),
                                 }),
                             );
-                            self.curr_fn_mut().stack_allocs += 8;
                         }
                         None => {
                             self.scope_mut().insert(
@@ -260,6 +263,7 @@ impl Compiler {
                                     )),
                                 }),
                             );
+                            // TODO: implement alignment correctly
                             mem_offset += 8;
                         }
                     }
@@ -282,7 +286,6 @@ impl Compiler {
                                     )),
                                 }),
                             );
-                            self.curr_fn_mut().stack_allocs += 8;
                         }
                         None => {
                             self.scope_mut().insert(
@@ -295,6 +298,7 @@ impl Compiler {
                                     )),
                                 }),
                             );
+                            // TODO: implement alignment correctly
                             mem_offset += 8;
                         }
                     }
@@ -327,6 +331,8 @@ impl Compiler {
         self.insert_jmp(epilogue_label.clone());
         self.pop_scope();
 
+        // align frame size to 16 bytes
+        Self::align(&mut self.curr_fn_mut().stack_allocs, 16);
         // generate prologue
         self.prologue(&prologue_label, param_store_instructions);
 
@@ -547,21 +553,24 @@ impl Compiler {
     fn let_statement(&mut self, node: AnalyzedLetStmt) {
         let type_ = node.expr.result_type();
 
+        // TODO: alignment
+        let size = Size::from(type_).byte_count();
+        Self::align(&mut self.curr_fn_mut().stack_allocs, size);
+        self.curr_fn_mut().stack_allocs += size as i64;
+        let offset = -self.curr_fn().stack_allocs as i64 - 16;
+
         #[cfg(debug_assertions)]
         self.insert(Instruction::Comment(format!("let {}", node.name)));
         let value_reg = self.expression(node.expr);
 
-        // store the value of the expr on the stack
-        let stack_allocs = self.curr_fn().stack_allocs as i64;
-
         match value_reg {
             Some(Register::Int(reg)) => self.insert(Instruction::Sd(
                 reg,
-                Pointer::Stack(IntRegister::Fp, -(self.curr_fn().stack_allocs as i64 + 8)),
+                Pointer::Stack(IntRegister::Fp, offset),
             )),
             Some(Register::Float(reg)) => self.insert(Instruction::Fsd(
                 reg,
-                Pointer::Stack(IntRegister::Fp, -(self.curr_fn().stack_allocs as i64 + 8)),
+                Pointer::Stack(IntRegister::Fp, offset),
             )),
             None => {
                 // insert a dummy variable into the HashMap
@@ -575,15 +584,13 @@ impl Compiler {
         // insert variable into current scope
         let var = Variable {
             type_,
-            value: VariableValue::Pointer(Pointer::Stack(IntRegister::Fp, -(stack_allocs + 8))),
+            value: VariableValue::Pointer(Pointer::Stack(IntRegister::Fp, offset)),
         };
 
         self.scopes
             .last_mut()
             .expect("there must be a scope")
             .insert(node.name.to_string(), Some(var));
-
-        self.curr_fn_mut().stack_allocs += 8;
     }
 
     pub(crate) fn expression(&mut self, node: AnalyzedExpression) -> Option<Register> {

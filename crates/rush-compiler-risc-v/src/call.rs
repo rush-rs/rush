@@ -18,11 +18,11 @@ impl Compiler {
         ));
         self.insert(Instruction::Sd(
             IntRegister::Fp,
-            Pointer::Stack(IntRegister::Sp, 0),
+            Pointer::Stack(IntRegister::Sp, self.curr_fn().stack_allocs + 8),
         ));
         self.insert(Instruction::Sd(
             IntRegister::Ra,
-            Pointer::Stack(IntRegister::Sp, 8),
+            Pointer::Stack(IntRegister::Sp, self.curr_fn().stack_allocs),
         ));
         self.insert(Instruction::Addi(
             IntRegister::Fp,
@@ -41,12 +41,12 @@ impl Compiler {
         // restore fp
         self.insert(Instruction::Ld(
             IntRegister::Fp,
-            Pointer::Stack(IntRegister::Sp, 0),
+            Pointer::Stack(IntRegister::Sp, self.curr_fn().stack_allocs + 8),
         ));
         // restore ra
         self.insert(Instruction::Ld(
             IntRegister::Ra,
-            Pointer::Stack(IntRegister::Sp, 8),
+            Pointer::Stack(IntRegister::Sp, self.curr_fn().stack_allocs),
         ));
         // deallocate stack space
         self.insert(Instruction::Addi(
