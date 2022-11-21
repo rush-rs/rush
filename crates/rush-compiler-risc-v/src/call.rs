@@ -9,7 +9,7 @@ use crate::{
 };
 
 impl Compiler {
-    pub(crate) fn prologue(&mut self, label: &str) {
+    pub(crate) fn prologue(&mut self, label: &str, mut insert_bef_jmp: Vec<Instruction>) {
         self.insert_at(label);
         self.insert(Instruction::Addi(
             IntRegister::Sp,
@@ -29,6 +29,9 @@ impl Compiler {
             IntRegister::Sp,
             self.curr_fn().stack_allocs as i64 + 16,
         ));
+        self.blocks[self.curr_block]
+            .instructions
+            .append(&mut insert_bef_jmp);
         self.insert_jmp(self.curr_fn().body_label.clone());
     }
 

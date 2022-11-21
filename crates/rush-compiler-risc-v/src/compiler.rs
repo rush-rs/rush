@@ -145,7 +145,7 @@ impl Compiler {
         self.pop_scope();
 
         // make prologue
-        self.prologue(&prologue_label);
+        self.prologue(&prologue_label, vec![]);
 
         // exit with code 0
         self.blocks.push(Block {
@@ -218,46 +218,50 @@ impl Compiler {
 
         self.push_scope();
 
-        let mut param_regs = vec![];
         let mut int_cnt = 0;
         let mut float_cnt = 0;
+        let mut param_store_instructions = vec![
+            #[cfg(debug_assertions)]
+            Instruction::Comment("save params on stack".to_string()),
+        ];
         for param in node.params {
+            let offset = -(self.curr_fn().stack_allocs as i64 + 8);
             match param.type_ {
                 Type::Int | Type::Char | Type::Bool => {
                     let reg = IntRegister::nth_param(int_cnt)
-                        .expect("argument spilling is not yet implemented")
-                        .to_reg();
+                        .expect("argument spilling is not yet implemented");
 
+                    param_store_instructions.push(Instruction::Sd(
+                        reg,
+                        Pointer::Stack(IntRegister::Fp, offset),
+                    ));
                     self.scope_mut().insert(
                         param.name.to_string(),
                         Some(Variable {
                             type_: param.type_,
-                            value: VariableValue::Register(reg),
+                            value: VariableValue::Pointer(Pointer::Stack(IntRegister::Fp, offset)),
                         }),
                     );
-
-                    // mark the argument registers as used
-                    param_regs.push(reg);
-                    self.use_reg(reg);
-
+                    self.curr_fn_mut().stack_allocs += 8;
                     int_cnt += 1;
                 }
                 Type::Float => {
                     let reg = FloatRegister::nth_param(float_cnt)
-                        .expect("argument spilling is not yet implemented")
-                        .to_reg();
+                        .expect("argument spilling is not yet implemented");
 
+                    // push the parameter value to the stack
+                    param_store_instructions.push(Instruction::Fsd(
+                        reg,
+                        Pointer::Stack(IntRegister::Fp, offset),
+                    ));
                     self.scope_mut().insert(
                         param.name.to_string(),
                         Some(Variable {
                             type_: param.type_,
-                            value: VariableValue::Register(reg),
+                            value: VariableValue::Register(reg.to_reg()),
                         }),
                     );
-
-                    // mark the argument registers as used
-                    param_regs.push(reg);
-                    self.use_reg(reg);
+                    self.curr_fn_mut().stack_allocs += 8;
 
                     float_cnt += 1;
                 }
@@ -288,13 +292,8 @@ impl Compiler {
         self.insert_jmp(epilogue_label.clone());
         self.pop_scope();
 
-        // mark all params as unused when done
-        for reg in param_regs {
-            self.release_reg(reg)
-        }
-
         // generate prologue
-        self.prologue(&prologue_label);
+        self.prologue(&prologue_label, param_store_instructions);
 
         // generate epilogue
         self.blocks.push(Block {
@@ -411,6 +410,8 @@ impl Compiler {
         self.insert_at(&while_loop_head);
 
         // compile the condition
+        #[cfg(debug_assertions)]
+        self.insert(Instruction::Comment("while condition".to_string()));
         let expr_res = self.expression(node.cond).expect("cond is always a bool");
         self.insert(Instruction::BrCond(
             Condition::Eq,
@@ -423,6 +424,9 @@ impl Compiler {
             loop_head: while_loop_head.clone(),
             after_loop: after_loop_label.clone(),
         });
+
+        #[cfg(debug_assertions)]
+        self.insert(Instruction::Comment("while body".to_string()));
 
         self.block(node.block);
         self.insert_jmp(while_loop_head);
