@@ -220,16 +220,28 @@ impl Compiler {
 
         let mut int_cnt = 0;
         let mut float_cnt = 0;
+        let mut spill_cnt = 0;
+
         let mut param_store_instructions = vec![
             #[cfg(debug_assertions)]
             Instruction::Comment("save params on stack".to_string()),
         ];
+
         for param in node.params {
             let offset = -(self.curr_fn().stack_allocs as i64 + 8);
             match param.type_ {
                 Type::Int | Type::Char | Type::Bool => {
-                    let reg = IntRegister::nth_param(int_cnt)
-                        .expect("argument spilling is not yet implemented");
+                    let Some(reg) = IntRegister::nth_param(int_cnt) else {
+                        spill_cnt += 1;
+                        self.scope_mut().insert(
+                            param.name.to_string(),
+                            Some(Variable {
+                                type_: param.type_,
+                                value: VariableValue::Pointer(Pointer::Stack(IntRegister::Fp, todo!("decide offset"))),
+                            }),
+                        );
+                        break;
+                    };
 
                     param_store_instructions.push(Instruction::Sd(
                         reg,
@@ -246,8 +258,17 @@ impl Compiler {
                     int_cnt += 1;
                 }
                 Type::Float => {
-                    let reg = FloatRegister::nth_param(float_cnt)
-                        .expect("argument spilling is not yet implemented");
+                    let Some(reg) = FloatRegister::nth_param(float_cnt) else {
+                        spill_cnt += 1;
+                        self.scope_mut().insert(
+                            param.name.to_string(),
+                            Some(Variable {
+                                type_: param.type_,
+                                value: VariableValue::Pointer(Pointer::Stack(IntRegister::Fp, todo!("decide offset"))),
+                            }),
+                        );
+                        break;
+                    };
 
                     // push the parameter value to the stack
                     param_store_instructions.push(Instruction::Fsd(

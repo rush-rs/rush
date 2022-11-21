@@ -1,23 +1,8 @@
-let mut counter = 0;
-
 fn main() {
-    count();
-    exit(counter);
+    exit(add(1, 2, 3, 4, 5, 6, 7, 8, 9));
 }
 
-fn count() {
-    loop {
-        counter += 1;
-        if counter == 5 {
-            break;
-        }
-    }
-}
-
-fn less_than_5(n: int) -> bool {
-    if n < 5 {
-        return true;
-    } else {
-        return false;
-    }
+// TODO: implement spilling
+fn add(a: int, b: int, c: int, d: int, e: int, f: int, g: int, h: int, i: int) -> int {
+    a + b + c + d + e + f + g + h + i
 }

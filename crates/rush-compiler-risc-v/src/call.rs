@@ -90,6 +90,8 @@ impl Compiler {
         }
 
         // prepare arguments
+        let mut spill_count = 0;
+
         for arg in node
             .args
             .into_iter()
@@ -97,49 +99,65 @@ impl Compiler {
         {
             match arg.result_type() {
                 Type::Int | Type::Bool | Type::Char => {
-                    let curr_reg = IntRegister::nth_param(int_cnt)
-                        .expect("spilling is not yet implemented")
-                        .to_reg();
-
                     let res_reg = self
                         .expression(arg)
                         .expect("none variants filtered out above");
 
-                    param_regs.push(curr_reg);
-                    self.use_reg(curr_reg);
+                    match IntRegister::nth_param(int_cnt) {
+                        Some(curr_reg) => {
+                            param_regs.push(curr_reg.to_reg());
+                            self.use_reg(curr_reg.to_reg());
 
-                    if curr_reg != res_reg {
-                        let offset = -(self.curr_fn().stack_allocs as i64 + 8);
-                        self.insert(Instruction::Sd(
-                            curr_reg.into(),
-                            Pointer::Stack(IntRegister::Fp, offset),
-                        ));
-                        self.curr_fn_mut().stack_allocs += 8;
-                        self.insert(Instruction::Mov(curr_reg.into(), res_reg.into()));
+                            if curr_reg.to_reg() != res_reg {
+                                let offset = -(self.curr_fn().stack_allocs as i64 + 8);
+                                self.insert(Instruction::Sd(
+                                    curr_reg,
+                                    Pointer::Stack(IntRegister::Fp, offset),
+                                ));
+                                self.curr_fn_mut().stack_allocs += 8;
+                                self.insert(Instruction::Mov(curr_reg, res_reg.into()));
+                            }
+                        }
+                        None => {
+                            self.insert(Instruction::Sd(
+                                res_reg.into(),
+                                Pointer::Stack(IntRegister::Fp, (spill_count + 1) * 8),
+                            ));
+                            self.curr_fn_mut().stack_allocs += 8;
+                            spill_count += 1;
+                        }
                     }
 
                     int_cnt += 1;
                 }
                 Type::Float => {
-                    let curr_reg = FloatRegister::nth_param(float_cnt)
-                        .expect("spilling is not yet implemented")
-                        .to_reg();
-
                     let res_reg = self
                         .expression(arg)
                         .expect("none variants filtered out above");
 
-                    param_regs.push(curr_reg);
-                    self.use_reg(curr_reg);
+                    match FloatRegister::nth_param(float_cnt) {
+                        Some(curr_reg) => {
+                            param_regs.push(curr_reg.to_reg());
+                            self.use_reg(curr_reg.to_reg());
 
-                    if curr_reg != res_reg {
-                        let offset = -(self.curr_fn().stack_allocs as i64 + 8);
-                        self.insert(Instruction::Fsd(
-                            curr_reg.into(),
-                            Pointer::Stack(IntRegister::Fp, offset),
-                        ));
-                        self.curr_fn_mut().stack_allocs += 8;
-                        self.insert(Instruction::Fmv(curr_reg.into(), res_reg.into()));
+                            if curr_reg.to_reg() != res_reg {
+                                let offset = -(self.curr_fn().stack_allocs as i64 + 8);
+                                self.insert(Instruction::Fsd(
+                                    curr_reg,
+                                    Pointer::Stack(IntRegister::Fp, offset),
+                                ));
+                                self.curr_fn_mut().stack_allocs += 8;
+                                self.insert(Instruction::Fmv(curr_reg, res_reg.into()));
+                            }
+                        }
+                        None => {
+                            self.insert(Instruction::Sd(
+                                res_reg.into(),
+                                Pointer::Stack(IntRegister::Fp, (spill_count + 1) * 8),
+                            ));
+                            self.curr_fn_mut().stack_allocs += 8;
+                            spill_count += 1;
+                        }
                     }
 
                     float_cnt += 1;
