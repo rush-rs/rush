@@ -594,17 +594,24 @@ impl Compiler {
     fn let_statement(&mut self, node: AnalyzedLetStmt) {
         let type_ = node.expr.result_type();
 
+        #[cfg(debug_assertions)]
+        self.insert(Instruction::Comment(format!("let {}", node.name)));
+
+        // filter out any unit / never types
+        if matches!(type_, Type::Unit | Type::Never) {
+            // unit / never type: insert a dummy variable into the HashMap
+            self.scope_mut().insert(node.name.to_string(), None);
+            return;
+        }
+
         // alignment and offset calculation
         let size = Size::from(type_).byte_count();
         Self::align(&mut self.curr_fn_mut().stack_allocs, size);
         self.curr_fn_mut().stack_allocs += size as i64;
         let offset = -self.curr_fn().stack_allocs as i64 - 16;
 
-        #[cfg(debug_assertions)]
-        self.insert(Instruction::Comment(format!("let {}", node.name)));
-
-        match self.expression(node.expr) {
-            Some(Register::Int(reg)) => match type_ {
+        match self.expression(node.expr).expect("unit filtered above") {
+            Register::Int(reg) => match type_ {
                 Type::Bool | Type::Char => self.insert(Instruction::Sb(
                     reg,
                     Pointer::Stack(IntRegister::Fp, offset),
@@ -615,15 +622,10 @@ impl Compiler {
                 )),
                 _ => unreachable!("only the types above use int registers"),
             },
-            Some(Register::Float(reg)) => self.insert(Instruction::Fsd(
+            Register::Float(reg) => self.insert(Instruction::Fsd(
                 reg,
                 Pointer::Stack(IntRegister::Fp, offset),
             )),
-            None => {
-                // unit / never type: insert a dummy variable into the HashMap
-                self.scope_mut().insert(node.name.to_string(), None);
-                return;
-            }
         }
 
         // insert variable into the current scope
