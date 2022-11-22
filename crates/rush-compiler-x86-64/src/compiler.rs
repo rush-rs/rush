@@ -20,6 +20,9 @@ pub struct Compiler<'src> {
     in_args: usize,
     /// Maps variable names to `Option<Pointer>`, or `None` when of type `()` or `!`
     scopes: Vec<HashMap<&'src str, Option<Variable>>>,
+    /// Internal stack pointer, separate from `%rsp`, used for pushing and popping inside stack
+    /// fraame. Relative to `%rbp`, always positive.
+    stack_pointer: i64,
     frame_size: i64,
     requires_frame: bool,
 
@@ -123,33 +126,63 @@ impl<'src> Compiler<'src> {
     }
 
     fn add_var(&mut self, name: &'src str, size: Size, value: Value) {
-        // add padding for correct alignment
-        Self::align(&mut self.frame_size, size);
+        let kind = match value {
+            Value::Int(_) => VariableKind::Int,
+            Value::Float(_) => VariableKind::Float,
+        };
 
-        // reserve space in stack frame
-        self.frame_size += size.byte_count();
-
-        // get pointer to location in stack
-        let ptr = Pointer::new(size, IntRegister::Rbp, Offset::Immediate(-self.frame_size));
-
-        // mov value onto stack
-        let kind;
-        self.function_body.push(match value {
-            Value::Int(value) => {
-                kind = VariableKind::Int;
-                Instruction::Mov(ptr.clone().into(), value)
-            }
-            Value::Float(value) => {
-                kind = VariableKind::Float;
-                Instruction::Movsd(ptr.clone().into(), value)
-            }
-        });
+        // push variable
+        let ptr = self.push(size, value);
 
         // save pointer in scope
         self.curr_scope().insert(name, Some(Variable { ptr, kind }));
 
         // function requires a stack frame now
         self.requires_frame = true;
+    }
+
+    fn push(&mut self, size: Size, value: Value) -> Pointer {
+        // add padding for correct alignment
+        Self::align(&mut self.stack_pointer, size);
+
+        // allocate space on stack
+        self.stack_pointer += size.byte_count();
+
+        // possibly expand frame size
+        self.frame_size = self.frame_size.max(self.stack_pointer);
+
+        // get pointer to location in stack
+        let ptr = Pointer::new(
+            size,
+            IntRegister::Rbp,
+            Offset::Immediate(-self.stack_pointer),
+        );
+
+        self.function_body.push(match value {
+            Value::Int(value) => Instruction::Mov(ptr.clone().into(), value),
+            Value::Float(value) => Instruction::Movsd(ptr.clone().into(), value),
+        });
+
+        ptr
+    }
+
+    fn pop(&mut self, dest: Value) {
+        // get pointer from current stack pointer
+        let ptr = Pointer::new(
+            // TODO: size param
+            Size::Qword,
+            IntRegister::Rbp,
+            Offset::Immediate(-self.stack_pointer),
+        );
+
+        // move from pointer to dest
+        self.function_body.push(match dest {
+            Value::Int(dest) => Instruction::Mov(dest, ptr.into()),
+            Value::Float(dest) => Instruction::Movsd(dest, ptr.into()),
+        });
+
+        // free memory on stack
+        self.stack_pointer -= 8;
     }
 
     fn get_free_register(&mut self) -> IntRegister {
@@ -557,19 +590,11 @@ impl<'src> Compiler<'src> {
             .iter()
             .filter(|reg| reg.is_caller_saved())
         {
-            self.function_body.push(Instruction::Push(*reg));
+            // TODO: not always qword
+            self.push(Size::Qword, Value::Int((*reg).into()));
         }
-        if !prev_used_float_registers.is_empty() {
-            self.function_body.push(Instruction::Sub(
-                IntRegister::Rsp.into(),
-                (prev_used_float_registers.len() as i64 * 8).into(),
-            ));
-        }
-        for (index, reg) in prev_used_float_registers.iter().rev().enumerate() {
-            self.function_body.push(Instruction::Movsd(
-                Pointer::new(Size::Qword, IntRegister::Rsp, (index as i64 * 8).into()).into(),
-                (*reg).into(),
-            ));
+        for reg in &prev_used_float_registers {
+            self.push(Size::Qword, Value::Float((*reg).into()));
         }
 
         self.in_args += 1;
@@ -667,7 +692,7 @@ impl<'src> Compiler<'src> {
             }
         }
 
-        // allocate the required param memory
+        // allocate the required param memory, but do not modify `self.stack_pointer`
         self.frame_size += memory_offset;
 
         // call function
@@ -704,24 +729,15 @@ impl<'src> Compiler<'src> {
         };
 
         // restore previously used caller-saved registers from stack
-        for (index, reg) in prev_used_float_registers.iter().rev().enumerate().rev() {
-            self.function_body.push(Instruction::Movsd(
-                (*reg).into(),
-                Pointer::new(Size::Qword, IntRegister::Rsp, (index as i64 * 8).into()).into(),
-            ));
-        }
-        if !prev_used_float_registers.is_empty() {
-            self.function_body.push(Instruction::Add(
-                IntRegister::Rsp.into(),
-                (prev_used_float_registers.len() as i64 * 8).into(),
-            ));
+        for reg in prev_used_float_registers.into_iter().rev() {
+            self.pop(Value::Float(reg.into()));
         }
         for reg in prev_used_registers
-            .iter()
+            .into_iter()
             .filter(|reg| reg.is_caller_saved())
             .rev()
         {
-            self.function_body.push(Instruction::Pop(*reg));
+            self.pop(Value::Int(reg.into()));
         }
 
         result_reg
