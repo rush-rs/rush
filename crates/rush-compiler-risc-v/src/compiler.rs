@@ -127,15 +127,16 @@ impl Compiler {
             self.insert(Instruction::Comment("end init globals".to_string()));
         }
 
+        // jump to the function body
         self.insert(Instruction::Jmp(fn_block.clone()));
-        self.insert_at(&fn_block);
 
-        // set the current function labels
+        // add the epilogue label
         let epilogue_label = self.gen_label("epilogue");
         self.curr_fn = Some(Function::new(epilogue_label.clone()));
 
         // compile the function body
         self.push_scope();
+        self.insert_at(&fn_block);
         self.function_body(node, epilogue_label.clone());
         self.pop_scope();
 
@@ -162,9 +163,7 @@ impl Compiler {
         self.insert(Instruction::Comment(format!("let {label} (global)")));
 
         let type_ = value.result_type();
-        let res_reg = self
-            .expression(value)
-            .expect("cannot use unit value in globals");
+        let res_reg = self.expression(value).expect("globals are non-unit");
 
         let data = match type_ {
             Type::Int => {
@@ -188,31 +187,37 @@ impl Compiler {
                 ));
                 DataObjType::Float(0.0)
             }
-            _ => unreachable!("other types cannot be used in globals"),
+            _ => unreachable!("other types cannot be used as globals"),
         };
 
         let var = Variable {
             type_,
             value: VariableValue::Pointer(Pointer::Label(label.clone())),
         };
+
         self.globals.insert(label.clone(), Some(var));
         self.data_section.push(DataObj { label, data });
     }
 
+    /// Compiles a [`AnalyzedFunctionDefinition`] declaration.
     fn function_declaration(&mut self, node: AnalyzedFunctionDefinition) {
         // append block for the function
         let block_label = format!("main..{}", node.name);
         self.append_block(&block_label);
         self.insert_at(&block_label);
 
+        // add the epilogue label
         let epilogue_label = self.gen_label("epilogue");
-
         self.curr_fn = Some(Function::new(epilogue_label.clone()));
 
+        // push a new scope for the function
         self.push_scope();
 
         let mut int_cnt = 0;
         let mut float_cnt = 0;
+
+        // specifies the memory offset to use when params are spilled
+        // is incremented in steps of 8
         let mut mem_offset = 0;
 
         let mut param_store_instructions = vec![
@@ -230,6 +235,7 @@ impl Compiler {
                             self.curr_fn_mut().stack_allocs += size.byte_count();
                             let offset = -self.curr_fn().stack_allocs as i64 - 16;
 
+                            // use `sb` or `sd` depending on the size
                             match size {
                                 Size::Byte => param_store_instructions.push(Instruction::Sb(
                                     reg,
@@ -280,6 +286,7 @@ impl Compiler {
                                 reg,
                                 Pointer::Stack(IntRegister::Fp, offset),
                             ));
+
                             self.scope_mut().insert(
                                 param.name.to_string(),
                                 Some(Variable {
@@ -308,24 +315,25 @@ impl Compiler {
                     float_cnt += 1;
                 }
                 Type::Unit | Type::Never => {
-                    // ignore these types
+                    // ignore these types (add dummy values)
                     self.scope_mut().insert(param.name.to_string(), None);
                 }
                 Type::Unknown => unreachable!("analyzer would have failed"),
             }
         }
 
+        // compile the function body
         self.function_body(node.block, epilogue_label.clone());
         self.pop_scope();
 
-        // generate prologue
+        // compile prologue
         let mut prologue = self.prologue();
         self.insert_at(&block_label);
         prologue.append(&mut param_store_instructions);
         prologue.append(&mut self.blocks[self.curr_block].instructions);
         self.blocks[self.curr_block].instructions = prologue;
 
-        // generate epilogue
+        // compile epilogue
         self.blocks.push(Block {
             label: epilogue_label,
             instructions: vec![],
@@ -335,7 +343,9 @@ impl Compiler {
         self.epilogue()
     }
 
+    /// Compiles the body of a function.
     fn function_body(&mut self, node: AnalyzedBlock, epilogue_label: String) {
+        // add debugging comment
         #[cfg(debug_assertions)]
         self.insert(Instruction::Comment("begin body".to_string()));
 
@@ -344,12 +354,14 @@ impl Compiler {
             self.statement(stmt);
         }
 
-        // place the result of the optional expression in the return value register(s)
+        // place the result of the optional expression in a return value register(s)
+        // for `int`, `bool`, and `char`: `a0`
+        // for `float`: `fa0`
         if let Some(expr) = node.expr {
             let res_reg = self.expression(expr);
             match res_reg {
                 Some(Register::Int(IntRegister::A0))
-                | Some(Register::Float(FloatRegister::Fa0)) => {} // already in target register
+                | Some(Register::Float(FloatRegister::Fa0)) => {} // already the target register
                 Some(Register::Int(reg)) => {
                     self.insert(Instruction::Mov(IntRegister::A0, reg));
                 }
@@ -360,6 +372,7 @@ impl Compiler {
             }
         }
 
+        // add debugging comment
         #[cfg(debug_assertions)]
         self.insert(Instruction::Comment("end body".to_string()));
 
@@ -367,6 +380,8 @@ impl Compiler {
         self.insert_jmp(epilogue_label);
     }
 
+    /// Compiles an [`AnalyzedBlock`].
+    /// Automatically pushes a new scope for the block.
     fn block(&mut self, node: AnalyzedBlock) -> Option<Register> {
         // push a new scope
         self.push_scope();
@@ -390,21 +405,7 @@ impl Compiler {
     fn statement(&mut self, node: AnalyzedStatement) {
         match node {
             AnalyzedStatement::Let(node) => self.let_statement(node),
-            AnalyzedStatement::Return(node) => {
-                // if there is an expression, compile it
-                if let Some(expr) = node {
-                    match self.expression(expr) {
-                        Some(Register::Int(reg)) => {
-                            self.insert(Instruction::Mov(IntRegister::A0, reg))
-                        }
-                        Some(Register::Float(reg)) => {
-                            self.insert(Instruction::Fmv(FloatRegister::Fa0, reg))
-                        }
-                        None => {}
-                    }
-                }
-                self.insert_jmp(self.curr_fn().epilogue_label.clone());
-            }
+            AnalyzedStatement::Return(node) => self.return_stmt(node),
             AnalyzedStatement::Loop(node) => self.loop_stmt(node),
             AnalyzedStatement::While(node) => self.while_stmt(node),
             AnalyzedStatement::For(node) => self.for_stmt(node),
@@ -422,6 +423,23 @@ impl Compiler {
                 self.expression(node);
             }
         }
+    }
+
+    fn return_stmt(&mut self, node: AnalyzedReturnStmt) {
+        // if there is an expression, compile it
+        if let Some(expr) = node {
+            match self.expression(expr) {
+                // already in the correct registers
+                Some(Register::Int(IntRegister::A0) | Register::Float(FloatRegister::Fa0)) => {}
+                Some(Register::Int(reg)) => self.insert(Instruction::Mov(IntRegister::A0, reg)),
+                Some(Register::Float(reg)) => {
+                    self.insert(Instruction::Fmv(FloatRegister::Fa0, reg))
+                }
+                None => {} // returns unit, do nothing
+            }
+        }
+        // jump to the epilogue label
+        self.insert_jmp(self.curr_fn().epilogue_label.clone());
     }
 
     fn loop_stmt(&mut self, node: AnalyzedLoopStmt) {
@@ -445,12 +463,16 @@ impl Compiler {
     fn while_stmt(&mut self, node: AnalyzedWhileStmt) {
         let while_loop_head = self.append_block("while_head");
         let after_loop_label = self.gen_label("after_while");
+
+        // enter loop from outside
+        // TODO: maybe remove useless jumps?
         self.insert_jmp(while_loop_head.clone());
         self.insert_at(&while_loop_head);
 
         // compile the condition
         #[cfg(debug_assertions)]
         self.insert(Instruction::Comment("while condition".to_string()));
+
         let expr_res = self.expression(node.cond).expect("cond is always a bool");
         self.insert(Instruction::BrCond(
             Condition::Eq,
@@ -459,6 +481,7 @@ impl Compiler {
             after_loop_label.clone(),
         ));
 
+        // compile the body
         self.curr_loop = Some(Loop {
             loop_head: while_loop_head.clone(),
             after_loop: after_loop_label.clone(),
@@ -468,11 +491,16 @@ impl Compiler {
         self.insert(Instruction::Comment("while body".to_string()));
 
         self.block(node.block);
+
+        // jump back to the loop head
         self.insert_jmp(while_loop_head);
+
         self.blocks.push(Block {
             label: after_loop_label.clone(),
             instructions: vec![],
         });
+
+        // place the cursor after the loop body
         self.insert_at(&after_loop_label);
     }
 
@@ -521,26 +549,25 @@ impl Compiler {
         #[cfg(debug_assertions)]
         self.insert(Instruction::Comment("loop body".to_string()));
 
-        // compile the block
+        // compile the loop block
         for stmt in node.block.stmts {
             self.statement(stmt)
         }
-
-        if let Some(expr) = node.block.expr {
-            self.expression(expr);
-        }
+        // compile optional expr
+        node.block.expr.map(|e| self.expression(e));
 
         // compile the update expression
         #[cfg(debug_assertions)]
         self.insert(Instruction::Comment("loop update".to_string()));
         self.expression(node.update);
+        self.pop_scope();
 
         // jump back to the loop start
         self.insert_jmp(for_head);
 
         self.insert_at(&after_loop);
 
-        self.pop_scope();
+        // release induction register at the end
         if let Some(reg) = res.map(|r| r.1) {
             self.release_reg(reg)
         }
@@ -578,10 +605,8 @@ impl Compiler {
             )),
             None => {
                 // insert a dummy variable into the HashMap
-                self.scopes
-                    .last_mut()
-                    .expect("there must be a scope")
-                    .insert(node.name.to_string(), None);
+                self.scope_mut().insert(node.name.to_string(), None);
+                return;
             }
         }
 
@@ -590,11 +615,7 @@ impl Compiler {
             type_,
             value: VariableValue::Pointer(Pointer::Stack(IntRegister::Fp, offset)),
         };
-
-        self.scopes
-            .last_mut()
-            .expect("there must be a scope")
-            .insert(node.name.to_string(), Some(var));
+        self.scope_mut().insert(node.name.to_string(), Some(var));
     }
 
     pub(crate) fn expression(&mut self, node: AnalyzedExpression) -> Option<Register> {
