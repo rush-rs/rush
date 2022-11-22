@@ -1,47 +1,44 @@
 use std::collections::HashMap;
 
-use rush_analyzer::{
-    ast::{
-        AnalyzedAssignExpr, AnalyzedBlock, AnalyzedCastExpr, AnalyzedExpression, AnalyzedForStmt,
-        AnalyzedFunctionDefinition, AnalyzedIfExpr, AnalyzedInfixExpr, AnalyzedLetStmt,
-        AnalyzedLoopStmt, AnalyzedPrefixExpr, AnalyzedProgram, AnalyzedStatement,
-        AnalyzedWhileStmt,
-    },
-    AssignOp, InfixOp, PrefixOp, Type,
-};
+use rush_analyzer::{ast::*, AssignOp, InfixOp, PrefixOp, Type};
 
 use crate::{
-    instruction::{Condition, Instruction, Pointer},
+    instruction::{Block, Condition, Instruction, Pointer},
     register::{FloatRegister, IntRegister, Register},
-    utils::{Block, DataObj, DataObjType, Function, Loop, Size, Variable, VariableValue},
+    utils::{DataObj, DataObjType, Function, Loop, Size, Variable, VariableValue},
 };
 
 pub struct Compiler {
-    /// Exported functions
+    /// Specifies all exported labels of the program.
     pub(crate) exports: Vec<String>,
-    /// Sections / basic blocks which contain instructions.
+
+    /// Labels and their basic blocks which contain instructions.
     pub(crate) blocks: Vec<Block>,
-    /// Points to the current section which is inserted to
+    /// Points to the current section which is inserted to.
     pub(crate) curr_block: usize,
+
     /// Data section for storing global variables.
     pub(crate) data_section: Vec<DataObj>,
-    /// Read-only data section for storing constant values.
+    /// Read-only data section for storing constant values (like floats).
     pub(crate) rodata_section: Vec<DataObj>,
+
     /// Holds metadata about the current function
     pub(crate) curr_fn: Option<Function>,
     /// Holds metadata about the current loop
     pub(crate) curr_loop: Option<Loop>,
-    /// Saves the scopes. The last element is the most recent scope.
+
+    /// The first element is the root scope, the last element is the current scope.
     pub(crate) scopes: Vec<HashMap<String, Option<Variable>>>,
-    /// Holds the global variables of the program
+    /// Holds the global variables of the program.
+    /// TODO: make the v a non-option
     pub(crate) globals: HashMap<String, Option<Variable>>,
+
     /// Specifies all registers which are currently in use and may not be overwritten.
     pub(crate) used_registers: Vec<Register>,
 }
 
-const GLOBALS_INIT_LABEL: &str = "globals_init";
-
 impl Compiler {
+    /// Creates and returns a new [`Compiler`].
     pub fn new() -> Self {
         Self {
             blocks: vec![],
@@ -57,6 +54,7 @@ impl Compiler {
         }
     }
 
+    /// Compiles the source AST into a RISC-V targeted Assembly program.
     pub fn compile(&mut self, ast: AnalyzedProgram) -> String {
         self.declare_main_fn(ast.main_fn, ast.globals);
 
@@ -64,25 +62,30 @@ impl Compiler {
             self.function_declaration(func)
         }
 
+        self.codegen()
+    }
+
+    /// Generates the Assembly representation from the compiled program.
+    /// This function is invoked in the last step of compilation and only generates the output.
+    fn codegen(&self) -> String {
         let mut output = String::new();
 
-        output += ".section .text\n";
-
-        // string generation
+        // `.global` label exports
         output += &self
             .exports
             .iter()
             .map(|e| format!(".global {e}\n"))
             .collect::<String>();
 
-        // block generation
+        // basic block labels with their instructions
+        output += "\n.section .text\n";
         output += &self
             .blocks
             .iter()
             .map(|d| d.to_string())
             .collect::<String>();
 
-        // .data generation
+        // zero-values for globals under the `.data` section
         if !self.data_section.is_empty() {
             output += &format!(
                 "\n.section .data\n{}",
@@ -93,7 +96,7 @@ impl Compiler {
             );
         }
 
-        // .rodata generation
+        // declares constants (like floats) under the `.rodata` section
         if !self.rodata_section.is_empty() {
             output += &format!(
                 "\n.section .rodata\n{}",
@@ -107,49 +110,41 @@ impl Compiler {
         output
     }
 
+    /// Compiles the `main` function and the global variables of the program.
     fn declare_main_fn(&mut self, node: AnalyzedBlock, globals: Vec<AnalyzedLetStmt>) {
-        let _start = "_start";
-        self.append_block(_start);
-        self.exports.push(_start.into());
+        // create `_start` label
+        let start_label = self.append_block("_start");
+        let fn_block = self.append_block("main..main");
+        self.exports.push(start_label);
 
-        let prologue_label = self.gen_label("main_prologue");
-
+        // if there are global variables, declare them
+        // can be declared before the prologue: exprs are all constant (require no stack)
         if !globals.is_empty() {
-            self.insert_jmp(GLOBALS_INIT_LABEL.to_string());
-            self.append_block(GLOBALS_INIT_LABEL);
-            self.insert_at(GLOBALS_INIT_LABEL);
+            self.insert(Instruction::Comment("begin init globals".to_string()));
             for var in globals {
                 self.declare_global(var.name.to_string(), var.expr)
             }
+            self.insert(Instruction::Comment("end init globals".to_string()));
         }
-        self.insert_jmp(prologue_label.clone());
 
-        self.blocks.push(Block {
-            label: prologue_label.clone(),
-            instructions: vec![],
-        });
+        self.insert(Instruction::Jmp(fn_block.clone()));
+        self.insert_at(&fn_block);
 
-        let body = self.append_block("body");
+        // set the current function labels
         let epilogue_label = self.gen_label("epilogue");
+        self.curr_fn = Some(Function::new(epilogue_label.clone()));
 
-        self.curr_fn = Some(Function {
-            stack_allocs: 0,
-            body_label: body.clone(),
-            epilogue_label: epilogue_label.clone(),
-        });
-
+        // compile the function body
         self.push_scope();
-        self.insert_at(&body);
-        self.function_body(node);
-        self.insert_jmp(epilogue_label.clone());
+        self.function_body(node, epilogue_label.clone());
         self.pop_scope();
 
-        // align frame size to 16 bytes
-        Self::align(&mut self.curr_fn_mut().stack_allocs, 16);
-        // make prologue
-        self.prologue(&prologue_label, vec![]);
+        // prologue is inserted after the body (because it now knows about the frame size)
+        let mut prologue = self.prologue();
+        prologue.append(&mut self.blocks[self.curr_block].instructions);
+        self.blocks[self.curr_block].instructions = prologue;
 
-        // exit with code 0
+        // epilogue: exit with code 0
         self.blocks.push(Block {
             label: epilogue_label.clone(),
             instructions: vec![],
@@ -159,8 +154,10 @@ impl Compiler {
         self.insert(Instruction::Call("exit".into()));
     }
 
+    /// Declares a new global variable.
+    /// The initializer is put inside the current basic block.
     fn declare_global(&mut self, label: String, value: AnalyzedExpression) {
-        // initialize global value at the start of the program
+        // insert comments when using debug
         #[cfg(debug_assertions)]
         self.insert(Instruction::Comment(format!("let {label} (global)")));
 
@@ -208,15 +205,9 @@ impl Compiler {
         self.append_block(&block_label);
         self.insert_at(&block_label);
 
-        let prologue_label = self.gen_label("prologue");
-        let body_label = self.gen_label("body");
         let epilogue_label = self.gen_label("epilogue");
 
-        self.curr_fn = Some(Function {
-            stack_allocs: 0,
-            body_label: body_label.clone(),
-            epilogue_label: epilogue_label.clone(),
-        });
+        self.curr_fn = Some(Function::new(epilogue_label.clone()));
 
         self.push_scope();
 
@@ -324,29 +315,15 @@ impl Compiler {
             }
         }
 
-        // jump into the function prologue
-        self.insert_jmp(prologue_label.to_string());
-
-        // add the prologue block
-        self.blocks.push(Block {
-            label: prologue_label.clone(),
-            instructions: vec![],
-        });
-
-        // generate function body
-        self.blocks.push(Block {
-            label: body_label.clone(),
-            instructions: vec![],
-        });
-        self.insert_at(&body_label);
-        self.function_body(node.block);
-        self.insert_jmp(epilogue_label.clone());
+        self.function_body(node.block, epilogue_label.clone());
         self.pop_scope();
 
-        // align frame size to 16 bytes
-        Self::align(&mut self.curr_fn_mut().stack_allocs, 16);
         // generate prologue
-        self.prologue(&prologue_label, param_store_instructions);
+        let mut prologue = self.prologue();
+        self.insert_at(&block_label);
+        prologue.append(&mut param_store_instructions);
+        prologue.append(&mut self.blocks[self.curr_block].instructions);
+        self.blocks[self.curr_block].instructions = prologue;
 
         // generate epilogue
         self.blocks.push(Block {
@@ -358,7 +335,10 @@ impl Compiler {
         self.epilogue()
     }
 
-    fn function_body(&mut self, node: AnalyzedBlock) {
+    fn function_body(&mut self, node: AnalyzedBlock, epilogue_label: String) {
+        #[cfg(debug_assertions)]
+        self.insert(Instruction::Comment("begin body".to_string()));
+
         // compile each statement
         for stmt in node.stmts {
             self.statement(stmt);
@@ -379,6 +359,12 @@ impl Compiler {
                 None => {} // do nothing with unit values
             }
         }
+
+        #[cfg(debug_assertions)]
+        self.insert(Instruction::Comment("end body".to_string()));
+
+        // jump to the epilogue
+        self.insert_jmp(epilogue_label);
     }
 
     fn block(&mut self, node: AnalyzedBlock) -> Option<Register> {

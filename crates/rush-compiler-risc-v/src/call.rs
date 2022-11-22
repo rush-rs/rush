@@ -10,30 +10,35 @@ use crate::{
 };
 
 impl Compiler {
-    pub(crate) fn prologue(&mut self, label: &str, mut insert_bef_jmp: Vec<Instruction>) {
-        self.insert_at(label);
-        self.insert(Instruction::Addi(
-            IntRegister::Sp,
-            IntRegister::Sp,
-            -(self.curr_fn().stack_allocs as i64 + 16/* 16 accounts for fp and ra */),
-        ));
-        self.insert(Instruction::Sd(
-            IntRegister::Fp,
-            Pointer::Stack(IntRegister::Sp, self.curr_fn().stack_allocs + 8),
-        ));
-        self.insert(Instruction::Sd(
-            IntRegister::Ra,
-            Pointer::Stack(IntRegister::Sp, self.curr_fn().stack_allocs),
-        ));
-        self.insert(Instruction::Addi(
-            IntRegister::Fp,
-            IntRegister::Sp,
-            self.curr_fn().stack_allocs as i64 + 16,
-        ));
-        self.blocks[self.curr_block]
-            .instructions
-            .append(&mut insert_bef_jmp);
-        self.insert_jmp(self.curr_fn().body_label.clone());
+    // TODO: remove manual alignment before calls to the prologue
+    pub(crate) fn prologue(&mut self) -> Vec<Instruction> {
+        // align frame size to 16 bytes
+        Self::align(&mut self.curr_fn_mut().stack_allocs, 16);
+
+        vec![
+            #[cfg(debug_assertions)]
+            Instruction::Comment("begin prologue".to_string()),
+            Instruction::Addi(
+                IntRegister::Sp,
+                IntRegister::Sp,
+                -(self.curr_fn().stack_allocs as i64 + 16/* 16 accounts for fp and ra */),
+            ),
+            Instruction::Sd(
+                IntRegister::Fp,
+                Pointer::Stack(IntRegister::Sp, self.curr_fn().stack_allocs + 8),
+            ),
+            Instruction::Sd(
+                IntRegister::Ra,
+                Pointer::Stack(IntRegister::Sp, self.curr_fn().stack_allocs),
+            ),
+            Instruction::Addi(
+                IntRegister::Fp,
+                IntRegister::Sp,
+                self.curr_fn().stack_allocs as i64 + 16,
+            ),
+            #[cfg(debug_assertions)]
+            Instruction::Comment("end prologue".to_string()),
+        ]
     }
 
     pub(crate) fn epilogue(&mut self) {

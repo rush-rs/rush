@@ -6,6 +6,25 @@ use rush_analyzer::InfixOp;
 
 use crate::register::{FloatRegister, IntRegister};
 
+pub(crate) struct Block {
+    pub(crate) label: String,
+    pub(crate) instructions: Vec<Instruction>,
+}
+
+impl Display for Block {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "\n{}:\n{}",
+            self.label,
+            self.instructions
+                .iter()
+                .map(|i| format!("    {}\n", i.to_string().replace('\n', "\n    ")))
+                .collect::<String>()
+        )
+    }
+}
+
 pub enum Instruction {
     Ret,
     Call(String),

@@ -4,7 +4,7 @@ use rush_analyzer::Type;
 
 use crate::{
     compiler::Compiler,
-    instruction::{Instruction, Pointer},
+    instruction::{Block, Instruction, Pointer},
     register::{FloatRegister, IntRegister, Register, FLOAT_REGISTERS, INT_REGISTERS},
 };
 
@@ -43,6 +43,7 @@ impl From<Type> for Size {
 }
 
 impl Compiler {
+    // TODO: write documentation for this function
     pub(crate) fn align(ptr: &mut i64, size: i64) {
         if *ptr % size != 0 {
             *ptr += size - *ptr % size;
@@ -65,7 +66,7 @@ impl Compiler {
         self.curr_fn.as_mut().expect("always called from functions")
     }
 
-    /// Allocates (and returns) the next unused, general purpose int register
+    /// Allocates and returns the next unused, general purpose int register.
     pub(crate) fn alloc_ireg(&self) -> IntRegister {
         for reg in INT_REGISTERS {
             if !self.used_registers.contains(&Register::Int(*reg)) {
@@ -75,7 +76,7 @@ impl Compiler {
         unreachable!("out of registers!")
     }
 
-    /// Allocates (and returns) the next unused, general purpose float register
+    /// Allocates and returns the next unused, general purpose float register.
     pub(crate) fn alloc_freg(&self) -> FloatRegister {
         for reg in FLOAT_REGISTERS {
             if !self.used_registers.contains(&Register::Float(*reg)) {
@@ -85,13 +86,13 @@ impl Compiler {
         unreachable!("out of float registers!")
     }
 
-    /// Marks a register as used
+    /// Helper function which marks a register as used
     pub(crate) fn use_reg(&mut self, reg: Register) {
         self.used_registers.push(reg)
     }
 
     /// Marks a register as unused.
-    /// If the register appears twice in the vec, only remove one occurrence
+    /// If the register appears twice in the vec, this only removes the first occurrence.
     pub(crate) fn release_reg(&mut self, reg: Register) {
         self.used_registers.remove(
             self.used_registers
@@ -102,7 +103,7 @@ impl Compiler {
     }
 
     /// Appends a new basic block.
-    /// If the specified label already exists, it is appended with a numeric suffix.
+    /// The initial label might be modified by the gen_label function.
     /// The final label is then returned for later usage.
     pub(crate) fn append_block(&mut self, label: &str) -> String {
         let label = self.gen_label(label);
@@ -115,18 +116,23 @@ impl Compiler {
         label
     }
 
+    /// Helperfunction for generating labels for basic blocks.
+    /// If the specified label already exists, it gets a numeric suffix.
     pub(crate) fn gen_label(&self, label: &str) -> String {
         let mut count = 1;
         let mut out = label.to_string();
+
         while self.blocks.iter().any(|b| b.label == out) {
             out = format!("{label}_{}", count);
             count += 1;
         }
+
         out
     }
 
     /// Helper function for resolving identifier names.
     /// Searches the scopes first. If no match was found, the fitting global variable is returned.
+    /// Panics if the variable does not exist.
     pub(crate) fn resolve_name(&self, name: &str) -> &Option<Variable> {
         // look for normal variables first
         for scope in self.scopes.iter().rev() {
@@ -134,6 +140,7 @@ impl Compiler {
                 return variable;
             }
         }
+
         // return reference to global variable
         self.globals.get(name).expect("every variable exists")
     }
@@ -154,10 +161,13 @@ impl Compiler {
     }
 
     #[inline]
+    /// Inserts an [`Instruction`] at the end of the current basic block.
     pub(crate) fn insert(&mut self, instruction: Instruction) {
         self.blocks[self.curr_block].instructions.push(instruction);
     }
 
+    /// Places the cursor at the end of the specified block.
+    /// If the block label is invalid, the function panics.
     pub(crate) fn insert_at(&mut self, label: &str) {
         self.curr_block = self
             .blocks
@@ -167,54 +177,53 @@ impl Compiler {
     }
 
     #[inline]
+    /// Adds a new scope to the top of the stack.
     pub(crate) fn push_scope(&mut self) {
         self.scopes.push(HashMap::new())
     }
 
     #[inline]
+    /// Removes the top of the scopes stack.
     pub(crate) fn pop_scope(&mut self) {
         self.scopes.pop();
     }
 }
 
-pub(crate) struct Block {
-    pub(crate) label: String,
-    pub(crate) instructions: Vec<Instruction>,
-}
-
-impl Display for Block {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "\n{}:\n{}",
-            self.label,
-            self.instructions
-                .iter()
-                .map(|i| format!("    {}\n", i.to_string().replace('\n', "\n    ")))
-                .collect::<String>()
-        )
-    }
-}
-
 pub(crate) struct Function {
-    /// Specifies how many bytes of stack space need to be allocated for the current function.
+    /// Specifies how many bytes of stack memory are required by the current function.
     /// Does not include the necessary allocations for `ra` or `fp`
     pub(crate) stack_allocs: i64,
-    /// Holds the value of the label which contains the function body.
-    pub(crate) body_label: String,
     /// Holds the value of the label which contains the epilogue of the current function.
     pub(crate) epilogue_label: String,
 }
 
+impl Function {
+    /// Creates a new [`Function`].
+    /// The `stack_allocs` is initialized as 0.
+    pub(crate) fn new(epilogue_label: String) -> Self {
+        Function {
+            stack_allocs: 0,
+            epilogue_label,
+        }
+    }
+}
+
 pub(crate) struct Loop {
-    /// Specifies the `loop_head` label of the current loop
+    /// Specifies the `loop_head` label of the current loop.
+    /// Used int the `continue` statement.
     pub(crate) loop_head: String,
-    /// Specifies the `after_loop` label of the current loop
+    /// Specifies the `after_loop` label of the current loop.
+    /// Used int the `break` statement.
     pub(crate) after_loop: String,
 }
 
+////////// Data Objects //////////
+
+/// A [`DataObj`] is part of the `.data` and `.rodata` sections of the final program.
 pub(crate) struct DataObj {
+    /// The label / name of the data object.
     pub(crate) label: String,
+    /// Holds the actual contents of the data object whilst saving type information.
     pub(crate) data: DataObjType,
 }
 
@@ -226,8 +235,11 @@ impl Display for DataObj {
 
 #[derive(Debug, PartialEq)]
 pub(crate) enum DataObjType {
+    /// Holds a float value of the `.dword` size.
     Float(f64),
+    /// Holds an int value of the `.dword` size.
     Dword(i64),
+    /// Holds 1 byte values like `char` and `bool`
     Byte(i64),
 }
 
