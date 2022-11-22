@@ -31,7 +31,6 @@ pub struct Compiler<'ctx> {
     // the scope stack (first is the root / function scope, last is the current scope)
     pub(crate) scopes: Vec<HashMap<String, Variable<'ctx>>>,
     // global variables
-    #[allow(dead_code)] // TODO: remove this rule
     pub(crate) globals: HashMap<String, PointerValue<'ctx>>,
     // a set of all builtin functions already declared (`imported`) so far
     pub(crate) declared_builtins: HashSet<&'ctx str>,
