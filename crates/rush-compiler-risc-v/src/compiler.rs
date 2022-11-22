@@ -575,10 +575,17 @@ impl Compiler {
         let value_reg = self.expression(node.expr);
 
         match value_reg {
-            Some(Register::Int(reg)) => self.insert(Instruction::Sd(
-                reg,
-                Pointer::Stack(IntRegister::Fp, offset),
-            )),
+            Some(Register::Int(reg)) => match type_ {
+                Type::Bool | Type::Char => self.insert(Instruction::Sb(
+                    reg,
+                    Pointer::Stack(IntRegister::Fp, offset),
+                )),
+                Type::Int => self.insert(Instruction::Sd(
+                    reg,
+                    Pointer::Stack(IntRegister::Fp, offset),
+                )),
+                _ => unreachable!("cannot use these types as ints"),
+            },
             Some(Register::Float(reg)) => self.insert(Instruction::Fsd(
                 reg,
                 Pointer::Stack(IntRegister::Fp, offset),

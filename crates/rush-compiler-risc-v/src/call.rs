@@ -157,10 +157,22 @@ impl Compiler {
                                 self.curr_fn_mut().stack_allocs += size as i64;
                                 let offset = -self.curr_fn().stack_allocs as i64 - 16;
 
-                                self.insert(Instruction::Sd(
-                                    curr_reg,
-                                    Pointer::Stack(IntRegister::Fp, offset),
-                                ));
+                                match type_ {
+                                    Type::Int => {
+                                        self.insert(Instruction::Sd(
+                                            curr_reg,
+                                            Pointer::Stack(IntRegister::Fp, offset),
+                                        ));
+                                    }
+                                    Type::Bool | Type::Char => {
+                                        self.insert(Instruction::Sb(
+                                            curr_reg,
+                                            Pointer::Stack(IntRegister::Fp, offset),
+                                        ));
+                                    }
+                                    _ => unreachable!(""),
+                                }
+
                                 self.insert(Instruction::Mov(curr_reg, res_reg.into()));
                             }
                         }
