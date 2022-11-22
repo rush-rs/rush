@@ -25,6 +25,15 @@ impl Display for Block {
     }
 }
 
+impl Block {
+    pub(crate) fn new(label: String) -> Self {
+        Self {
+            label,
+            instructions: vec![],
+        }
+    }
+}
+
 pub enum Instruction {
     Ret,
     Call(String),

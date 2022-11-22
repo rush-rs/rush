@@ -142,6 +142,7 @@ impl Compiler {
 
         // prologue is inserted after the body (because it now knows about the frame size)
         let mut prologue = self.prologue();
+        self.insert_at(&fn_block); // resets the current block back to the fn block
         prologue.append(&mut self.blocks[self.curr_block].instructions);
         self.blocks[self.curr_block].instructions = prologue;
 
@@ -199,12 +200,12 @@ impl Compiler {
         self.data_section.push(DataObj { label, data });
     }
 
-    /// Compiles a [`AnalyzedFunctionDefinition`] declaration.
+    /// Compiles an [`AnalyzedFunctionDefinition`] declaration.
     fn function_declaration(&mut self, node: AnalyzedFunctionDefinition) {
         // append block for the function
-        let block_label = format!("main..{}", node.name);
-        self.append_block(&block_label);
-        self.insert_at(&block_label);
+        let fn_block = format!("main..{}", node.name);
+        self.append_block(&fn_block);
+        self.insert_at(&fn_block);
 
         // add the epilogue label
         let epilogue_label = self.gen_label("epilogue");
@@ -213,6 +214,7 @@ impl Compiler {
         // push a new scope for the function
         self.push_scope();
 
+        // specifies which param is the current one ( 0 = a0 / fa0)
         let mut int_cnt = 0;
         let mut float_cnt = 0;
 
@@ -225,6 +227,7 @@ impl Compiler {
             Instruction::Comment("save params on stack".to_string()),
         ];
 
+        // save all param values in the current scope / on the stack
         for param in node.params {
             match param.type_ {
                 Type::Int | Type::Char | Type::Bool => {
@@ -328,7 +331,7 @@ impl Compiler {
 
         // compile prologue
         let mut prologue = self.prologue();
-        self.insert_at(&block_label);
+        self.insert_at(&fn_block); // resets the current block back to the fn block
         prologue.append(&mut param_store_instructions);
         prologue.append(&mut self.blocks[self.curr_block].instructions);
         self.blocks[self.curr_block].instructions = prologue;
@@ -402,6 +405,8 @@ impl Compiler {
         res
     }
 
+    /// Copiles an [`AnalyzedStatement`].
+    /// Invokes the corresponding function for most of the statement options.
     fn statement(&mut self, node: AnalyzedStatement) {
         match node {
             AnalyzedStatement::Let(node) => self.let_statement(node),
@@ -425,11 +430,14 @@ impl Compiler {
         }
     }
 
+    /// Compiles an [`AnalyzedReturnStmt`].
+    /// If the node contains an optional expr, it is compiled and its result is moved into the
+    /// correct return-value register (corresponding to the result type of the expr).
     fn return_stmt(&mut self, node: AnalyzedReturnStmt) {
         // if there is an expression, compile it
         if let Some(expr) = node {
             match self.expression(expr) {
-                // already in the correct registers
+                // already in the correct registers, no move required
                 Some(Register::Int(IntRegister::A0) | Register::Float(FloatRegister::Fa0)) => {}
                 Some(Register::Int(reg)) => self.insert(Instruction::Mov(IntRegister::A0, reg)),
                 Some(Register::Float(reg)) => {
@@ -438,102 +446,43 @@ impl Compiler {
                 None => {} // returns unit, do nothing
             }
         }
-        // jump to the epilogue label
+        // jump to the epilogue label (do actual return)
         self.insert_jmp(self.curr_fn().epilogue_label.clone());
     }
 
+    /// Compiles an [`AnalyzedLoopStmt`].
+    /// After each iteration, there is an unconditional jump back to the loop head (i.e. `continue`).
+    /// In this looping construct, manual control flow like `break` is mandatory.
     fn loop_stmt(&mut self, node: AnalyzedLoopStmt) {
         let loop_head = self.append_block("loop_head");
-        self.insert_jmp(loop_head.clone());
-        self.insert_at(&loop_head);
-        let after_loop_label = self.gen_label("after_loop");
+        let after_loop = self.gen_label("after_loop");
         self.curr_loop = Some(Loop {
             loop_head: loop_head.clone(),
-            after_loop: after_loop_label.clone(),
+            after_loop: after_loop.clone(),
         });
+
+        self.insert_at(&loop_head);
         self.block(node.block);
         self.insert_jmp(loop_head);
-        self.blocks.push(Block {
-            label: after_loop_label.clone(),
-            instructions: vec![],
-        });
-        self.insert_at(&after_loop_label);
+
+        self.blocks.push(Block::new(after_loop.clone()));
+        self.insert_at(&after_loop);
     }
 
+    /// Compiles an [`AnalyzedWhileStmt`].
+    /// Before each iteration, the loop condition is evaluated and compared against `false`.
+    /// If the result is `false`, there is a jump to the basic block after the loop (i.e. `break`).
     fn while_stmt(&mut self, node: AnalyzedWhileStmt) {
-        let while_loop_head = self.append_block("while_head");
-        let after_loop_label = self.gen_label("after_while");
-
-        // enter loop from outside
-        // TODO: maybe remove useless jumps?
-        self.insert_jmp(while_loop_head.clone());
-        self.insert_at(&while_loop_head);
+        let while_head = self.append_block("while_head");
+        let after_loop = self.gen_label("after_while");
+        self.insert_at(&while_head);
 
         // compile the condition
         #[cfg(debug_assertions)]
         self.insert(Instruction::Comment("while condition".to_string()));
 
-        let expr_res = self.expression(node.cond).expect("cond is always a bool");
-        self.insert(Instruction::BrCond(
-            Condition::Eq,
-            IntRegister::Zero,
-            expr_res.into(),
-            after_loop_label.clone(),
-        ));
-
-        // compile the body
-        self.curr_loop = Some(Loop {
-            loop_head: while_loop_head.clone(),
-            after_loop: after_loop_label.clone(),
-        });
-
-        #[cfg(debug_assertions)]
-        self.insert(Instruction::Comment("while body".to_string()));
-
-        self.block(node.block);
-
-        // jump back to the loop head
-        self.insert_jmp(while_loop_head);
-
-        self.blocks.push(Block {
-            label: after_loop_label.clone(),
-            instructions: vec![],
-        });
-
-        // place the cursor after the loop body
-        self.insert_at(&after_loop_label);
-    }
-
-    fn for_stmt(&mut self, node: AnalyzedForStmt) {
-        let for_head = self.append_block("for_head");
-        let after_loop = self.append_block("after_for");
-
-        // compile the initialization expression
-        let init_type = node.initializer.result_type();
-        #[cfg(debug_assertions)]
-        self.insert(Instruction::Comment(format!(
-            "loop initializer: {}",
-            node.ident
-        )));
-        let res = self.expression(node.initializer).map(|reg| {
-            self.use_reg(reg);
-            (
-                Variable {
-                    type_: init_type,
-                    value: VariableValue::Register(reg),
-                },
-                reg,
-            )
-        });
-        self.push_scope();
-        self.scope_mut()
-            .insert(node.ident.to_string(), res.as_ref().map(|r| r.0.clone()));
-
-        // compile the condition
-        self.insert_at(&for_head);
-        #[cfg(debug_assertions)]
-        self.insert(Instruction::Comment("loop condition".to_string()));
-        let expr_res = self.expression(node.cond).expect("cond is always a bool");
+        let expr_res = self.expression(node.cond).expect("cond is not unit");
+        // if the condition evaluates to `false`, break out of the loop
         self.insert(Instruction::BrCond(
             Condition::Eq,
             IntRegister::Zero,
@@ -541,30 +490,96 @@ impl Compiler {
             after_loop.clone(),
         ));
 
+        // compile the body
+        self.curr_loop = Some(Loop {
+            loop_head: while_head.clone(),
+            after_loop: after_loop.clone(),
+        });
+
+        #[cfg(debug_assertions)]
+        self.insert(Instruction::Comment("while body".to_string()));
+
+        self.block(node.block);
+        // jump back to the loop head
+        self.insert_jmp(while_head);
+
+        self.blocks.push(Block::new(after_loop.clone()));
+
+        // place the cursor after the loop body
+        self.insert_at(&after_loop);
+    }
+
+    /// Compiles an [`AnalyzedForStmt`].
+    /// Before the loop starts, an induction variable is initialized to a value.
+    /// Before each iteration, the loop condition is verified to be `true`.
+    /// Otherwise, there will be a `break` out of the looping construct.
+    /// At the end of each iteration, the update expression is invoked, its value is omitted.
+    fn for_stmt(&mut self, node: AnalyzedForStmt) {
+        let for_head = self.append_block("for_head");
+        let after_loop = self.append_block("after_for");
+
+        //// INIT ////
+        #[cfg(debug_assertions)]
+        self.insert(Instruction::Comment(format!("loop init: {}", node.ident)));
+
+        let type_ = node.initializer.result_type();
+        let res = self.expression(node.initializer).map(|reg| {
+            self.use_reg(reg);
+            (
+                Variable {
+                    type_,
+                    value: VariableValue::Register(reg),
+                },
+                reg,
+            )
+        });
+
+        // add a new scope and insert the induction variable into it
+        self.push_scope();
+        self.scope_mut()
+            .insert(node.ident.to_string(), res.as_ref().map(|r| r.0.clone()));
+
+        //// CONDITION ////
+        self.insert_at(&for_head);
+
+        #[cfg(debug_assertions)]
+        self.insert(Instruction::Comment("loop condition".to_string()));
+
+        let expr_res = self.expression(node.cond).expect("cond is non-unit");
+        self.insert(Instruction::BrCond(
+            Condition::Eq,
+            IntRegister::Zero,
+            expr_res.into(),
+            after_loop.clone(),
+        ));
+
+        //// BODY ////
+        #[cfg(debug_assertions)]
+        self.insert(Instruction::Comment("loop body".to_string()));
+
         self.curr_loop = Some(Loop {
             loop_head: for_head.clone(),
             after_loop: after_loop.clone(),
         });
 
-        #[cfg(debug_assertions)]
-        self.insert(Instruction::Comment("loop body".to_string()));
-
-        // compile the loop block
+        // compile the loop block: cannot use `self.block` due to scoping
         for stmt in node.block.stmts {
             self.statement(stmt)
         }
         // compile optional expr
         node.block.expr.map(|e| self.expression(e));
 
-        // compile the update expression
+        //// UPDATE EXPR ////
         #[cfg(debug_assertions)]
         self.insert(Instruction::Comment("loop update".to_string()));
+
         self.expression(node.update);
         self.pop_scope();
 
         // jump back to the loop start
         self.insert_jmp(for_head);
 
+        //// TAIL ////
         self.insert_at(&after_loop);
 
         // release induction register at the end
@@ -573,11 +588,13 @@ impl Compiler {
         }
     }
 
-    /// Allocates the variable on the stack.
-    /// Also increments the `additional_stack_space` of the current function
+    /// Compiles an [`AnalyzedLetStmt`]
+    /// Allocates a new variable on the stack.
+    /// Also increments the `stack_allocs` value of the current function
     fn let_statement(&mut self, node: AnalyzedLetStmt) {
         let type_ = node.expr.result_type();
 
+        // alignment and offset calculation
         let size = Size::from(type_).byte_count();
         Self::align(&mut self.curr_fn_mut().stack_allocs, size);
         self.curr_fn_mut().stack_allocs += size as i64;
@@ -585,9 +602,8 @@ impl Compiler {
 
         #[cfg(debug_assertions)]
         self.insert(Instruction::Comment(format!("let {}", node.name)));
-        let value_reg = self.expression(node.expr);
 
-        match value_reg {
+        match self.expression(node.expr) {
             Some(Register::Int(reg)) => match type_ {
                 Type::Bool | Type::Char => self.insert(Instruction::Sb(
                     reg,
@@ -597,20 +613,20 @@ impl Compiler {
                     reg,
                     Pointer::Stack(IntRegister::Fp, offset),
                 )),
-                _ => unreachable!("cannot use these types as ints"),
+                _ => unreachable!("only the types above use int registers"),
             },
             Some(Register::Float(reg)) => self.insert(Instruction::Fsd(
                 reg,
                 Pointer::Stack(IntRegister::Fp, offset),
             )),
             None => {
-                // insert a dummy variable into the HashMap
+                // unit / never type: insert a dummy variable into the HashMap
                 self.scope_mut().insert(node.name.to_string(), None);
                 return;
             }
         }
 
-        // insert variable into current scope
+        // insert variable into the current scope
         let var = Variable {
             type_,
             value: VariableValue::Pointer(Pointer::Stack(IntRegister::Fp, offset)),
@@ -618,19 +634,28 @@ impl Compiler {
         self.scope_mut().insert(node.name.to_string(), Some(var));
     }
 
+    /// Compiles an [`AnalyzedExpression`].
     pub(crate) fn expression(&mut self, node: AnalyzedExpression) -> Option<Register> {
         match node {
-            AnalyzedExpression::Block(node) => self.block(*node),
-            AnalyzedExpression::If(node) => self.if_expr(*node),
             AnalyzedExpression::Int(value) => {
                 let dest_reg = self.alloc_ireg();
                 self.insert(Instruction::Li(dest_reg, value));
                 Some(Register::Int(dest_reg))
             }
+            AnalyzedExpression::Bool(value) => {
+                let dest_reg = self.alloc_ireg();
+                self.insert(Instruction::Li(dest_reg, value as i64));
+                Some(Register::Int(dest_reg))
+            }
+            AnalyzedExpression::Char(value) => {
+                let dest_reg = self.alloc_ireg();
+                self.insert(Instruction::Li(dest_reg, value as i64));
+                Some(Register::Int(dest_reg))
+            }
             AnalyzedExpression::Float(value) => {
                 let dest_reg = self.alloc_freg();
 
-                // if there is already a float constant with this label, use it
+                // if there is already a float constant with this value, use its label
                 // otherwise, create a new float constant and use its label
                 let float_value_label = match self
                     .rodata_section
@@ -648,7 +673,7 @@ impl Compiler {
                     }
                 };
 
-                // load value from float constant into `dest_reg`
+                // load the value from float constant into `dest_reg`
                 self.insert(Instruction::Fld(
                     dest_reg,
                     Pointer::Label(float_value_label),
@@ -656,17 +681,8 @@ impl Compiler {
 
                 Some(Register::Float(dest_reg))
             }
-            AnalyzedExpression::Bool(value) => {
-                let dest_reg = self.alloc_ireg();
-                self.insert(Instruction::Li(dest_reg, value as i64));
-                Some(Register::Int(dest_reg))
-            }
-            AnalyzedExpression::Char(value) => {
-                let dest_reg = self.alloc_ireg();
-                self.insert(Instruction::Li(dest_reg, value as i64));
-                Some(Register::Int(dest_reg))
-            }
             AnalyzedExpression::Ident(ident) => {
+                // if this is a placeholder or dummy variable, ignore it
                 let var = match self.resolve_name(ident.ident).clone() {
                     Some(var) => var,
                     None => return None,
@@ -682,9 +698,13 @@ impl Compiler {
             AnalyzedExpression::Call(node) => self.call_expr(*node),
             AnalyzedExpression::Cast(node) => self.cast_expr(*node),
             AnalyzedExpression::Grouped(node) => self.expression(*node),
+            AnalyzedExpression::Block(node) => self.block(*node),
+            AnalyzedExpression::If(node) => self.if_expr(*node),
         }
     }
 
+    /// Loads the specified variable into a register.
+    /// Decides which load operation is to be used as it depends on the data size.
     fn load_value_from_variable(&mut self, var: Variable) -> Option<Register> {
         match var.value {
             VariableValue::Pointer(ptr) => match var.type_ {
@@ -703,13 +723,17 @@ impl Compiler {
                     self.insert(Instruction::Fld(dest_reg, ptr));
                     Some(Register::Float(dest_reg))
                 }
-                Type::Unit | Type::Never => None,
-                Type::Unknown => unreachable!("analyzer would have failed"),
+                _ => unreachable!("either filtered or impossible"),
             },
             VariableValue::Register(reg) => Some(reg),
         }
     }
 
+    /// Compiles an [`AnalyzedAssignExpr`].
+    /// Performs simple assignments and complex operator-backed assignments.
+    /// For the latter, the assignee's current value is loaded into a temporary register.
+    /// Following that, the operation is performed by `self.infix_helper`.
+    /// Lastly, a correct store instruction is used to assign the resulting value to the assignee.
     fn assign_expr(&mut self, node: AnalyzedAssignExpr) {
         let rhs_type = node.expr.result_type();
 
@@ -719,6 +743,7 @@ impl Compiler {
             .expect("filtered above")
             .clone();
 
+        // holds the value of the rhs (either simple or the result of an operation)
         let rhs_reg = match node.op {
             AssignOp::Basic => match self.expression(node.expr) {
                 Some(reg) => reg,
@@ -749,20 +774,25 @@ impl Compiler {
                 Type::Int => self.insert(Instruction::Sd(rhs_reg.into(), ptr)),
                 Type::Float => self.insert(Instruction::Fsd(rhs_reg.into(), ptr)),
                 Type::Bool | Type::Char => self.insert(Instruction::Sb(rhs_reg.into(), ptr)),
-                _ => unreachable!("other types cannot exist in an assignment"),
+                Type::Unit | Type::Never => {} // ignore unit types
+                _ => unreachable!("the analyzer would have failed"),
             },
             VariableValue::Register(dest) => match rhs_type {
                 Type::Int | Type::Bool | Type::Char => {
                     self.insert(Instruction::Mov((dest).into(), rhs_reg.into()))
                 }
-                Type::Float => todo!(),
+                Type::Float => todo!(), // TODO: impl float assignments
                 _ => unreachable!("other types cannot exist in an assignment"),
             },
         }
     }
 
+    /// Compiles an [`AnalyzedIfExpr`].
+    /// The result of the expression is saved in a single register (reflecting the result type).
+    /// Control flow is accomplished through the use of branches.
+    /// The condition is verified using a normal conditional branch, comparing it to `true`.
     fn if_expr(&mut self, node: AnalyzedIfExpr) -> Option<Register> {
-        // save the bool condition in this register
+        // (bool) result of the condition
         let cond_reg = self
             .expression(node.cond)
             .expect("cond is not unit / never");
@@ -771,12 +801,13 @@ impl Compiler {
         let res_reg = match node.result_type {
             Type::Float => Some(self.alloc_freg().to_reg()),
             Type::Int | Type::Bool | Type::Char => Some(self.alloc_ireg().to_reg()),
-            _ => None,
+            _ => None, // other types require no register
         };
 
         let then_block = self.append_block("then");
         let merge_block = self.append_block("merge");
 
+        // if the condition evaluated to `1` / `true`, the `then` block is entered
         self.insert(Instruction::BrCond(
             Condition::Ne,
             cond_reg.into(),
@@ -784,8 +815,10 @@ impl Compiler {
             then_block.clone(),
         ));
 
+        // if there is an `else` block, compile it
         if let Some(else_block) = node.else_block {
             let else_block_label = self.append_block("else");
+            // stands directly below the conditional branch
             self.insert_jmp(else_block_label.clone());
             self.insert_at(&else_block_label);
             let else_reg = self.block(else_block);
@@ -804,6 +837,7 @@ impl Compiler {
             }
         }
 
+        // regardless of the previous block, insert a jump to the `merge` block
         self.insert_jmp(merge_block.clone());
 
         self.insert_at(&then_block);
@@ -820,21 +854,26 @@ impl Compiler {
             _ => {}
         }
 
+        // jump to the `merge` block after this branch
         self.insert_jmp(merge_block.clone());
+
+        // set the cursor position to the end of the `merge` block
         self.insert_at(&merge_block);
 
         res_reg
     }
 
+    /// Compiles an [`AnalyzedInfixExpr`].
+    /// After compiling the lhs and rhs, the `infix_helper` is invoked.
     fn infix_expr(&mut self, node: AnalyzedInfixExpr) -> Option<Register> {
         let type_ = node.lhs.result_type();
 
-        // mark the lhs register as used
         let lhs_reg = self.expression(node.lhs)?;
+        // mark the lhs register as used
         self.use_reg(lhs_reg);
 
-        // mark the rhs register as used
         let rhs_reg = self.expression(node.rhs)?;
+        // mark the rhs register as used
         self.use_reg(rhs_reg);
 
         let res = self.infix_helper(lhs_reg, rhs_reg, node.op, type_);
@@ -846,6 +885,7 @@ impl Compiler {
         Some(res)
     }
 
+    /// Helper function which handles infix expressions.
     fn infix_helper(&mut self, lhs: Register, rhs: Register, op: InfixOp, type_: Type) -> Register {
         // creates the two result registers
         // eventually, just one of the two is used
@@ -876,9 +916,29 @@ impl Compiler {
             (Type::Int, InfixOp::Pow) => self
                 .__rush_internal_pow_int(lhs.into(), rhs.into())
                 .to_reg(),
+            (Type::Int, InfixOp::Shl) => {
+                self.insert(Instruction::Sl(dest_regi, lhs.into(), rhs.into()));
+                dest_regi.into()
+            }
+            (Type::Int, InfixOp::Shr) => {
+                self.insert(Instruction::Sr(dest_regi, lhs.into(), rhs.into()));
+                dest_regi.into()
+            }
+            (Type::Int | Type::Bool, InfixOp::BitOr | InfixOp::Or) => {
+                self.insert(Instruction::Or(dest_regi, lhs.into(), rhs.into()));
+                dest_regi.into()
+            }
+            (Type::Int | Type::Bool, InfixOp::BitAnd | InfixOp::And) => {
+                self.insert(Instruction::And(dest_regi, lhs.into(), rhs.into()));
+                dest_regi.into()
+            }
+            (Type::Int | Type::Bool, InfixOp::BitXor) => {
+                self.insert(Instruction::Xor(dest_regi, lhs.into(), rhs.into()));
+                dest_regi.into()
+            }
             (
                 // even if not all ops are allowed for char and bool, the analyzer would not accept
-                // illegal programs, threfore this is ok.
+                // illegal programs, therefore this is ok.
                 Type::Int | Type::Char | Type::Bool,
                 InfixOp::Eq
                 | InfixOp::Neq
@@ -904,7 +964,6 @@ impl Compiler {
                 | InfixOp::Gt
                 | InfixOp::Gte,
             ) => {
-                let dest_regi = self.alloc_ireg();
                 self.insert(Instruction::SetFloatCondition(
                     Condition::from(op),
                     dest_regi,
@@ -929,30 +988,11 @@ impl Compiler {
                 self.insert(Instruction::Fdiv(dest_regf, lhs.into(), rhs.into()));
                 dest_regf.into()
             }
-            (Type::Int, InfixOp::Shl) => {
-                self.insert(Instruction::Sl(dest_regi, lhs.into(), rhs.into()));
-                dest_regi.into()
-            }
-            (Type::Int, InfixOp::Shr) => {
-                self.insert(Instruction::Sr(dest_regi, lhs.into(), rhs.into()));
-                dest_regi.into()
-            }
-            (Type::Int | Type::Bool, InfixOp::BitOr | InfixOp::Or) => {
-                self.insert(Instruction::Or(dest_regi, lhs.into(), rhs.into()));
-                dest_regi.into()
-            }
-            (Type::Int | Type::Bool, InfixOp::BitAnd | InfixOp::And) => {
-                self.insert(Instruction::And(dest_regi, lhs.into(), rhs.into()));
-                dest_regi.into()
-            }
-            (Type::Int | Type::Bool, InfixOp::BitXor) => {
-                self.insert(Instruction::Xor(dest_regi, lhs.into(), rhs.into()));
-                dest_regi.into()
-            }
             _ => unreachable!("the analyzer does not allow other combinations"),
         }
     }
 
+    /// Compiles an [`AnalyzedPrefixExpr`].
     fn prefix_expr(&mut self, node: AnalyzedPrefixExpr) -> Option<Register> {
         let lhs_type = node.expr.result_type();
         let lhs_reg = self.expression(node.expr)?;
@@ -963,20 +1003,22 @@ impl Compiler {
                 self.insert(Instruction::Neg(dest_reg, lhs_reg.into()));
                 Some(dest_reg.to_reg())
             }
-            (Type::Float, PrefixOp::Neg) => {
-                let dest_reg = self.alloc_freg();
-                self.insert(Instruction::FNeg(dest_reg, lhs_reg.into()));
-                Some(dest_reg.to_reg())
-            }
             (Type::Bool, PrefixOp::Not) => {
                 let dest_reg = self.alloc_ireg();
                 self.insert(Instruction::Seqz(dest_reg, lhs_reg.into()));
+                Some(dest_reg.to_reg())
+            }
+            (Type::Float, PrefixOp::Neg) => {
+                let dest_reg = self.alloc_freg();
+                self.insert(Instruction::FNeg(dest_reg, lhs_reg.into()));
                 Some(dest_reg.to_reg())
             }
             _ => unreachable!("other types cannot occur in infix expressions"),
         }
     }
 
+    /// Compiles an [`AnalyzedCastExpr`].
+    /// When casting to `char` values, cast functions from the `corelib` are invoked.
     fn cast_expr(&mut self, node: AnalyzedCastExpr) -> Option<Register> {
         let lhs_type = node.expr.result_type();
         let lhs_reg = self.expression(node.expr)?;
@@ -985,14 +1027,21 @@ impl Compiler {
         self.use_reg(lhs_reg);
 
         let res = match (lhs_type, node.type_) {
+            // nop: just return the lhs
             (lhs, rhs) if lhs == rhs => lhs_reg,
             (Type::Bool, Type::Int) | (Type::Bool, Type::Char) | (Type::Char, Type::Int) => lhs_reg,
+            // integer base type casts
             (Type::Int, Type::Float) => {
                 let dest_reg = self.alloc_freg();
                 self.insert(Instruction::CastIntToFloat(dest_reg, lhs_reg.into()));
                 dest_reg.to_reg()
             }
-            (Type::Int, Type::Bool) | (Type::Char, Type::Bool) => {
+            (Type::Char | Type::Bool, Type::Float) => {
+                let dest_reg = self.alloc_freg();
+                self.insert(Instruction::CastByteToFloat(dest_reg, lhs_reg.into()));
+                dest_reg.to_reg()
+            }
+            (Type::Int | Type::Char, Type::Bool) => {
                 let dest_reg = self.alloc_ireg();
                 self.insert(Instruction::Snez(dest_reg, lhs_reg.into()));
                 dest_reg.to_reg()
@@ -1000,11 +1049,7 @@ impl Compiler {
             (Type::Int, Type::Char) => self
                 .__rush_internal_cast_int_to_char(lhs_reg.into())
                 .to_reg(),
-            (Type::Char, Type::Float) | (Type::Bool, Type::Float) => {
-                let dest_reg = self.alloc_freg();
-                self.insert(Instruction::CastByteToFloat(dest_reg, lhs_reg.into()));
-                dest_reg.to_reg()
-            }
+            // float base type casts
             (Type::Float, Type::Int) => {
                 let dest_reg = self.alloc_ireg();
                 self.insert(Instruction::CastFloatToInt(dest_reg, lhs_reg.into()));
@@ -1014,7 +1059,7 @@ impl Compiler {
                 .__rush_internal_cast_float_to_char(lhs_reg.into())
                 .to_reg(),
             (Type::Float, Type::Bool) => {
-                // get a .rodata label which holds a float zero
+                // get a `.rodata` label which holds a float zero to compare to
                 let float_zero_label = match self
                     .rodata_section
                     .iter()
@@ -1039,7 +1084,7 @@ impl Compiler {
                     Pointer::Label(float_zero_label),
                 ));
 
-                // compare the float to 0.0
+                // compare the float to `0.0`
                 let dest_reg = self.alloc_ireg();
                 self.insert(Instruction::SetFloatCondition(
                     Condition::Ne,
@@ -1051,14 +1096,17 @@ impl Compiler {
                 // return the result of the comparison
                 dest_reg.to_reg()
             }
-            _ => unreachable!("cannot use this combination in a typecast"),
+            _ => unreachable!("cannot use other combinations in a typecast"),
         };
 
+        // release the block of the lhs
         self.release_reg(lhs_reg);
+
         Some(res)
     }
 }
 
+// TODO: move tests into `main.rs`
 #[cfg(test)]
 mod tests {
     use std::{

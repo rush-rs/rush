@@ -9,8 +9,13 @@ use crate::{
     utils::Size,
 };
 
+/// An offset of 16 accounts for `fp` and `ra`.
+const BASE_STACK_ALLOCATIONS: i64 = 16;
+
 impl Compiler {
-    // TODO: remove manual alignment before calls to the prologue
+    /// Returns the instructions of a function prologue.
+    /// Automatically sets up any stack allocations and saves `ra` and `fp`.
+    /// Must be invoked after the fn body since the stack frame size must be known at this point.
     pub(crate) fn prologue(&mut self) -> Vec<Instruction> {
         // align frame size to 16 bytes
         Self::align(&mut self.curr_fn_mut().stack_allocs, 16);
@@ -18,38 +23,44 @@ impl Compiler {
         vec![
             #[cfg(debug_assertions)]
             Instruction::Comment("begin prologue".to_string()),
+            // allocate stack spacec
             Instruction::Addi(
                 IntRegister::Sp,
                 IntRegister::Sp,
-                -(self.curr_fn().stack_allocs as i64 + 16/* 16 accounts for fp and ra */),
+                -(self.curr_fn().stack_allocs as i64) - BASE_STACK_ALLOCATIONS,
             ),
+            // save `fp` on the stack
             Instruction::Sd(
                 IntRegister::Fp,
                 Pointer::Stack(IntRegister::Sp, self.curr_fn().stack_allocs + 8),
             ),
+            // save `ra` on the stack
             Instruction::Sd(
                 IntRegister::Ra,
                 Pointer::Stack(IntRegister::Sp, self.curr_fn().stack_allocs),
             ),
+            // also offset the `fp` to start at the new frame
             Instruction::Addi(
                 IntRegister::Fp,
                 IntRegister::Sp,
-                self.curr_fn().stack_allocs as i64 + 16,
+                self.curr_fn().stack_allocs as i64 + BASE_STACK_ALLOCATIONS,
             ),
             #[cfg(debug_assertions)]
             Instruction::Comment("end prologue".to_string()),
         ]
     }
 
+    /// Inserts the instructions for a function epilogue
+    /// at the end of the epilogue label of the current function .
     pub(crate) fn epilogue(&mut self) {
         let epilogue_label = self.curr_fn().epilogue_label.clone();
         self.insert_at(&epilogue_label);
-        // restore fp
+        // restore `fp` from the stack
         self.insert(Instruction::Ld(
             IntRegister::Fp,
             Pointer::Stack(IntRegister::Sp, self.curr_fn().stack_allocs + 8),
         ));
-        // restore ra
+        // restore `ra` from the stack
         self.insert(Instruction::Ld(
             IntRegister::Ra,
             Pointer::Stack(IntRegister::Sp, self.curr_fn().stack_allocs),
@@ -58,12 +69,13 @@ impl Compiler {
         self.insert(Instruction::Addi(
             IntRegister::Sp,
             IntRegister::Sp,
-            self.curr_fn().stack_allocs as i64 + 16,
+            self.curr_fn().stack_allocs as i64 + BASE_STACK_ALLOCATIONS,
         ));
         // return control back to caller
         self.insert(Instruction::Ret);
     }
 
+    // TODO: document + refactor this function
     pub(crate) fn call_expr(&mut self, node: AnalyzedCallExpr) -> Option<Register> {
         let func_label = match node.func {
             "exit" => "exit".to_string(),
