@@ -575,8 +575,7 @@ impl<'src> Compiler<'src> {
                     (left, right) => {
                         let reg = self.get_free_register(match &right {
                             IntValue::Ptr(ptr) => ptr.size,
-                            IntValue::Immediate(num) => Size::min_for_value(num),
-                            IntValue::Register(_) => unreachable!("registers are filtered out above"),
+                            _ => Size::Qword,
                         });
                         self.function_body.push(Instruction::Mov(reg.into(), left));
                         (reg, right)
@@ -752,10 +751,7 @@ impl<'src> Compiler<'src> {
                         {
                             let reg = self.get_free_register(match &src {
                                 IntValue::Ptr(ptr) => ptr.size,
-                                IntValue::Immediate(num) => Size::min_for_value(num),
-                                IntValue::Register(_) => {
-                                    unreachable!("registers are filtered out above")
-                                }
+                                _ => Size::Qword,
                             });
                             debug_assert_eq!(
                                 reg.in_qword_size(),
