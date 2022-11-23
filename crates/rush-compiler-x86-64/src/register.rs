@@ -158,6 +158,76 @@ impl IntRegister {
         }
     }
 
+    pub fn size(&self) -> Size {
+        match self {
+            Self::Rip
+            | Self::Rax
+            | Self::Rbx
+            | Self::Rcx
+            | Self::Rdx
+            | Self::Rsi
+            | Self::Rdi
+            | Self::Rbp
+            | Self::Rsp
+            | Self::R8
+            | Self::R9
+            | Self::R10
+            | Self::R11
+            | Self::R12
+            | Self::R13
+            | Self::R14
+            | Self::R15 => Size::Qword,
+            Self::Eax
+            | Self::Ebx
+            | Self::Ecx
+            | Self::Edx
+            | Self::Esi
+            | Self::Edi
+            | Self::Ebp
+            | Self::Esp
+            | Self::R8d
+            | Self::R9d
+            | Self::R10d
+            | Self::R11d
+            | Self::R12d
+            | Self::R13d
+            | Self::R14d
+            | Self::R15d => Size::Dword,
+            Self::Ax
+            | Self::Bx
+            | Self::Cx
+            | Self::Dx
+            | Self::Si
+            | Self::Di
+            | Self::Bp
+            | Self::Sp
+            | Self::R8w
+            | Self::R9w
+            | Self::R10w
+            | Self::R11w
+            | Self::R12w
+            | Self::R13w
+            | Self::R14w
+            | Self::R15w => Size::Word,
+            Self::Al
+            | Self::Bl
+            | Self::Cl
+            | Self::Dl
+            | Self::Sil
+            | Self::Dil
+            | Self::Bpl
+            | Self::Spl
+            | Self::R8b
+            | Self::R9b
+            | Self::R10b
+            | Self::R11b
+            | Self::R12b
+            | Self::R13b
+            | Self::R14b
+            | Self::R15b => Size::Byte,
+        }
+    }
+
     pub fn next_param(&self) -> Option<Self> {
         match self.in_qword_size() {
             Self::Rdi => Some(Self::Rsi),

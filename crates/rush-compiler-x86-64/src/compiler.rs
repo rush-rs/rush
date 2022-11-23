@@ -166,34 +166,38 @@ impl<'src> Compiler<'src> {
         ptr
     }
 
-    fn pop(&mut self, dest: Value) {
-        // get pointer from current stack pointer
-        let ptr = Pointer::new(
-            // TODO: size param
-            Size::Qword,
-            IntRegister::Rbp,
-            Offset::Immediate(-self.stack_pointer),
-        );
+    fn pop(&mut self, ptr: Pointer, dest: Value) {
+        let offset = match ptr.offset {
+            Offset::Immediate(offset) => -offset,
+            Offset::Symbol(_) => panic!("called `Compiler::pop()` with a symbol offset in ptr"),
+        };
+        // assert the pointer is in the top 8 bytes of the stack
+        debug_assert_eq!(ptr.base, IntRegister::Rbp);
+        debug_assert!(offset <= self.stack_pointer && offset > self.stack_pointer - 8);
+
+        // free memory on stack
+        self.stack_pointer = offset - ptr.size.byte_count();
 
         // move from pointer to dest
         self.function_body.push(match dest {
             Value::Int(dest) => Instruction::Mov(dest, ptr.into()),
             Value::Float(dest) => Instruction::Movsd(dest, ptr.into()),
         });
-
-        // free memory on stack
-        self.stack_pointer -= 8;
     }
 
-    fn get_free_register(&mut self) -> IntRegister {
-        let next = self.used_registers.last().map_or(
-            if self.in_args != 0 {
-                IntRegister::Rdi
-            } else {
-                IntRegister::Rax
-            },
-            |reg| reg.next(),
-        );
+    fn get_free_register(&mut self, size: Size) -> IntRegister {
+        let next = self
+            .used_registers
+            .last()
+            .map_or(
+                if self.in_args != 0 {
+                    IntRegister::Rdi
+                } else {
+                    IntRegister::Rax
+                },
+                |reg| reg.next(),
+            )
+            .in_size(size);
         self.used_registers.push(next);
         next
     }
@@ -303,7 +307,8 @@ impl<'src> Compiler<'src> {
                     // we expect the result to already be in %rax
                     // TODO: is that correct?
                     debug_assert_eq!(reg.in_qword_size(), IntRegister::Rax);
-                    debug_assert_eq!(self.used_registers, [IntRegister::Rax]);
+                    debug_assert_eq!(self.used_registers.len(), 1);
+                    debug_assert_eq!(self.used_registers[0].in_qword_size(), IntRegister::Rax);
                 }
                 Some(Value::Int(IntValue::Ptr(ptr))) => self.function_body.push(Instruction::Mov(
                     IntRegister::Rax.in_size(ptr.size).into(),
@@ -399,7 +404,7 @@ impl<'src> Compiler<'src> {
                 // store ptr size
                 let size = ptr.size;
 
-                let reg = self.get_free_register().in_size(size);
+                let reg = self.get_free_register(size);
 
                 // temporarily move value from memory to register
                 self.function_body
@@ -517,7 +522,11 @@ impl<'src> Compiler<'src> {
                     }
                     // else move the left value into a free register and use that
                     (left @ IntValue::Ptr(_), right) | (left @ IntValue::Immediate(_), right) => {
-                        let reg = self.get_free_register();
+                        let reg = self.get_free_register(match &left {
+                            IntValue::Ptr(ptr) => ptr.size,
+                            IntValue::Immediate(num) => Size::min_for_value(num),
+                            IntValue::Register(_) => unreachable!("registers are filtered out above"),
+                        });
                         self.function_body.push(Instruction::Mov(reg.into(), left));
                         (reg.into(), right)
                     }
@@ -586,15 +595,16 @@ impl<'src> Compiler<'src> {
         let prev_used_float_registers = mem::take(&mut self.used_float_registers);
 
         // save currently used caller-saved registers on stack
+        let mut saved_register_pointers = vec![];
+        let mut saved_float_register_pointers = vec![];
         for reg in prev_used_registers
             .iter()
             .filter(|reg| reg.is_caller_saved())
         {
-            // TODO: not always qword
-            self.push(Size::Qword, Value::Int((*reg).into()));
+            saved_register_pointers.push(self.push(reg.size(), Value::Int((*reg).into())));
         }
         for reg in &prev_used_float_registers {
-            self.push(Size::Qword, Value::Float((*reg).into()));
+            saved_float_register_pointers.push(self.push(Size::Qword, Value::Float((*reg).into())));
         }
 
         self.in_args += 1;
@@ -611,13 +621,25 @@ impl<'src> Compiler<'src> {
                         IntValue::Register(reg)
                             if int_register_index < INT_PARAM_REGISTERS.len() =>
                         {
-                            debug_assert_eq!(reg, INT_PARAM_REGISTERS[int_register_index]);
+                            debug_assert_eq!(
+                                reg.in_qword_size(),
+                                INT_PARAM_REGISTERS[int_register_index]
+                            );
                         }
                         src @ (IntValue::Ptr(_) | IntValue::Immediate(_))
                             if int_register_index < INT_PARAM_REGISTERS.len() =>
                         {
-                            let reg = self.get_free_register();
-                            debug_assert_eq!(reg, INT_PARAM_REGISTERS[int_register_index]);
+                            let reg = self.get_free_register(match &src {
+                                IntValue::Ptr(ptr) => ptr.size,
+                                IntValue::Immediate(num) => Size::min_for_value(num),
+                                IntValue::Register(_) => {
+                                    unreachable!("registers are filtered out above")
+                                }
+                            });
+                            debug_assert_eq!(
+                                reg.in_qword_size(),
+                                INT_PARAM_REGISTERS[int_register_index]
+                            );
                             self.function_body.push(Instruction::Mov(reg.into(), src));
                         }
                         src @ (IntValue::Register(_) | IntValue::Immediate(_)) => {
@@ -629,7 +651,7 @@ impl<'src> Compiler<'src> {
                             memory_offset += 8;
                         }
                         IntValue::Ptr(ptr) => {
-                            let reg = self.get_free_register();
+                            let reg = self.get_free_register(ptr.size);
                             self.function_body
                                 .push(Instruction::Mov(reg.into(), ptr.into()));
                             self.function_body.push(Instruction::Mov(
@@ -712,7 +734,7 @@ impl<'src> Compiler<'src> {
             Type::Int | Type::Char | Type::Bool => {
                 let size =
                     Size::try_from(node.result_type).expect("int, char and bool have a size");
-                let reg = self.get_free_register().in_size(size);
+                let reg = self.get_free_register(size);
                 self.function_body.push(Instruction::Mov(
                     reg.into(),
                     IntRegister::Rax.in_size(size).into(),
@@ -729,15 +751,22 @@ impl<'src> Compiler<'src> {
         };
 
         // restore previously used caller-saved registers from stack
-        for reg in prev_used_float_registers.into_iter().rev() {
-            self.pop(Value::Float(reg.into()));
-        }
-        for reg in prev_used_registers
+        for (reg, ptr) in prev_used_float_registers
             .into_iter()
-            .filter(|reg| reg.is_caller_saved())
+            .zip(saved_float_register_pointers)
             .rev()
         {
-            self.pop(Value::Int(reg.into()));
+            self.pop(ptr, Value::Float(reg.into()));
+        }
+        for (reg, ptr) in prev_used_registers
+            .into_iter()
+            .filter(|reg| reg.is_caller_saved())
+            .collect::<Vec<_>>() // required to know size
+            .into_iter()
+            .zip(saved_register_pointers)
+            .rev()
+        {
+            self.pop(ptr, Value::Int(reg.into()));
         }
 
         result_reg
@@ -754,7 +783,7 @@ impl<'src> Compiler<'src> {
             (Some(Value::Int(_val)), Type::Int, Type::Bool) => todo!(),
             (Some(Value::Int(_val)), Type::Int, Type::Char) => todo!(),
             (Some(Value::Float(val)), Type::Float, Type::Int) => {
-                let reg = self.get_free_register().in_qword_size();
+                let reg = self.get_free_register(Size::Qword);
                 if let FloatValue::Register(reg) = val {
                     // TODO: .iter().position() slow?
                     self.used_float_registers.remove(
@@ -772,7 +801,7 @@ impl<'src> Compiler<'src> {
             (Some(Value::Float(_val)), Type::Float, Type::Char) => todo!(),
             (Some(Value::Int(val)), Type::Bool | Type::Char, Type::Int) => match val {
                 IntValue::Ptr(ptr) => {
-                    let reg = self.get_free_register().in_byte_size();
+                    let reg = self.get_free_register(Size::Byte);
                     self.function_body
                         .push(Instruction::Mov(reg.into(), ptr.into()));
                     Some(Value::Int(reg.in_qword_size().into()))

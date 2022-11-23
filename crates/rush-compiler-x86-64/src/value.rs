@@ -75,6 +75,20 @@ impl Size {
     pub fn bit_count(&self) -> i64 {
         self.byte_count() * 8
     }
+
+    pub fn min_for_value(value: &i64) -> Self {
+        // ranges entered manually, because primitive constants aren't i64
+        match *value {
+            // i8::MIN..=u8::MAX
+            -0x80..=0xFF => Size::Byte,
+            // i16::MIN..=u16::MAX
+            -0x8000..=0xFFFF => Size::Word,
+            // i32::MIN..=u32::MAX
+            -0x8000_0000..=0xFFFF_FFFF => Size::Dword,
+            // i64::MIN..=i64::MAX
+            -0x8000_0000_0000_0000..=0x7FFF_FFFF_FFFF_FFFF => Size::Qword,
+        }
+    }
 }
 
 impl TryFrom<Type> for Size {
