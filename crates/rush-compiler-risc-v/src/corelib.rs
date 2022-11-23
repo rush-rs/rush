@@ -13,10 +13,8 @@ impl Compiler {
         base: IntRegister,
         exponent: IntRegister,
     ) -> IntRegister {
-        // before the function is called, all used registers must be pushed on the stack
+        // before the function is called, all currently used registers are saved
         let mut regs_on_stack = vec![];
-
-        // save all registers which are currently in use
         for (reg, size) in self.used_registers.clone() {
             let offset = self.spill_reg(reg, size);
             regs_on_stack.push((reg, offset, size));
@@ -41,10 +39,8 @@ impl Compiler {
 
     /// Calls the `__rush_internal_cast_int_to_char` function in the rush corelib.
     pub(crate) fn __rush_internal_cast_int_to_char(&mut self, src: IntRegister) -> IntRegister {
-        // before the function is called, all used registers must be pushed on the stack
+        // before the function is called, all currently used registers are saved
         let mut regs_on_stack = vec![];
-
-        // save all registers which are currently in use
         for (reg, size) in self.used_registers.clone() {
             let offset = self.spill_reg(reg, size);
             regs_on_stack.push((reg, offset, size));
@@ -68,10 +64,8 @@ impl Compiler {
 
     /// Calls the `__rush_internal_cast_float_to_char` function in the rush corelib.
     pub(crate) fn __rush_internal_cast_float_to_char(&mut self, src: FloatRegister) -> IntRegister {
-        // before the function is called, all used registers must be pushed on the stack
+        // before the function is called, all currently used registers are saved
         let mut regs_on_stack = vec![];
-
-        // save all registers which are currently in use
         for (reg, size) in self.used_registers.clone() {
             let offset = self.spill_reg(reg, size);
             regs_on_stack.push((reg, offset, size));
