@@ -112,6 +112,15 @@ pub enum Offset {
 
 /////////////////////////////////////////////////
 
+impl Display for Value {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Value::Int(int) => write!(f, "{int}"),
+            Value::Float(float) => write!(f, "{float}"),
+        }
+    }
+}
+
 impl Display for FloatValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {

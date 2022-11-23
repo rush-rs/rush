@@ -125,14 +125,18 @@ impl<'src> Compiler<'src> {
         unreachable!("the analyzer guarantees valid variable references");
     }
 
-    fn add_var(&mut self, name: &'src str, size: Size, value: Value) {
+    fn add_var(&mut self, name: &'src str, size: Size, value: Value, is_param: bool) {
         let kind = match value {
             Value::Int(_) => VariableKind::Int,
             Value::Float(_) => VariableKind::Float,
         };
 
         // push variable
-        let ptr = self.push(size, value);
+        let comment = format!(
+            "{} {name} = {value}",
+            if is_param { "param" } else { "let" }
+        );
+        let ptr = self.push(size, value, Some(comment));
 
         // save pointer in scope
         self.curr_scope().insert(name, Some(Variable { ptr, kind }));
@@ -141,7 +145,7 @@ impl<'src> Compiler<'src> {
         self.requires_frame = true;
     }
 
-    fn push(&mut self, size: Size, value: Value) -> Pointer {
+    fn push(&mut self, size: Size, value: Value, comment: Option<String>) -> Pointer {
         // add padding for correct alignment
         Self::align(&mut self.stack_pointer, size);
 
@@ -158,15 +162,19 @@ impl<'src> Compiler<'src> {
             Offset::Immediate(-self.stack_pointer),
         );
 
-        self.function_body.push(match value {
+        let instr = match value {
             Value::Int(value) => Instruction::Mov(ptr.clone().into(), value),
             Value::Float(value) => Instruction::Movsd(ptr.clone().into(), value),
+        };
+        self.function_body.push(match comment {
+            Some(comment) => Instruction::Commented(Box::new(instr), comment),
+            None => instr,
         });
 
         ptr
     }
 
-    fn pop(&mut self, ptr: Pointer, dest: Value) {
+    fn pop(&mut self, ptr: Pointer, dest: Value, comment: Option<String>) {
         let offset = match ptr.offset {
             Offset::Immediate(offset) => -offset,
             Offset::Symbol(_) => panic!("called `Compiler::pop()` with a symbol offset in ptr"),
@@ -179,9 +187,13 @@ impl<'src> Compiler<'src> {
         self.stack_pointer = offset - ptr.size.byte_count();
 
         // move from pointer to dest
-        self.function_body.push(match dest {
+        let instr = match dest {
             Value::Int(dest) => Instruction::Mov(dest, ptr.into()),
             Value::Float(dest) => Instruction::Movsd(dest, ptr.into()),
+        };
+        self.function_body.push(match comment {
+            Some(comment) => Instruction::Commented(Box::new(instr), comment),
+            None => instr,
         });
     }
 
@@ -249,7 +261,12 @@ impl<'src> Compiler<'src> {
                 FLOAT_PARAM_REGISTERS.get(float_param_index),
             ) {
                 (Type::Float, Ok(size), _, Some(reg)) => {
-                    self.add_var(param.name, size, Value::Float(FloatValue::Register(*reg)));
+                    self.add_var(
+                        param.name,
+                        size,
+                        Value::Float(FloatValue::Register(*reg)),
+                        true,
+                    );
                     float_param_index += 1;
                 }
                 (_, Ok(size), None, _) | (_, Ok(size), _, None) => {
@@ -276,6 +293,7 @@ impl<'src> Compiler<'src> {
                         param.name,
                         size,
                         Value::Int(IntValue::Register(reg.in_size(size))),
+                        true,
                     );
                     int_param_index += 1;
                 }
@@ -394,11 +412,11 @@ impl<'src> Compiler<'src> {
         match self.expression(node.expr) {
             Some(Value::Int(IntValue::Register(reg))) => {
                 let size = expr_type.try_into().expect("value has type int, not `()`");
-                self.add_var(node.name, size, Value::Int(reg.into()));
+                self.add_var(node.name, size, Value::Int(reg.into()), false);
             }
             Some(Value::Int(IntValue::Immediate(num))) => {
                 let size = expr_type.try_into().expect("value has type int, not `()`");
-                self.add_var(node.name, size, Value::Int(num.into()));
+                self.add_var(node.name, size, Value::Int(num.into()), false);
             }
             Some(Value::Int(IntValue::Ptr(ptr))) => {
                 // store ptr size
@@ -411,10 +429,10 @@ impl<'src> Compiler<'src> {
                     .push(Instruction::Mov(reg.into(), ptr.into()));
 
                 // push variable to stack
-                self.add_var(node.name, size, Value::Int(reg.into()));
+                self.add_var(node.name, size, Value::Int(reg.into()), false);
             }
             Some(Value::Float(FloatValue::Register(reg))) => {
-                self.add_var(node.name, Size::Dword, Value::Float(reg.into()));
+                self.add_var(node.name, Size::Dword, Value::Float(reg.into()), false);
             }
             Some(Value::Float(FloatValue::Ptr(ptr))) => {
                 // store ptr size
@@ -427,7 +445,7 @@ impl<'src> Compiler<'src> {
                     .push(Instruction::Movsd(reg.into(), ptr.into()));
 
                 // push variable to stack
-                self.add_var(node.name, size, Value::Float(reg.into()));
+                self.add_var(node.name, size, Value::Float(reg.into()), false);
             }
             None => {
                 self.curr_scope().insert(node.name, None);
@@ -510,42 +528,45 @@ impl<'src> Compiler<'src> {
                 );
 
                 let (left, right) = match (left, right) {
-                    // when one side is already a register, use that
-                    (left @ IntValue::Register(_), right @ IntValue::Register(_))
-                    | (left @ IntValue::Register(_), right @ IntValue::Ptr(_))
-                    | (left @ IntValue::Register(_), right @ IntValue::Immediate(_))
+                    // when one side is already a register, use that in matching size
+                    (IntValue::Register(left), right)
                     // note the swapped sides here
-                    | (right @ IntValue::Ptr(_), left @ IntValue::Register(_))
-                    // note the swapped sides here
-                    | (right @ IntValue::Immediate(_), left @ IntValue::Register(_)) => {
-                        (left, right)
+                    | (right, IntValue::Register(left)) => {
+                        (
+                            match &right {
+                                IntValue::Register(reg) => left.in_size(reg.size()),
+                                IntValue::Ptr(ptr) => left.in_size(ptr.size),
+                                IntValue::Immediate(_) => left,
+                            },
+                            right,
+                        )
                     }
                     // else move the left value into a free register and use that
-                    (left @ IntValue::Ptr(_), right) | (left @ IntValue::Immediate(_), right) => {
-                        let reg = self.get_free_register(match &left {
+                    (left, right) => {
+                        let reg = self.get_free_register(match &right {
                             IntValue::Ptr(ptr) => ptr.size,
                             IntValue::Immediate(num) => Size::min_for_value(num),
                             IntValue::Register(_) => unreachable!("registers are filtered out above"),
                         });
                         self.function_body.push(Instruction::Mov(reg.into(), left));
-                        (reg.into(), right)
+                        (reg, right)
                     }
                 };
 
                 self.function_body.push(match node.op {
-                    InfixOp::Plus => Instruction::Add(left.clone(), right),
-                    InfixOp::Minus => Instruction::Sub(left.clone(), right),
-                    InfixOp::Mul => Instruction::Imul(left.clone(), right),
-                    InfixOp::BitOr => Instruction::Or(left.clone(), right),
-                    InfixOp::BitAnd => Instruction::And(left.clone(), right),
-                    InfixOp::BitXor => Instruction::Xor(left.clone(), right),
+                    InfixOp::Plus => Instruction::Add(left.into(), right),
+                    InfixOp::Minus => Instruction::Sub(left.into(), right),
+                    InfixOp::Mul => Instruction::Imul(left.into(), right),
+                    InfixOp::BitOr => Instruction::Or(left.into(), right),
+                    InfixOp::BitAnd => Instruction::And(left.into(), right),
+                    InfixOp::BitXor => Instruction::Xor(left.into(), right),
                     _ => unreachable!("this arm only matches with above ops"),
                 });
                 if pop_rhs_reg {
                     // free the rhs register
                     self.used_registers.pop();
                 }
-                Some(Value::Int(left))
+                Some(Value::Int(left.into()))
             }
             (
                 Some(Value::Float(left)),
@@ -560,31 +581,31 @@ impl<'src> Compiler<'src> {
 
                 let (left, right) = match (left, right) {
                     // when one side is already a register, use that
-                    (left @ FloatValue::Register(_), right @ (FloatValue::Register(_) | FloatValue::Ptr(_)))
+                    (FloatValue::Register(left), right)
                     // note the swapped sides here
-                    | (right @ FloatValue::Ptr(_), left @ FloatValue::Register(_)) => {
+                    | (right, FloatValue::Register(left)) => {
                         (left, right)
                     }
                     // else move the left value into a free register and use that
-                    (left @ FloatValue::Ptr(_), right) => {
+                    (left, right) => {
                         let reg = self.get_free_float_register();
                         self.function_body.push(Instruction::Movsd(reg.into(), left));
-                        (reg.into(), right)
+                        (reg, right)
                     }
                 };
 
                 self.function_body.push(match node.op {
-                    InfixOp::Plus => Instruction::Addsd(left.clone(), right),
-                    InfixOp::Minus => Instruction::Subsd(left.clone(), right),
-                    InfixOp::Mul => Instruction::Mulsd(left.clone(), right),
-                    InfixOp::Div => Instruction::Divsd(left.clone(), right),
+                    InfixOp::Plus => Instruction::Addsd(left.into(), right),
+                    InfixOp::Minus => Instruction::Subsd(left.into(), right),
+                    InfixOp::Mul => Instruction::Mulsd(left.into(), right),
+                    InfixOp::Div => Instruction::Divsd(left.into(), right),
                     _ => unreachable!("this arm only matches with above ops"),
                 });
                 if pop_rhs_reg {
                     // free the rhs register
                     self.used_registers.pop();
                 }
-                Some(Value::Float(left))
+                Some(Value::Float(left.into()))
             }
             _ => todo!(),
         }
@@ -601,10 +622,18 @@ impl<'src> Compiler<'src> {
             .iter()
             .filter(|reg| reg.is_caller_saved())
         {
-            saved_register_pointers.push(self.push(reg.size(), Value::Int((*reg).into())));
+            saved_register_pointers.push(self.push(
+                reg.size(),
+                Value::Int((*reg).into()),
+                Some(format!("{} byte spill: {reg}", reg.size().byte_count())),
+            ));
         }
         for reg in &prev_used_float_registers {
-            saved_float_register_pointers.push(self.push(Size::Qword, Value::Float((*reg).into())));
+            saved_float_register_pointers.push(self.push(
+                Size::Qword,
+                Value::Float((*reg).into()),
+                Some(format!("8 byte spill: {reg}")),
+            ));
         }
 
         self.in_args += 1;
@@ -756,7 +785,11 @@ impl<'src> Compiler<'src> {
             .zip(saved_float_register_pointers)
             .rev()
         {
-            self.pop(ptr, Value::Float(reg.into()));
+            self.pop(
+                ptr,
+                Value::Float(reg.into()),
+                Some(format!("8 byte reload: {reg}")),
+            );
         }
         for (reg, ptr) in prev_used_registers
             .into_iter()
@@ -766,7 +799,11 @@ impl<'src> Compiler<'src> {
             .zip(saved_register_pointers)
             .rev()
         {
-            self.pop(ptr, Value::Int(reg.into()));
+            self.pop(
+                ptr,
+                Value::Int(reg.into()),
+                Some(format!("{} byte reload: {reg}", reg.size().byte_count())),
+            );
         }
 
         result_reg

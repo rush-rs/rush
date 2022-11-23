@@ -9,6 +9,9 @@ use crate::{
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
+    /// Wraps an instruction with an additional comment
+    Commented(Box<Instruction>, String),
+
     IntelSyntax,
     Global(String),
     Section(Section),
@@ -111,16 +114,19 @@ pub enum Condition {
 impl Display for Instruction {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Instruction::IntelSyntax => writeln!(f, ".intel_syntax"),
-            Instruction::Global(name) => writeln!(f, ".global {name}"),
-            Instruction::Section(section) => writeln!(f, "\n.section {section}"),
-            Instruction::Symbol(name) => writeln!(f, "\n{name}:"),
-            Instruction::Byte(num) => writeln!(f, "    {:11} {num:#04x}  # = {num}", ".byte"),
-            Instruction::Short(num) => writeln!(f, "    {:11} {num:#06x}  # = {num}", ".short"),
-            Instruction::Long(num) => writeln!(f, "    {:11} {num:#010x}  # = {num}", ".long"),
-            Instruction::QuadInt(num) => writeln!(f, "    {:11} {num:#018x}  # = {num}", ".quad"),
+            Instruction::Commented(instr, comment) => {
+                write!(f, "{instr:65}# {comment}", instr = format!("{instr:#}"))
+            }
+            Instruction::IntelSyntax => write!(f, ".intel_syntax"),
+            Instruction::Global(name) => write!(f, ".global {name}"),
+            Instruction::Section(section) => write!(f, "\n.section {section}"),
+            Instruction::Symbol(name) => write!(f, "\n{name}:"),
+            Instruction::Byte(num) => write!(f, "    {:11} {num:#04x}  # = {num}", ".byte"),
+            Instruction::Short(num) => write!(f, "    {:11} {num:#06x}  # = {num}", ".short"),
+            Instruction::Long(num) => write!(f, "    {:11} {num:#010x}  # = {num}", ".long"),
+            Instruction::QuadInt(num) => write!(f, "    {:11} {num:#018x}  # = {num}", ".quad"),
             Instruction::QuadFloat(num) => {
-                writeln!(
+                write!(
                     f,
                     "    {:11} {bits:#018x}  # = {num}{zero}",
                     ".quad",
@@ -128,43 +134,48 @@ impl Display for Instruction {
                     bits = num.to_bits()
                 )
             }
-            Instruction::Octa(num) => writeln!(f, "    {:11} {num:#034x}\t# = {num}", ".octa"),
-            Instruction::Leave => writeln!(f, "    leave"),
-            Instruction::Ret => writeln!(f, "    ret"),
-            Instruction::Syscall => writeln!(f, "    syscall"),
-            Instruction::Call(symbol) => writeln!(f, "    {:11} {symbol}", "call"),
-            Instruction::Push(reg) => writeln!(f, "    {:11} {reg}", "push"),
-            Instruction::Pop(reg) => writeln!(f, "    {:11} {reg}", "pop "),
-            Instruction::Jmp(symbol) => writeln!(f, "    {:11} {symbol}", "jmp "),
-            Instruction::JCond(cond, symbol) => writeln!(f, "    j{cond:10} {symbol}"),
-            Instruction::SetCond(cond, reg) => writeln!(f, "    set{cond:8} {reg}"),
-            Instruction::Mov(dest, src) => writeln!(f, "    {:11} {dest}, {src}", "mov"),
-            Instruction::Add(dest, src) => writeln!(f, "    {:11} {dest}, {src}", "add"),
-            Instruction::Sub(dest, src) => writeln!(f, "    {:11} {dest}, {src}", "sub"),
-            Instruction::Imul(dest, src) => writeln!(f, "    {:11} {dest}, {src}", "imul"),
-            Instruction::Idiv(divisor) => writeln!(f, "    {:11} {divisor}", "idiv"),
-            Instruction::Inc(reg) => writeln!(f, "    {:11} {reg}", "inc"),
-            Instruction::Dec(reg) => writeln!(f, "    {:11} {reg}", "dec"),
-            Instruction::Neg(reg) => writeln!(f, "    {:11} {reg}", "neg"),
-            Instruction::Shl(dest, src) => writeln!(f, "    {:11} {dest}, {src}", "shl"),
-            Instruction::Sar(dest, src) => writeln!(f, "    {:11} {dest}, {src}", "sar"),
-            Instruction::And(dest, src) => writeln!(f, "    {:11} {dest}, {src}", "and"),
-            Instruction::Or(dest, src) => writeln!(f, "    {:11} {dest}, {src}", "or"),
-            Instruction::Xor(dest, src) => writeln!(f, "    {:11} {dest}, {src}", "xor"),
-            Instruction::Cmp(left, right) => writeln!(f, "    {:11} {left}, {right}", "cmp"),
-            Instruction::Cvtsi2sd(dest, src) => writeln!(f, "    {:11} {dest}, {src}", "cvtsi2sd"),
-            Instruction::Movsd(dest, src) => writeln!(f, "    {:11} {dest}, {src}", "movsd"),
-            Instruction::Addsd(dest, src) => writeln!(f, "    {:11} {dest}, {src}", "addsd"),
-            Instruction::Subsd(dest, src) => writeln!(f, "    {:11} {dest}, {src}", "subsd"),
-            Instruction::Mulsd(dest, src) => writeln!(f, "    {:11} {dest}, {src}", "mulsd"),
-            Instruction::Divsd(dest, src) => writeln!(f, "    {:11} {dest}, {src}", "divsd"),
-            Instruction::Xorpd(dest, src) => writeln!(f, "    {:11} {dest}, {src}", "xorpd"),
+            Instruction::Octa(num) => write!(f, "    {:11} {num:#034x}\t# = {num}", ".octa"),
+            Instruction::Leave => write!(f, "    leave"),
+            Instruction::Ret => write!(f, "    ret"),
+            Instruction::Syscall => write!(f, "    syscall"),
+            Instruction::Call(symbol) => write!(f, "    {:11} {symbol}", "call"),
+            Instruction::Push(reg) => write!(f, "    {:11} {reg}", "push"),
+            Instruction::Pop(reg) => write!(f, "    {:11} {reg}", "pop "),
+            Instruction::Jmp(symbol) => write!(f, "    {:11} {symbol}", "jmp "),
+            Instruction::JCond(cond, symbol) => write!(f, "    j{cond:10} {symbol}"),
+            Instruction::SetCond(cond, reg) => write!(f, "    set{cond:8} {reg}"),
+            Instruction::Mov(dest, src) => write!(f, "    {:11} {dest}, {src}", "mov"),
+            Instruction::Add(dest, src) => write!(f, "    {:11} {dest}, {src}", "add"),
+            Instruction::Sub(dest, src) => write!(f, "    {:11} {dest}, {src}", "sub"),
+            Instruction::Imul(dest, src) => write!(f, "    {:11} {dest}, {src}", "imul"),
+            Instruction::Idiv(divisor) => write!(f, "    {:11} {divisor}", "idiv"),
+            Instruction::Inc(reg) => write!(f, "    {:11} {reg}", "inc"),
+            Instruction::Dec(reg) => write!(f, "    {:11} {reg}", "dec"),
+            Instruction::Neg(reg) => write!(f, "    {:11} {reg}", "neg"),
+            Instruction::Shl(dest, src) => write!(f, "    {:11} {dest}, {src}", "shl"),
+            Instruction::Sar(dest, src) => write!(f, "    {:11} {dest}, {src}", "sar"),
+            Instruction::And(dest, src) => write!(f, "    {:11} {dest}, {src}", "and"),
+            Instruction::Or(dest, src) => write!(f, "    {:11} {dest}, {src}", "or"),
+            Instruction::Xor(dest, src) => write!(f, "    {:11} {dest}, {src}", "xor"),
+            Instruction::Cmp(left, right) => write!(f, "    {:11} {left}, {right}", "cmp"),
+            Instruction::Cvtsi2sd(dest, src) => write!(f, "    {:11} {dest}, {src}", "cvtsi2sd"),
+            Instruction::Movsd(dest, src) => write!(f, "    {:11} {dest}, {src}", "movsd"),
+            Instruction::Addsd(dest, src) => write!(f, "    {:11} {dest}, {src}", "addsd"),
+            Instruction::Subsd(dest, src) => write!(f, "    {:11} {dest}, {src}", "subsd"),
+            Instruction::Mulsd(dest, src) => write!(f, "    {:11} {dest}, {src}", "mulsd"),
+            Instruction::Divsd(dest, src) => write!(f, "    {:11} {dest}, {src}", "divsd"),
+            Instruction::Xorpd(dest, src) => write!(f, "    {:11} {dest}, {src}", "xorpd"),
             Instruction::Ucomisd(left, right) => {
-                writeln!(f, "    {:11} {left}, {right}", "ucomisd")
+                write!(f, "    {:11} {left}, {right}", "ucomisd")
             }
             Instruction::Cvttsd2si(dest, src) => {
-                writeln!(f, "    {:11} {dest}, {src}", "cvttsd2si")
+                write!(f, "    {:11} {dest}, {src}", "cvttsd2si")
             }
+        }?;
+        // if not alternate, append a newline
+        match f.alternate() {
+            true => Ok(()),
+            false => writeln!(f),
         }
     }
 }
