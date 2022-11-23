@@ -50,13 +50,17 @@ impl Compiler {
         }
     }
 
+    pub(crate) fn get_offset(&mut self, size: Size) -> i64 {
+        let size = size.byte_count();
+        Self::align(&mut self.curr_fn_mut().stack_allocs, size);
+        self.curr_fn_mut().stack_allocs += size as i64;
+        -self.curr_fn().stack_allocs as i64 - 16
+    }
+
     // TODO: write documentation
     pub(crate) fn spill_reg(&mut self, reg: Register, size: Size) -> i64 {
-        let byte_size = size.byte_count();
-        Self::align(&mut self.curr_fn_mut().stack_allocs, byte_size);
-        self.curr_fn_mut().stack_allocs += byte_size as i64;
-        let offset = -self.curr_fn().stack_allocs as i64 - 16;
-        let comment = format!("{byte_size} byte spill: {reg}");
+        let offset = self.get_offset(size);
+        let comment = format!("{} byte spill: {reg}", size.byte_count());
 
         match reg {
             Register::Int(reg) => {
@@ -130,23 +134,28 @@ impl Compiler {
         call_return_reg
     }
 
+    /// Returns a mutable reference to the current scope.
     pub(crate) fn scope_mut(&mut self) -> &mut HashMap<String, Option<Variable>> {
         self.scopes.last_mut().expect("always called from a scope")
     }
 
+    /// Returns a reference to the current loop being compiled.
     pub(crate) fn curr_loop(&self) -> &Loop {
         self.curr_loop.as_ref().expect("always called from loops")
     }
 
+    /// Returns a reference to the current function being compiled.
     pub(crate) fn curr_fn(&self) -> &Function {
         self.curr_fn.as_ref().expect("always called from functions")
     }
 
+    /// Returns a mutable reference to the current function being compiled.
     pub(crate) fn curr_fn_mut(&mut self) -> &mut Function {
         self.curr_fn.as_mut().expect("always called from functions")
     }
 
     /// Allocates and returns the next unused, general purpose int register.
+    /// TODO: implement this using the next register after the last used
     pub(crate) fn alloc_ireg(&self) -> IntRegister {
         for reg in INT_REGISTERS {
             if !self

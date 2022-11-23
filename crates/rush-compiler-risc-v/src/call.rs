@@ -1,4 +1,4 @@
-use std::vec;
+use std::{mem, vec};
 
 use rush_analyzer::{ast::AnalyzedCallExpr, Type};
 
@@ -87,18 +87,18 @@ impl Compiler {
 
     // TODO: document + refactor this function
     pub(crate) fn call_expr(&mut self, node: AnalyzedCallExpr) -> Option<Register> {
-        let func_label = match node.func {
-            "exit" => "exit".to_string(),
-            func => format!("main..{func}"),
-        };
-
-        // before the function is called, all used registers must be saved
+        // before the function is called, all currently used registers are saved
         let mut regs_on_stack = vec![];
         for (reg, size) in self.used_registers.clone() {
             let offset = self.spill_reg(reg, size);
             regs_on_stack.push((reg, offset, size));
         }
 
+        // save the previous state of the used registers
+        let used_registers_prev = mem::take(&mut self.used_registers);
+
+        // specifies the place of the current register (relative to its type)
+        // `a0` would be `int_cnt = 0`, `fa0` would be `float_cnt = 0`
         let mut float_cnt = 0;
         let mut int_cnt = 0;
 
@@ -127,9 +127,11 @@ impl Compiler {
             }
         }
 
+        // reset counters for new iterations
         int_cnt = 0;
         float_cnt = 0;
 
+        // will later contain all registers used as params (needed for releasing locks later)
         let mut param_regs = vec![];
 
         // if there are caller saved registers, allocate space on the stack
@@ -141,55 +143,39 @@ impl Compiler {
             ));
         }
 
+        // specifies the count of the current register spill
         let mut spill_count = 0;
 
-        for arg in node
-            .args
-            .into_iter()
-            .filter(|a| !matches!(a.result_type(), Type::Unit | Type::Never))
-        {
+        for arg in node.args.into_iter() {
             match arg.result_type() {
+                Type::Unit | Type::Never => continue,
                 Type::Int | Type::Bool | Type::Char => {
                     let type_ = arg.result_type();
-                    let res_reg = self
-                        .expression(arg)
-                        .expect("none variants filtered out above");
+                    let res_reg = self.expression(arg).expect("filtered out above");
 
                     match IntRegister::nth_param(int_cnt) {
                         Some(curr_reg) => {
                             param_regs.push(curr_reg.to_reg());
                             self.use_reg(curr_reg.to_reg(), Size::from(type_));
 
+                            // TODO: try to remove this move
+                            // if the reg from the expr is not the expected one, move it
                             if curr_reg.to_reg() != res_reg {
-                                let size = Size::from(type_).byte_count();
-                                Self::align(&mut self.curr_fn_mut().stack_allocs, size);
-                                self.curr_fn_mut().stack_allocs += size as i64;
-                                let offset = -self.curr_fn().stack_allocs as i64 - 16;
-
-                                match type_ {
-                                    Type::Int => {
-                                        self.insert(Instruction::Sd(
-                                            curr_reg,
-                                            Pointer::Stack(IntRegister::Fp, offset),
-                                        ));
-                                    }
-                                    Type::Bool | Type::Char => {
-                                        self.insert(Instruction::Sb(
-                                            curr_reg,
-                                            Pointer::Stack(IntRegister::Fp, offset),
-                                        ));
-                                    }
-                                    _ => unreachable!(""),
-                                }
-
-                                self.insert(Instruction::Mov(curr_reg, res_reg.into()));
+                                self.insert_w_comment(
+                                    Instruction::Mov(curr_reg, res_reg.into()),
+                                    format!("{res_reg} not expected {curr_reg}"),
+                                )
                             }
                         }
                         None => {
-                            self.insert(Instruction::Sd(
-                                res_reg.into(),
-                                Pointer::Stack(IntRegister::Sp, spill_count * 8),
-                            ));
+                            // no more params: spilling required
+                            self.insert_w_comment(
+                                Instruction::Sd(
+                                    res_reg.into(),
+                                    Pointer::Stack(IntRegister::Sp, spill_count * 8),
+                                ),
+                                format!("{} byte param spill", Size::from(type_).byte_count()),
+                            );
                             spill_count += 1;
                         }
                     }
@@ -197,7 +183,6 @@ impl Compiler {
                     int_cnt += 1;
                 }
                 Type::Float => {
-                    let type_ = arg.result_type();
                     let res_reg = self
                         .expression(arg)
                         .expect("none variants filtered out above");
@@ -205,26 +190,25 @@ impl Compiler {
                     match FloatRegister::nth_param(float_cnt) {
                         Some(curr_reg) => {
                             param_regs.push(curr_reg.to_reg());
-                            self.use_reg(curr_reg.to_reg(), Size::from(type_));
+                            self.use_reg(curr_reg.to_reg(), Size::Dword);
 
+                            // if the reg from the expr is not the expected one, move it
                             if curr_reg.to_reg() != res_reg {
-                                let size = Size::from(type_).byte_count();
-                                Self::align(&mut self.curr_fn_mut().stack_allocs, size);
-                                self.curr_fn_mut().stack_allocs += size as i64;
-                                let offset = -self.curr_fn().stack_allocs as i64 - 16;
-
-                                self.insert(Instruction::Fsd(
-                                    curr_reg,
-                                    Pointer::Stack(IntRegister::Fp, offset),
-                                ));
-                                self.insert(Instruction::Fmv(curr_reg, res_reg.into()));
+                                self.insert_w_comment(
+                                    Instruction::Fmv(curr_reg, res_reg.into()),
+                                    format!("{res_reg} not expected {curr_reg}"),
+                                )
                             }
                         }
                         None => {
-                            self.insert(Instruction::Fsd(
-                                res_reg.into(),
-                                Pointer::Stack(IntRegister::Sp, spill_count * 8),
-                            ));
+                            // no more params: spilling required
+                            self.insert_w_comment(
+                                Instruction::Fsd(
+                                    res_reg.into(),
+                                    Pointer::Stack(IntRegister::Sp, spill_count * 8),
+                                ),
+                                format!("{} byte param spill", Size::Dword.byte_count()),
+                            );
                             spill_count += 1;
                         }
                     }
@@ -235,6 +219,10 @@ impl Compiler {
         }
 
         // perform function call
+        let func_label = match node.func {
+            "exit" => "exit".to_string(),
+            func => format!("main..{func}"),
+        };
         self.insert(Instruction::Call(func_label));
 
         // if there were spilled params, deallocate stack space
@@ -246,10 +234,8 @@ impl Compiler {
             ));
         }
 
-        // free all blocked param registers
-        for reg in param_regs {
-            self.release_reg(reg)
-        }
+        // restore the old list of used registers
+        self.used_registers = used_registers_prev;
 
         let res_reg = match node.result_type {
             Type::Int | Type::Char | Type::Bool => Some(IntRegister::A0.to_reg()),
