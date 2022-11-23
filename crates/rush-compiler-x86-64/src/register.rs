@@ -1,5 +1,3 @@
-#![allow(dead_code)] // TODO: remove this attribute
-
 use std::{
     fmt::{self, Display, Formatter},
     mem,
@@ -40,6 +38,7 @@ pub const FLOAT_PARAM_REGISTERS: &[FloatRegister] = &[
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 #[rustfmt::skip]
+#[allow(dead_code)]
 pub enum FloatRegister {
     Xmm0,  Xmm1,  Xmm2,  Xmm3,  Xmm4,  Xmm5,  Xmm6,  Xmm7,
     Xmm8,  Xmm9,  Xmm10, Xmm11, Xmm12, Xmm13, Xmm14, Xmm15,
@@ -228,18 +227,6 @@ impl IntRegister {
         }
     }
 
-    pub fn next_param(&self) -> Option<Self> {
-        match self.in_qword_size() {
-            Self::Rdi => Some(Self::Rsi),
-            Self::Rsi => Some(Self::Rsi),
-            Self::Rdx => Some(Self::Rdx),
-            Self::Rcx => Some(Self::Rcx),
-            Self::R8 => Some(Self::R9),
-            Self::R9 => None,
-            reg => panic!("not a param register `{reg}`"),
-        }
-    }
-
     pub fn next(&self) -> Self {
         match self.in_qword_size() {
             Self::Rax => Self::Rdi,
@@ -277,16 +264,6 @@ impl IntRegister {
 }
 
 impl FloatRegister {
-    pub fn next_param(&self) -> Option<Self> {
-        if (*self as u8) < 7 {
-            Some(self.next())
-        } else if *self == Self::Xmm7 {
-            None
-        } else {
-            panic!("not a param register `{self}`");
-        }
-    }
-
     pub fn next(&self) -> Self {
         if *self == Self::Xmm31 {
             panic!("no registers left after `{self}`");
