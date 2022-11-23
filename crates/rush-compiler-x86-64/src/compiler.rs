@@ -223,6 +223,36 @@ impl<'src> Compiler<'src> {
         next
     }
 
+    fn spill_int(&mut self, reg: IntRegister) -> Pointer {
+        self.push(
+            reg.size(),
+            Value::Int(reg.into()),
+            Some(format!("{} byte spill: {reg}", reg.size().byte_count())),
+        )
+    }
+
+    fn spill_int_if_used(&mut self, reg: IntRegister) -> Option<(Pointer, IntRegister)> {
+        self.used_registers
+            .iter()
+            .find(|r| r.in_qword_size() == reg.in_qword_size())
+            .copied()
+            .map(|reg| (self.spill_int(reg), reg))
+    }
+
+    fn reload_int(&mut self, ptr: Pointer, reg: IntRegister) {
+        self.pop(
+            ptr,
+            Value::Int(reg.into()),
+            Some(format!("{} byte reload: {reg}", reg.size().byte_count())),
+        );
+    }
+
+    fn reload_int_if_used(&mut self, spill: Option<(Pointer, IntRegister)>) {
+        if let Some((ptr, reg)) = spill {
+            self.reload_int(ptr, reg);
+        }
+    }
+
     /////////////////////////////////////////
 
     fn program(&mut self, node: AnalyzedProgram<'src>) {
@@ -568,6 +598,72 @@ impl<'src> Compiler<'src> {
                 }
                 Some(Value::Int(left.into()))
             }
+            (Some(Value::Int(left)), Some(Value::Int(right)), InfixOp::Div | InfixOp::Rem) => {
+                // make sure the rax and rdx registers are free
+                let spilled_rax = self.spill_int_if_used(IntRegister::Rax);
+                let spilled_rdx = self.spill_int_if_used(IntRegister::Rdx);
+
+                let mut pop_rhs_reg = false;
+                let result_reg = match (&left, &right) {
+                    (IntValue::Register(reg), IntValue::Register(_)) => {
+                        pop_rhs_reg = true;
+                        *reg
+                    }
+                    (IntValue::Register(reg), _) | (_, IntValue::Register(reg)) => *reg,
+                    _ => self.get_free_register(Size::Qword),
+                };
+
+                // move lhs result into rax
+                // analyzer guarantees `left` and `right` to be 8 bytes in size
+                self.function_body
+                    .push(Instruction::Mov(IntRegister::Rax.into(), left));
+
+                // get source operand
+                let source = match right {
+                    right @ IntValue::Ptr(_) => right,
+                    right => {
+                        // move rhs result into free register
+                        let mut reg = self
+                            .used_registers
+                            .last()
+                            .map_or(IntRegister::Rdi, |reg| reg.next());
+                        // don't allow %rdx
+                        if reg == IntRegister::Rdx {
+                            reg = reg.next()
+                        }
+                        self.function_body.push(Instruction::Mov(reg.into(), right));
+                        reg.into()
+                    }
+                };
+
+                // free the rhs register
+                if pop_rhs_reg {
+                    self.used_registers.pop();
+                }
+
+                // sign-extend lhs to 128 bits (required for IDIV)
+                self.function_body.push(Instruction::Cqo);
+
+                // divide
+                self.function_body.push(Instruction::Idiv(source));
+
+                // move result into result register
+                self.function_body.push(Instruction::Mov(
+                    result_reg.into(),
+                    // use either `%rax` or `%rdx` register, depending on operator
+                    IntValue::Register(match node.op {
+                        InfixOp::Div => IntRegister::Rax,
+                        InfixOp::Rem => IntRegister::Rdx,
+                        _ => unreachable!("this arm only matches with `/` or `%`"),
+                    }),
+                ));
+
+                // reload spilled registers
+                self.reload_int_if_used(spilled_rax);
+                self.reload_int_if_used(spilled_rdx);
+
+                Some(Value::Int(IntValue::Register(result_reg)))
+            }
             (
                 Some(Value::Float(left)),
                 Some(Value::Float(right)),
@@ -622,11 +718,7 @@ impl<'src> Compiler<'src> {
             .iter()
             .filter(|reg| reg.is_caller_saved())
         {
-            saved_register_pointers.push(self.push(
-                reg.size(),
-                Value::Int((*reg).into()),
-                Some(format!("{} byte spill: {reg}", reg.size().byte_count())),
-            ));
+            saved_register_pointers.push(self.spill_int(*reg));
         }
         for reg in &prev_used_float_registers {
             saved_float_register_pointers.push(self.push(
@@ -799,11 +891,7 @@ impl<'src> Compiler<'src> {
             .zip(saved_register_pointers)
             .rev()
         {
-            self.pop(
-                ptr,
-                Value::Int(reg.into()),
-                Some(format!("{} byte reload: {reg}", reg.size().byte_count())),
-            );
+            self.reload_int(ptr, reg);
         }
 
         result_reg
