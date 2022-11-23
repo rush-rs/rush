@@ -1,5 +1,3 @@
-#![allow(dead_code)] // TODO: remove this attribute
-
 use std::fmt::Display;
 
 use rush_analyzer::InfixOp;
@@ -8,7 +6,9 @@ use crate::register::{FloatRegister, IntRegister};
 
 pub(crate) struct Block {
     pub(crate) label: String,
-    pub(crate) instructions: Vec<Instruction>,
+    /// Holds the block's instructions.
+    /// The first element of the tuple is the instruction, the second element is a optional comment.
+    pub(crate) instructions: Vec<(Instruction, Option<String>)>,
 }
 
 impl Display for Block {
@@ -19,7 +19,14 @@ impl Display for Block {
             self.label,
             self.instructions
                 .iter()
-                .map(|i| format!("    {}\n", i.to_string().replace('\n', "\n    ")))
+                .map(|(i, comment)| format!(
+                    "    {:32} {}\n",
+                    i.to_string().replace('\n', "\n    "),
+                    match comment.to_owned() {
+                        Some(msg) => format!("# {msg}"),
+                        None => String::new(),
+                    }
+                ))
                 .collect::<String>()
         )
     }
@@ -37,7 +44,6 @@ impl Block {
 pub enum Instruction {
     Ret,
     Call(String),
-    Ecall,
     Comment(String),
 
     Jmp(String),
@@ -90,7 +96,6 @@ impl Display for Instruction {
         match self {
             Instruction::Ret => write!(f, "ret"),
             Instruction::Call(callee) => write!(f, "call {callee}"),
-            Instruction::Ecall => write!(f, "ecall"),
             Instruction::Comment(msg) => write!(f, "# {msg}"),
             Instruction::Jmp(label) => write!(f, "j {label}"),
             Instruction::BrCond(cond, l, r, lbl) => write!(f, "b{cond} {l}, {r}, {lbl}"),

@@ -34,7 +34,7 @@ pub struct Compiler {
     pub(crate) globals: HashMap<String, Option<Variable>>,
 
     /// Specifies all registers which are currently in use and may not be overwritten.
-    pub(crate) used_registers: Vec<Register>,
+    pub(crate) used_registers: Vec<(Register, Size)>,
 }
 
 impl Compiler {
@@ -159,33 +159,31 @@ impl Compiler {
     /// Declares a new global variable.
     /// The initializer is put inside the current basic block.
     fn declare_global(&mut self, label: String, value: AnalyzedExpression) {
-        // insert comments when using debug
-        #[cfg(debug_assertions)]
-        self.insert(Instruction::Comment(format!("let {label} (global)")));
+        let comment = format!("let {label} (global)");
 
         let type_ = value.result_type();
         let res_reg = self.expression(value).expect("globals are non-unit");
 
         let data = match type_ {
             Type::Int => {
-                self.insert(Instruction::Sd(
-                    res_reg.into(),
-                    Pointer::Label(label.clone()),
-                ));
+                self.insert_w_comment(
+                    Instruction::Sd(res_reg.into(), Pointer::Label(label.clone())),
+                    comment,
+                );
                 DataObjType::Dword(0)
             }
             Type::Bool | Type::Char => {
-                self.insert(Instruction::Sb(
-                    res_reg.into(),
-                    Pointer::Label(label.clone()),
-                ));
+                self.insert_w_comment(
+                    Instruction::Sb(res_reg.into(), Pointer::Label(label.clone())),
+                    comment,
+                );
                 DataObjType::Byte(0)
             }
             Type::Float => {
-                self.insert(Instruction::Fsd(
-                    res_reg.into(),
-                    Pointer::Label(label.clone()),
-                ));
+                self.insert_w_comment(
+                    Instruction::Fsd(res_reg.into(), Pointer::Label(label.clone())),
+                    comment,
+                );
                 DataObjType::Float(0.0)
             }
             _ => unreachable!("other types cannot be used as globals"),
@@ -222,10 +220,10 @@ impl Compiler {
         // is incremented in steps of 8
         let mut mem_offset = 0;
 
-        let mut param_store_instructions = vec![
-            #[cfg(debug_assertions)]
+        let mut param_store_instructions = vec![(
             Instruction::Comment("save params on stack".to_string()),
-        ];
+            None,
+        )];
 
         // save all param values in the current scope / on the stack
         for param in node.params {
@@ -240,13 +238,13 @@ impl Compiler {
 
                             // use `sb` or `sd` depending on the size
                             match size {
-                                Size::Byte => param_store_instructions.push(Instruction::Sb(
-                                    reg,
-                                    Pointer::Stack(IntRegister::Fp, offset),
+                                Size::Byte => param_store_instructions.push((
+                                    Instruction::Sb(reg, Pointer::Stack(IntRegister::Fp, offset)),
+                                    Some(format!("param {} = {reg}", param.name)),
                                 )),
-                                Size::Dword => param_store_instructions.push(Instruction::Sd(
-                                    reg,
-                                    Pointer::Stack(IntRegister::Fp, offset),
+                                Size::Dword => param_store_instructions.push((
+                                    Instruction::Sd(reg, Pointer::Stack(IntRegister::Fp, offset)),
+                                    Some(format!("param {} = {reg}", param.name)),
                                 )),
                             }
 
@@ -285,9 +283,9 @@ impl Compiler {
                             self.curr_fn_mut().stack_allocs += size;
                             let offset = -self.curr_fn().stack_allocs as i64 - 16;
 
-                            param_store_instructions.push(Instruction::Fsd(
-                                reg,
-                                Pointer::Stack(IntRegister::Fp, offset),
+                            param_store_instructions.push((
+                                Instruction::Fsd(reg, Pointer::Stack(IntRegister::Fp, offset)),
+                                Some(format!("param {} = {reg}", param.name)),
                             ));
 
                             self.scope_mut().insert(
@@ -519,12 +517,11 @@ impl Compiler {
         let after_loop = self.append_block("after_for");
 
         //// INIT ////
-        #[cfg(debug_assertions)]
         self.insert(Instruction::Comment(format!("loop init: {}", node.ident)));
 
         let type_ = node.initializer.result_type();
         let res = self.expression(node.initializer).map(|reg| {
-            self.use_reg(reg);
+            self.use_reg(reg, Size::from(type_));
             (
                 Variable {
                     type_,
@@ -542,7 +539,6 @@ impl Compiler {
         //// CONDITION ////
         self.insert_at(&for_head);
 
-        #[cfg(debug_assertions)]
         self.insert(Instruction::Comment("loop condition".to_string()));
 
         let expr_res = self.expression(node.cond).expect("cond is non-unit");
@@ -554,7 +550,6 @@ impl Compiler {
         ));
 
         //// BODY ////
-        #[cfg(debug_assertions)]
         self.insert(Instruction::Comment("loop body".to_string()));
 
         self.curr_loop = Some(Loop {
@@ -570,7 +565,6 @@ impl Compiler {
         node.block.expr.map(|e| self.expression(e));
 
         //// UPDATE EXPR ////
-        #[cfg(debug_assertions)]
         self.insert(Instruction::Comment("loop update".to_string()));
 
         self.expression(node.update);
@@ -594,9 +588,6 @@ impl Compiler {
     fn let_statement(&mut self, node: AnalyzedLetStmt) {
         let type_ = node.expr.result_type();
 
-        #[cfg(debug_assertions)]
-        self.insert(Instruction::Comment(format!("let {}", node.name)));
-
         // filter out any unit / never types
         if matches!(type_, Type::Unit | Type::Never) {
             // unit / never type: insert a dummy variable into the HashMap
@@ -610,22 +601,24 @@ impl Compiler {
         self.curr_fn_mut().stack_allocs += size as i64;
         let offset = -self.curr_fn().stack_allocs as i64 - 16;
 
-        match self.expression(node.expr).expect("unit filtered above") {
+        let rhs_reg = self.expression(node.expr).expect("unit filtered above");
+        let comment = format!("let {} = {rhs_reg}", node.name,);
+        match rhs_reg {
             Register::Int(reg) => match type_ {
-                Type::Bool | Type::Char => self.insert(Instruction::Sb(
-                    reg,
-                    Pointer::Stack(IntRegister::Fp, offset),
-                )),
-                Type::Int => self.insert(Instruction::Sd(
-                    reg,
-                    Pointer::Stack(IntRegister::Fp, offset),
-                )),
+                Type::Bool | Type::Char => self.insert_w_comment(
+                    Instruction::Sb(reg, Pointer::Stack(IntRegister::Fp, offset)),
+                    comment,
+                ),
+                Type::Int => self.insert_w_comment(
+                    Instruction::Sd(reg, Pointer::Stack(IntRegister::Fp, offset)),
+                    comment,
+                ),
                 _ => unreachable!("only the types above use int registers"),
             },
-            Register::Float(reg) => self.insert(Instruction::Fsd(
-                reg,
-                Pointer::Stack(IntRegister::Fp, offset),
-            )),
+            Register::Float(reg) => self.insert_w_comment(
+                Instruction::Fsd(reg, Pointer::Stack(IntRegister::Fp, offset)),
+                comment,
+            ),
         }
 
         // insert variable into the current scope
@@ -756,11 +749,11 @@ impl Compiler {
                 let lhs = self
                     .load_value_from_variable(assignee.clone())
                     .expect("filtered above");
-                self.use_reg(lhs);
+                self.use_reg(lhs, Size::from(assignee.type_));
 
                 // compile the rhs
                 let Some(rhs) = self.expression(node.expr) else {return };
-                self.use_reg(rhs);
+                self.use_reg(rhs, Size::from(rhs_type));
 
                 // perform pre-assign operation using the infix helper
                 let res = self.infix_helper(lhs, rhs, InfixOp::from(node.op), assignee.type_);
@@ -868,17 +861,18 @@ impl Compiler {
     /// Compiles an [`AnalyzedInfixExpr`].
     /// After compiling the lhs and rhs, the `infix_helper` is invoked.
     fn infix_expr(&mut self, node: AnalyzedInfixExpr) -> Option<Register> {
-        let type_ = node.lhs.result_type();
+        let lhs_type = node.lhs.result_type();
 
         let lhs_reg = self.expression(node.lhs)?;
         // mark the lhs register as used
-        self.use_reg(lhs_reg);
+        self.use_reg(lhs_reg, Size::from(lhs_type));
 
+        let rhs_type = node.rhs.result_type();
         let rhs_reg = self.expression(node.rhs)?;
         // mark the rhs register as used
-        self.use_reg(rhs_reg);
+        self.use_reg(rhs_reg, Size::from(rhs_type));
 
-        let res = self.infix_helper(lhs_reg, rhs_reg, node.op, type_);
+        let res = self.infix_helper(lhs_reg, rhs_reg, node.op, lhs_type);
 
         // release the usage block of the operands
         self.release_reg(lhs_reg);
@@ -1026,7 +1020,7 @@ impl Compiler {
         let lhs_reg = self.expression(node.expr)?;
 
         // block the use of the lhs temporarily
-        self.use_reg(lhs_reg);
+        self.use_reg(lhs_reg, Size::from(lhs_type));
 
         let res = match (lhs_type, node.type_) {
             // nop: just return the lhs

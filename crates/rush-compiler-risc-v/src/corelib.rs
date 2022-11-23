@@ -1,7 +1,7 @@
 use crate::{
     compiler::Compiler,
-    instruction::{Instruction, Pointer},
-    register::{FloatRegister, IntRegister, Register},
+    instruction::Instruction,
+    register::{FloatRegister, IntRegister},
 };
 
 impl Compiler {
@@ -17,20 +17,9 @@ impl Compiler {
         let mut regs_on_stack = vec![];
 
         // save all registers which are currently in use
-        for reg in self.used_registers.clone() {
-            let offset = -(self.curr_fn().stack_allocs as i64 + 8);
-            match reg {
-                Register::Int(reg) => {
-                    let ptr = Pointer::Stack(IntRegister::Fp, offset);
-                    self.insert(Instruction::Sd(reg, ptr));
-                }
-                Register::Float(reg) => self.insert(Instruction::Fsd(
-                    reg,
-                    Pointer::Stack(IntRegister::Fp, offset),
-                )),
-            };
-            self.curr_fn_mut().stack_allocs += 8;
-            regs_on_stack.push((reg, offset));
+        for (reg, size) in self.used_registers.clone() {
+            let offset = self.spill_reg(reg, size);
+            regs_on_stack.push((reg, offset, size));
         }
 
         // prepare the arguments
@@ -44,34 +33,10 @@ impl Compiler {
         // perform the function call
         self.insert(Instruction::Call("__rush_internal_pow_int".to_string()));
 
-        let mut res_reg = IntRegister::A0;
-
         // restore all saved registers
-        for (reg, offset) in regs_on_stack {
-            match reg {
-                Register::Int(reg) => {
-                    // in this case, restoring `a0` would destroy the call return value.
-                    // therefore, the return value is copied into a new temporary register
-                    if reg == IntRegister::A0 {
-                        res_reg = self.alloc_ireg();
-                        // copy the return value into the new result value
-                        self.insert(Instruction::Mov(res_reg, IntRegister::A0));
-                    }
-                    self.insert(Instruction::Ld(
-                        reg,
-                        Pointer::Stack(IntRegister::Fp, offset),
-                    ));
-                }
-                Register::Float(reg) => {
-                    self.insert(Instruction::Fld(
-                        reg,
-                        Pointer::Stack(IntRegister::Fp, offset),
-                    ));
-                }
-            };
-        }
-
-        res_reg
+        self.restore_regs_after_call(Some(IntRegister::A0.to_reg()), regs_on_stack)
+            .expect("is int")
+            .into()
     }
 
     /// Calls the `__rush_internal_cast_int_to_char` function in the rush corelib.
@@ -80,20 +45,9 @@ impl Compiler {
         let mut regs_on_stack = vec![];
 
         // save all registers which are currently in use
-        for reg in self.used_registers.clone() {
-            let offset = -(self.curr_fn().stack_allocs as i64 + 8);
-            match reg {
-                Register::Int(reg) => {
-                    let ptr = Pointer::Stack(IntRegister::Fp, offset);
-                    self.insert(Instruction::Sd(reg, ptr));
-                }
-                Register::Float(reg) => self.insert(Instruction::Fsd(
-                    reg,
-                    Pointer::Stack(IntRegister::Fp, offset),
-                )),
-            };
-            self.curr_fn_mut().stack_allocs += 8;
-            regs_on_stack.push((reg, offset));
+        for (reg, size) in self.used_registers.clone() {
+            let offset = self.spill_reg(reg, size);
+            regs_on_stack.push((reg, offset, size));
         }
 
         // prepare the argument
@@ -106,34 +60,10 @@ impl Compiler {
             "__rush_internal_cast_int_to_char".to_string(),
         ));
 
-        let mut res_reg = IntRegister::A0;
-
         // restore all saved registers
-        for (reg, offset) in regs_on_stack {
-            match reg {
-                Register::Int(reg) => {
-                    // in this case, restoring `a0` would destroy the call return value.
-                    // therefore, the return value is copied into a new temporary register
-                    if reg == IntRegister::A0 {
-                        res_reg = self.alloc_ireg();
-                        // copy the return value into the new result value
-                        self.insert(Instruction::Mov(res_reg, IntRegister::A0));
-                    }
-                    self.insert(Instruction::Ld(
-                        reg,
-                        Pointer::Stack(IntRegister::Fp, offset),
-                    ));
-                }
-                Register::Float(reg) => {
-                    self.insert(Instruction::Fld(
-                        reg,
-                        Pointer::Stack(IntRegister::Fp, offset),
-                    ));
-                }
-            };
-        }
-
-        res_reg
+        self.restore_regs_after_call(Some(IntRegister::A0.to_reg()), regs_on_stack)
+            .expect("is char")
+            .into()
     }
 
     /// Calls the `__rush_internal_cast_float_to_char` function in the rush corelib.
@@ -142,20 +72,9 @@ impl Compiler {
         let mut regs_on_stack = vec![];
 
         // save all registers which are currently in use
-        for reg in self.used_registers.clone() {
-            let offset = -(self.curr_fn().stack_allocs as i64 + 8);
-            match reg {
-                Register::Int(reg) => {
-                    let ptr = Pointer::Stack(IntRegister::Fp, offset);
-                    self.insert(Instruction::Sd(reg, ptr));
-                }
-                Register::Float(reg) => self.insert(Instruction::Fsd(
-                    reg,
-                    Pointer::Stack(IntRegister::Fp, offset),
-                )),
-            };
-            self.curr_fn_mut().stack_allocs += 8;
-            regs_on_stack.push((reg, offset));
+        for (reg, size) in self.used_registers.clone() {
+            let offset = self.spill_reg(reg, size);
+            regs_on_stack.push((reg, offset, size));
         }
 
         // prepare the argument
@@ -168,33 +87,9 @@ impl Compiler {
             "__rush_internal_cast_float_to_char".to_string(),
         ));
 
-        let mut res_reg = IntRegister::A0;
-
         // restore all saved registers
-        for (reg, offset) in regs_on_stack {
-            match reg {
-                Register::Int(reg) => {
-                    // in this case, restoring `a0` would destroy the call return value.
-                    // therefore, the return value is copied into a new temporary register
-                    if reg == IntRegister::A0 {
-                        res_reg = self.alloc_ireg();
-                        // copy the return value into the new result value
-                        self.insert(Instruction::Mov(res_reg, IntRegister::A0));
-                    }
-                    self.insert(Instruction::Ld(
-                        reg,
-                        Pointer::Stack(IntRegister::Fp, offset),
-                    ));
-                }
-                Register::Float(reg) => {
-                    self.insert(Instruction::Fld(
-                        reg,
-                        Pointer::Stack(IntRegister::Fp, offset),
-                    ));
-                }
-            };
-        }
-
-        res_reg
+        self.restore_regs_after_call(Some(IntRegister::A0.to_reg()), regs_on_stack)
+            .expect("is char")
+            .into()
     }
 }

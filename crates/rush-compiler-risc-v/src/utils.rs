@@ -50,6 +50,86 @@ impl Compiler {
         }
     }
 
+    // TODO: write documentation
+    pub(crate) fn spill_reg(&mut self, reg: Register, size: Size) -> i64 {
+        let byte_size = size.byte_count();
+        Self::align(&mut self.curr_fn_mut().stack_allocs, byte_size);
+        self.curr_fn_mut().stack_allocs += byte_size as i64;
+        let offset = -self.curr_fn().stack_allocs as i64 - 16;
+        let comment = format!("{byte_size} byte spill: {reg}");
+
+        match reg {
+            Register::Int(reg) => {
+                let ptr = Pointer::Stack(IntRegister::Fp, offset);
+
+                match size {
+                    Size::Byte => self.insert_w_comment(Instruction::Sb(reg, ptr), comment),
+                    Size::Dword => self.insert_w_comment(Instruction::Sd(reg, ptr), comment),
+                }
+            }
+            Register::Float(reg) => self.insert(Instruction::Fsd(
+                reg,
+                Pointer::Stack(IntRegister::Fp, offset),
+            )),
+        };
+
+        offset
+    }
+
+    pub(crate) fn restore_regs_after_call(
+        &mut self,
+        mut call_return_reg: Option<Register>,
+        regs: Vec<(Register, i64, Size)>,
+    ) -> Option<Register> {
+        for (reg, offset, size) in regs {
+            match reg {
+                Register::Int(reg) => {
+                    // in this case, restoring `a0` would destroy the call return value.
+                    // therefore, the return value is copied into a new temporary register
+                    if call_return_reg == Some(Register::Int(IntRegister::A0))
+                        && reg == IntRegister::A0
+                    {
+                        let new_res_reg = self.alloc_ireg();
+                        call_return_reg = Some(new_res_reg.to_reg());
+                        // copy the return value into the new result value
+                        self.insert(Instruction::Mov(new_res_reg, IntRegister::A0));
+                    }
+
+                    // perform different load operations depending on the size
+                    match size {
+                        Size::Byte => self.insert(Instruction::Lb(
+                            reg,
+                            Pointer::Stack(IntRegister::Fp, offset),
+                        )),
+                        Size::Dword => self.insert(Instruction::Ld(
+                            reg,
+                            Pointer::Stack(IntRegister::Fp, offset),
+                        )),
+                    };
+                }
+                Register::Float(reg) => {
+                    // in this case, restoring `fa0` would destroy the call return value.
+                    // therefore, the return value is copied into a new temporary register
+                    if call_return_reg == Some(Register::Float(FloatRegister::Fa0))
+                        && reg == FloatRegister::Fa0
+                    {
+                        let new_res_reg = self.alloc_freg();
+                        call_return_reg = Some(new_res_reg.to_reg());
+                        // copy the return value into the new result value
+                        self.insert(Instruction::Fmv(new_res_reg, FloatRegister::Fa0));
+                    }
+
+                    self.insert(Instruction::Fld(
+                        reg,
+                        Pointer::Stack(IntRegister::Fp, offset),
+                    ));
+                }
+            };
+        }
+
+        call_return_reg
+    }
+
     pub(crate) fn scope_mut(&mut self) -> &mut HashMap<String, Option<Variable>> {
         self.scopes.last_mut().expect("always called from a scope")
     }
@@ -69,7 +149,11 @@ impl Compiler {
     /// Allocates and returns the next unused, general purpose int register.
     pub(crate) fn alloc_ireg(&self) -> IntRegister {
         for reg in INT_REGISTERS {
-            if !self.used_registers.contains(&Register::Int(*reg)) {
+            if !self
+                .used_registers
+                .iter()
+                .any(|(register, _)| register == &Register::Int(*reg))
+            {
                 return *reg;
             }
         }
@@ -79,7 +163,11 @@ impl Compiler {
     /// Allocates and returns the next unused, general purpose float register.
     pub(crate) fn alloc_freg(&self) -> FloatRegister {
         for reg in FLOAT_REGISTERS {
-            if !self.used_registers.contains(&Register::Float(*reg)) {
+            if !self
+                .used_registers
+                .iter()
+                .any(|(register, _)| register == &Register::Float(*reg))
+            {
                 return *reg;
             }
         }
@@ -87,8 +175,8 @@ impl Compiler {
     }
 
     /// Helper function which marks a register as used
-    pub(crate) fn use_reg(&mut self, reg: Register) {
-        self.used_registers.push(reg)
+    pub(crate) fn use_reg(&mut self, reg: Register, size: Size) {
+        self.used_registers.push((reg, size))
     }
 
     /// Marks a register as unused.
@@ -97,7 +185,7 @@ impl Compiler {
         self.used_registers.remove(
             self.used_registers
                 .iter()
-                .position(|r| *r == reg)
+                .position(|(r, _)| *r == reg)
                 .expect("register not in used_registers"),
         );
     }
@@ -152,7 +240,7 @@ impl Compiler {
         let contains_jmp = self.blocks[self.curr_block]
             .instructions
             .iter()
-            .any(|i| matches!(i, Instruction::Jmp(_)));
+            .any(|(i, _)| matches!(i, Instruction::Jmp(_)));
 
         // if there is no terminator, jump
         if !contains_jmp {
@@ -163,7 +251,17 @@ impl Compiler {
     #[inline]
     /// Inserts an [`Instruction`] at the end of the current basic block.
     pub(crate) fn insert(&mut self, instruction: Instruction) {
-        self.blocks[self.curr_block].instructions.push(instruction);
+        self.blocks[self.curr_block]
+            .instructions
+            .push((instruction, None));
+    }
+
+    /// Inserts an [`Instruction`] at the end of the current basic block.
+    /// Also inserts the specified comment at the end of the instruction.
+    pub(crate) fn insert_w_comment(&mut self, instruction: Instruction, comment: String) {
+        self.blocks[self.curr_block]
+            .instructions
+            .push((instruction, Some(comment)));
     }
 
     /// Places the cursor at the end of the specified block.

@@ -1,11 +1,22 @@
-#![allow(dead_code)] // TODO: remove this attribute
-
 use std::fmt::Display;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Register {
     Int(IntRegister),
     Float(FloatRegister),
+}
+
+impl Display for Register {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Register::Int(reg) => reg.to_string(),
+                Register::Float(reg) => reg.to_string(),
+            }
+        )
+    }
 }
 
 impl From<IntRegister> for Register {
@@ -90,8 +101,8 @@ pub enum IntRegister {
     Ra,
     // pointers
     Sp,
-    Gp,
-    Tp,
+    // Gp: DISABLED: not needed by the compiler,
+    // Tp: DISABLED: not needed by the compiler,
     Fp,
     // temporaries
     T0,
@@ -100,7 +111,7 @@ pub enum IntRegister {
     T3,
     T4,
     T5,
-    // T6: DISABLED: used during instruction code generation,
+    // T6: DISABLED: used during instruction code generation for temporary purposes,
     // saved
     S1,
     S2,

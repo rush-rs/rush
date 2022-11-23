@@ -16,37 +16,47 @@ impl Compiler {
     /// Returns the instructions of a function prologue.
     /// Automatically sets up any stack allocations and saves `ra` and `fp`.
     /// Must be invoked after the fn body since the stack frame size must be known at this point.
-    pub(crate) fn prologue(&mut self) -> Vec<Instruction> {
+    pub(crate) fn prologue(&mut self) -> Vec<(Instruction, Option<String>)> {
         // align frame size to 16 bytes
         Self::align(&mut self.curr_fn_mut().stack_allocs, 16);
 
         vec![
-            #[cfg(debug_assertions)]
-            Instruction::Comment("begin prologue".to_string()),
+            (Instruction::Comment("begin prologue".to_string()), None),
             // allocate stack spacec
-            Instruction::Addi(
-                IntRegister::Sp,
-                IntRegister::Sp,
-                -(self.curr_fn().stack_allocs as i64) - BASE_STACK_ALLOCATIONS,
+            (
+                Instruction::Addi(
+                    IntRegister::Sp,
+                    IntRegister::Sp,
+                    -(self.curr_fn().stack_allocs as i64) - BASE_STACK_ALLOCATIONS,
+                ),
+                None,
             ),
             // save `fp` on the stack
-            Instruction::Sd(
-                IntRegister::Fp,
-                Pointer::Stack(IntRegister::Sp, self.curr_fn().stack_allocs + 8),
+            (
+                Instruction::Sd(
+                    IntRegister::Fp,
+                    Pointer::Stack(IntRegister::Sp, self.curr_fn().stack_allocs + 8),
+                ),
+                None,
             ),
             // save `ra` on the stack
-            Instruction::Sd(
-                IntRegister::Ra,
-                Pointer::Stack(IntRegister::Sp, self.curr_fn().stack_allocs),
+            (
+                Instruction::Sd(
+                    IntRegister::Ra,
+                    Pointer::Stack(IntRegister::Sp, self.curr_fn().stack_allocs),
+                ),
+                None,
             ),
             // also offset the `fp` to start at the new frame
-            Instruction::Addi(
-                IntRegister::Fp,
-                IntRegister::Sp,
-                self.curr_fn().stack_allocs as i64 + BASE_STACK_ALLOCATIONS,
+            (
+                Instruction::Addi(
+                    IntRegister::Fp,
+                    IntRegister::Sp,
+                    self.curr_fn().stack_allocs as i64 + BASE_STACK_ALLOCATIONS,
+                ),
+                None,
             ),
-            #[cfg(debug_assertions)]
-            Instruction::Comment("end prologue".to_string()),
+            (Instruction::Comment("end prologue".to_string()), None),
         ]
     }
 
@@ -82,39 +92,18 @@ impl Compiler {
             func => format!("main..{func}"),
         };
 
+        // before the function is called, all used registers must be saved
+        let mut regs_on_stack = vec![];
+        for (reg, size) in self.used_registers.clone() {
+            let offset = self.spill_reg(reg, size);
+            regs_on_stack.push((reg, offset, size));
+        }
+
         let mut float_cnt = 0;
         let mut int_cnt = 0;
 
-        let mut param_regs = vec![];
-
-        // before the function is called, all used registers must be pushed on the stack
-        let mut regs_on_stack = vec![];
-
-        // save all registers which are currently in use
-        for reg in self.used_registers.clone() {
-            let size = 8; // TODO: use size of the register instead if 8 bytes -> impl size for the
-                          // used registers
-
-            Self::align(&mut self.curr_fn_mut().stack_allocs, size);
-            self.curr_fn_mut().stack_allocs += size as i64;
-            let offset = -self.curr_fn().stack_allocs as i64 - 16;
-
-            match reg {
-                Register::Int(reg) => {
-                    let ptr = Pointer::Stack(IntRegister::Fp, offset);
-                    self.insert(Instruction::Sd(reg, ptr));
-                }
-                Register::Float(reg) => self.insert(Instruction::Fsd(
-                    reg,
-                    Pointer::Stack(IntRegister::Fp, offset),
-                )),
-            };
-            regs_on_stack.push((reg, offset));
-        }
-
-        // prepare arguments
-        let mut sp_offset = 0;
-
+        // calculate the total byte size of spilled params
+        let mut spill_param_size = 0;
         for arg in node
             .args
             .iter()
@@ -123,13 +112,13 @@ impl Compiler {
             match arg.result_type() {
                 Type::Int | Type::Bool | Type::Char => {
                     if IntRegister::nth_param(int_cnt).is_none() {
-                        sp_offset += 8;
+                        spill_param_size += 8;
                     }
                     int_cnt += 1;
                 }
                 Type::Float => {
                     if IntRegister::nth_param(float_cnt).is_none() {
-                        sp_offset += 8;
+                        spill_param_size += 8;
                     }
 
                     float_cnt += 1;
@@ -141,11 +130,14 @@ impl Compiler {
         int_cnt = 0;
         float_cnt = 0;
 
-        if sp_offset > 0 {
+        let mut param_regs = vec![];
+
+        // if there are caller saved registers, allocate space on the stack
+        if spill_param_size > 0 {
             self.insert(Instruction::Addi(
                 IntRegister::Sp,
                 IntRegister::Sp,
-                -sp_offset,
+                -spill_param_size,
             ));
         }
 
@@ -166,7 +158,7 @@ impl Compiler {
                     match IntRegister::nth_param(int_cnt) {
                         Some(curr_reg) => {
                             param_regs.push(curr_reg.to_reg());
-                            self.use_reg(curr_reg.to_reg());
+                            self.use_reg(curr_reg.to_reg(), Size::from(type_));
 
                             if curr_reg.to_reg() != res_reg {
                                 let size = Size::from(type_).byte_count();
@@ -213,7 +205,7 @@ impl Compiler {
                     match FloatRegister::nth_param(float_cnt) {
                         Some(curr_reg) => {
                             param_regs.push(curr_reg.to_reg());
-                            self.use_reg(curr_reg.to_reg());
+                            self.use_reg(curr_reg.to_reg(), Size::from(type_));
 
                             if curr_reg.to_reg() != res_reg {
                                 let size = Size::from(type_).byte_count();
@@ -245,64 +237,28 @@ impl Compiler {
         // perform function call
         self.insert(Instruction::Call(func_label));
 
-        if sp_offset > 0 {
+        // if there were spilled params, deallocate stack space
+        if spill_param_size > 0 {
             self.insert(Instruction::Addi(
                 IntRegister::Sp,
                 IntRegister::Sp,
-                sp_offset,
+                spill_param_size,
             ));
         }
 
-        let mut res_reg = match node.result_type {
+        // free all blocked param registers
+        for reg in param_regs {
+            self.release_reg(reg)
+        }
+
+        let res_reg = match node.result_type {
             Type::Int | Type::Char | Type::Bool => Some(IntRegister::A0.to_reg()),
             Type::Float => Some(FloatRegister::Fa0.to_reg()),
             Type::Unit | Type::Never => None,
             Type::Unknown => unreachable!("analyzer would have failed"),
         };
 
-        // restore all saved registers
-        for (reg, offset) in regs_on_stack {
-            match reg {
-                Register::Int(reg) => {
-                    // in this case, restoring `a0` would destroy the call return value.
-                    // therefore, the return value is copied into a new temporary register
-                    if res_reg == Some(Register::Int(IntRegister::A0)) && reg == IntRegister::A0 {
-                        let new_res_reg = self.alloc_ireg();
-                        res_reg = Some(new_res_reg.to_reg());
-                        // copy the return value into the new result value
-                        self.insert(Instruction::Mov(new_res_reg, IntRegister::A0));
-                    }
-
-                    self.insert(Instruction::Ld(
-                        reg,
-                        Pointer::Stack(IntRegister::Fp, offset),
-                    ));
-                }
-                Register::Float(reg) => {
-                    // in this case, restoring `fa0` would destroy the call return value.
-                    // therefore, the return value is copied into a new temporary register
-                    if res_reg == Some(Register::Float(FloatRegister::Fa0))
-                        && reg == FloatRegister::Fa0
-                    {
-                        let new_res_reg = self.alloc_freg();
-                        res_reg = Some(new_res_reg.to_reg());
-                        // copy the return value into the new result value
-                        self.insert(Instruction::Fmv(new_res_reg, FloatRegister::Fa0));
-                    }
-
-                    self.insert(Instruction::Fld(
-                        reg,
-                        Pointer::Stack(IntRegister::Fp, offset),
-                    ));
-                }
-            };
-        }
-
-        // free all blocked registers
-        for reg in param_regs {
-            self.release_reg(reg)
-        }
-
-        res_reg
+        // restore all caller saved registers again
+        self.restore_regs_after_call(res_reg, regs_on_stack)
     }
 }
