@@ -958,7 +958,20 @@ impl<'src> Analyzer<'src> {
             Expression::Int(node) => AnalyzedExpression::Int(node.inner),
             Expression::Float(node) => AnalyzedExpression::Float(node.inner),
             Expression::Bool(node) => AnalyzedExpression::Bool(node.inner),
-            Expression::Char(node) => AnalyzedExpression::Char(node.inner),
+            Expression::Char(node) => {
+                if node.inner > 127 {
+                    self.error(
+                        ErrorKind::Type,
+                        "char literal out of range".to_string(),
+                        vec![
+                            format!("allowed range is `0x00..=0x7f`, got `0x{:x}`", node.inner)
+                                .into(),
+                        ],
+                        node.span,
+                    )
+                }
+                AnalyzedExpression::Char(node.inner)
+            }
             Expression::Ident(node) => self.ident_expr(node),
             Expression::Prefix(node) => self.prefix_expr(*node),
             Expression::Infix(node) => self.infix_expr(*node),
