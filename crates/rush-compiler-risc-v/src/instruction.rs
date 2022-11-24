@@ -181,8 +181,20 @@ impl Display for Instruction {
             },
             Instruction::Snez(dest, arg) => write!(f, "snez {dest}, {arg}"),
             Instruction::Seqz(dest, arg) => write!(f, "seqz {dest}, {arg}"),
-            Instruction::Mov(dest, src) => write!(f, "mv {dest}, {src}"),
-            Instruction::Fmv(dest, src) => write!(f, "fmv.d {dest}, {src}"),
+            Instruction::Mov(dest, src) => {
+                if dest != src {
+                    write!(f, "mv {dest}, {src}")
+                } else {
+                    write!(f, "")
+                }
+            }
+            Instruction::Fmv(dest, src) => {
+                if dest != src {
+                    write!(f, "fmv.d {dest}, {src}")
+                } else {
+                    write!(f, "")
+                }
+            }
             Instruction::CastIntToFloat(dest, src) => write!(f, "fcvt.d.l {dest}, {src}"),
             Instruction::CastByteToFloat(dest, src) => write!(f, "fcvt.d.wu {dest}, {src}"),
             Instruction::CastFloatToInt(dest, src) => write!(f, "fcvt.l.d {dest}, {src}, rdn"),

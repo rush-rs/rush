@@ -361,8 +361,6 @@ impl Compiler {
         if let Some(expr) = node.expr {
             let res_reg = self.expression(expr);
             match res_reg {
-                Some(Register::Int(IntRegister::A0))
-                | Some(Register::Float(FloatRegister::Fa0)) => {} // already the target register
                 Some(Register::Int(reg)) => {
                     self.insert(Instruction::Mov(IntRegister::A0, reg));
                 }
@@ -435,8 +433,6 @@ impl Compiler {
         // if there is an expression, compile it
         if let Some(expr) = node {
             match self.expression(expr) {
-                // already in the correct registers, no move required
-                Some(Register::Int(IntRegister::A0) | Register::Float(FloatRegister::Fa0)) => {}
                 Some(Register::Int(reg)) => self.insert(Instruction::Mov(IntRegister::A0, reg)),
                 Some(Register::Float(reg)) => {
                     self.insert(Instruction::Fmv(FloatRegister::Fa0, reg))
@@ -820,12 +816,10 @@ impl Compiler {
 
             // if the block returns a register other than res, move the block register into res
             match (res_reg, else_reg) {
-                (Some(Register::Int(res)), Some(Register::Int(else_reg))) if res != else_reg => {
+                (Some(Register::Int(res)), Some(Register::Int(else_reg))) => {
                     self.insert(Instruction::Mov(res, else_reg));
                 }
-                (Some(Register::Float(res)), Some(Register::Float(else_reg)))
-                    if res != else_reg =>
-                {
+                (Some(Register::Float(res)), Some(Register::Float(else_reg))) => {
                     self.insert(Instruction::Fmv(res, else_reg));
                 }
                 _ => {}
@@ -840,10 +834,10 @@ impl Compiler {
 
         // if the block returns a register other than res, move the block register into res
         match (res_reg, then_reg) {
-            (Some(Register::Int(res)), Some(Register::Int(then_reg))) if res != then_reg => {
+            (Some(Register::Int(res)), Some(Register::Int(then_reg))) => {
                 self.insert(Instruction::Mov(res, then_reg));
             }
-            (Some(Register::Float(res)), Some(Register::Float(then_reg))) if res != then_reg => {
+            (Some(Register::Float(res)), Some(Register::Float(then_reg))) => {
                 self.insert(Instruction::Fmv(res, then_reg));
             }
             _ => {}
