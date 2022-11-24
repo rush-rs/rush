@@ -1,4 +1,2 @@
-main
-main.s
-main.o
-main.ll
+output*
+test

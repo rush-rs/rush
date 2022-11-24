@@ -114,6 +114,11 @@ impl<'ctx> Compiler<'ctx> {
             self.declare_global(global.name.to_string(), &global.expr);
         }
 
+        // add all function signatures beforehand
+        for func in program.functions.iter().filter(|func| func.used) {
+            self.compile_fn_signature(func);
+        }
+
         // compile all defined functions which are later used
         for func in program.functions.iter().filter(|func| func.used) {
             self.compile_fn_definition(func);
@@ -204,9 +209,7 @@ impl<'ctx> Compiler<'ctx> {
         self.globals.insert(ident, global.as_pointer_value());
     }
 
-    /// Defines a new function in the module and compiles it's body.
-    /// Also allocates space for any function arguments later passed to the function.
-    fn compile_fn_definition(&mut self, node: &AnalyzedFunctionDefinition) {
+    fn compile_fn_signature(&mut self, node: &AnalyzedFunctionDefinition) {
         // create the function's parameters
         let params: Vec<BasicMetadataTypeEnum> = node
             .params
@@ -236,9 +239,17 @@ impl<'ctx> Compiler<'ctx> {
         };
 
         // add the function to the LLVM module
+        self.module
+            .add_function(node.name, signature, Some(Linkage::External));
+    }
+
+    /// Defines a new function in the module and compiles it's body.
+    /// Also allocates space for any function arguments later passed to the function.
+    fn compile_fn_definition(&mut self, node: &AnalyzedFunctionDefinition) {
         let function = self
             .module
-            .add_function(node.name, signature, Some(Linkage::External));
+            .get_function(node.name)
+            .expect("every fn exists");
 
         // create basic block for the function
         let basic_block = self.context.append_basic_block(function, "entry");
@@ -1246,46 +1257,5 @@ impl<'ctx> Compiler<'ctx> {
                 unreachable!("cannot convert these types")
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::fs;
-
-    use inkwell::{context::Context, targets::TargetMachine};
-
-    use crate::Compiler;
-
-    #[test]
-    fn test_main_fn() {
-        let filename = "./main.rush";
-        let file = fs::read_to_string(filename).unwrap();
-        let ast = match rush_analyzer::analyze(&file, filename) {
-            Ok(res) => {
-                for diagnostic in &res.1 {
-                    println!("{:#}", diagnostic);
-                }
-                res.0
-            }
-            Err(diagnostics) => {
-                for diagnostic in diagnostics {
-                    println!("{:#}", diagnostic);
-                }
-                panic!("Analyzer detected issues");
-            }
-        };
-
-        let context = Context::create();
-        let mut compiler = Compiler::new(
-            &context,
-            TargetMachine::get_default_triple(),
-            inkwell::OptimizationLevel::None,
-        );
-
-        let (obj, ir) = compiler.compile(ast).unwrap();
-        fs::write("./main.ll", &ir).unwrap();
-        fs::write("./main.o", obj.as_slice()).unwrap();
-        println!("{ir}");
     }
 }
