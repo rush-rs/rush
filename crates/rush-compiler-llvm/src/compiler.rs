@@ -175,7 +175,7 @@ impl<'ctx> Compiler<'ctx> {
         let fn_type = self.context.i32_type().fn_type(&[], false);
         let main_fn = self
             .module
-            .add_function("main", fn_type, Some(Linkage::External));
+            .add_function("_start", fn_type, Some(Linkage::External));
 
         // create basic block for the main function
         let main_basic_block = self.context.append_basic_block(main_fn, "entry");
@@ -725,6 +725,10 @@ impl<'ctx> Compiler<'ctx> {
                         .expect("exit was previously declared"),
                 }
             }
+            "main" => self
+                .module
+                .get_function("_start")
+                .expect("main function exists"),
             // for user-defined funcs: look up the identifier in the module
             _ => self
                 .module
