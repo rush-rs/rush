@@ -48,10 +48,14 @@ pub struct BuildArgs {
 
 #[derive(ValueEnum, Clone, Debug, PartialEq, Eq)]
 pub enum Backend {
-    /// LLVM compiler: requires LLVM and gcc for compilation
+    /// LLVM compiler: no runtime dependencies
     Llvm,
     /// WASM compiler: requires wasm runtime for later execution
     Wasm,
+    /// RISC-V compiler: no dependencies
+    RiscV,
+    /// X86_64 compiler: no dependencies
+    X86_64,
 }
 
 #[derive(ValueEnum, Clone, Debug, PartialEq, Eq)]

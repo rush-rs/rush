@@ -20,9 +20,9 @@ fn main() {
 
             match args.backend {
                 Backend::Llvm => llvm::compile(ast, args),
-                Backend::Wasm => {
-                    todo!()
-                }
+                Backend::Wasm => todo!(),
+                Backend::RiscV => todo!(),
+                Backend::X86_64 => todo!(),
             }
         }
         Cli::Run(args) => {
@@ -36,9 +36,9 @@ fn main() {
 
             match args.backend {
                 Backend::Llvm => llvm::run(ast, args),
-                Backend::Wasm => {
-                    todo!()
-                }
+                Backend::Wasm => todo!(),
+                Backend::RiscV => todo!(),
+                Backend::X86_64 => todo!(),
             }
         }
         Cli::Check { file } => {
