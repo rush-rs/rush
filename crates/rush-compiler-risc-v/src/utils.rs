@@ -86,6 +86,7 @@ impl Compiler {
         regs: Vec<(Register, i64, Size)>,
     ) -> Option<Register> {
         for (reg, offset, size) in regs {
+            let comment = format!("{} byte reload: {reg}", size.byte_count());
             match reg {
                 Register::Int(reg) => {
                     // in this case, restoring `a0` would destroy the call return value.
@@ -101,14 +102,14 @@ impl Compiler {
 
                     // perform different load operations depending on the size
                     match size {
-                        Size::Byte => self.insert(Instruction::Lb(
-                            reg,
-                            Pointer::Stack(IntRegister::Fp, offset),
-                        )),
-                        Size::Dword => self.insert(Instruction::Ld(
-                            reg,
-                            Pointer::Stack(IntRegister::Fp, offset),
-                        )),
+                        Size::Byte => self.insert_w_comment(
+                            Instruction::Lb(reg, Pointer::Stack(IntRegister::Fp, offset)),
+                            comment,
+                        ),
+                        Size::Dword => self.insert_w_comment(
+                            Instruction::Ld(reg, Pointer::Stack(IntRegister::Fp, offset)),
+                            comment,
+                        ),
                     };
                 }
                 Register::Float(reg) => {
@@ -123,10 +124,10 @@ impl Compiler {
                         self.insert(Instruction::Fmv(new_res_reg, FloatRegister::Fa0));
                     }
 
-                    self.insert(Instruction::Fld(
-                        reg,
-                        Pointer::Stack(IntRegister::Fp, offset),
-                    ));
+                    self.insert_w_comment(
+                        Instruction::Fld(reg, Pointer::Stack(IntRegister::Fp, offset)),
+                        comment,
+                    );
                 }
             };
         }
