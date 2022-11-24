@@ -38,6 +38,7 @@ pub enum Instruction {
     //////// Integers ////////
     //////////////////////////
     Mov(IntValue, IntValue),
+    Cmov(Condition, IntValue, IntValue),
 
     Add(IntValue, IntValue),
     Sub(IntValue, IntValue),
@@ -144,10 +145,14 @@ impl Display for Instruction {
             Instruction::Push(reg) => write!(f, "    {:11} {reg}", "push"),
             Instruction::Pop(reg) => write!(f, "    {:11} {reg}", "pop "),
             Instruction::Jmp(symbol) => write!(f, "    {:11} {symbol}", "jmp "),
-            Instruction::JCond(cond, symbol) => write!(f, "    j{cond:10} {symbol}"),
-            Instruction::SetCond(cond, reg) => write!(f, "    set{cond:8} {reg}"),
+            Instruction::JCond(cond, symbol) => write!(f, "    j{:10} {symbol}", cond.to_string()),
+            Instruction::SetCond(cond, reg) => write!(f, "    set{:8} {reg}", cond.to_string()),
             Instruction::Mov(dest, src) if dest == src => return Ok(()),
             Instruction::Mov(dest, src) => write!(f, "    {:11} {dest}, {src}", "mov"),
+            Instruction::Cmov(_, dest, src) if dest == src => return Ok(()),
+            Instruction::Cmov(cond, dest, src) => {
+                write!(f, "    cmov{:7} {dest}, {src}", cond.to_string())
+            }
             Instruction::Add(dest, src) => write!(f, "    {:11} {dest}, {src}", "add"),
             Instruction::Sub(dest, src) => write!(f, "    {:11} {dest}, {src}", "sub"),
             Instruction::Imul(dest, src) => write!(f, "    {:11} {dest}, {src}", "imul"),

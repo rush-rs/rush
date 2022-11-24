@@ -3,7 +3,7 @@ use std::{collections::HashMap, mem};
 use rush_analyzer::{ast::*, InfixOp, Type};
 
 use crate::{
-    instruction::{Instruction, Section},
+    instruction::{Condition, Instruction, Section},
     register::{FloatRegister, IntRegister, FLOAT_PARAM_REGISTERS, INT_PARAM_REGISTERS},
     value::{FloatValue, IntValue, Offset, Pointer, Size, Value},
 };
@@ -42,8 +42,8 @@ pub struct Compiler<'src> {
     quad_constants: Vec<[Instruction; 2]>,
     // /// Constants with 32-bits, saved as `[symbol, value]`
     // long_constants: Vec<[Instruction; 2]>,
-    // /// Constants with 16-bits, saved as `[symbol, value]`
-    // short_constants: Vec<[Instruction; 2]>,
+    /// Constants with 16-bits, saved as `[symbol, value]`
+    short_constants: Vec<[Instruction; 2]>,
     // /// Constants with 8-bits, saved as `[symbol, value]`
     // byte_constants: Vec<[Instruction; 2]>,
 }
@@ -91,7 +91,7 @@ impl<'src> Compiler<'src> {
             buf.extend(self.octa_constants.into_iter().flatten());
             buf.extend(self.quad_constants.into_iter().flatten());
             // buf.extend(self.long_constants.into_iter().flatten());
-            // buf.extend(self.short_constants.into_iter().flatten());
+            buf.extend(self.short_constants.into_iter().flatten());
             // buf.extend(self.byte_constants.into_iter().flatten());
         }
 
@@ -662,6 +662,64 @@ impl<'src> Compiler<'src> {
                 self.reload_int_if_used(spilled_rdx);
 
                 Some(Value::Int(IntValue::Register(result_reg)))
+            }
+            (Some(Value::Int(left)), Some(Value::Int(right)), InfixOp::Shl | InfixOp::Shr) => {
+                // make sure the %rcx register is free
+                let spilled_rcx = self.spill_int_if_used(IntRegister::Rcx);
+
+                let lhs = match left {
+                    // when left side already uses a register, use that register
+                    IntValue::Register(reg) => reg,
+                    // else move into free one
+                    left => {
+                        let reg = self.get_free_register(Size::Qword);
+                        self.function_body.push(Instruction::Mov(reg.into(), left));
+                        reg
+                    }
+                };
+
+                let rhs = match right {
+                    IntValue::Immediate(num) => num.min(255).into(),
+                    right => {
+                        // if rhs is a register, free it
+                        if let IntValue::Register(_) = right {
+                            self.used_registers.pop();
+                        }
+
+                        // move rhs into %rcx
+                        self.function_body
+                            .push(Instruction::Mov(IntRegister::Rcx.into(), right));
+
+                        // compare %rcx to 255
+                        self.function_body
+                            .push(Instruction::Cmp(IntRegister::Rcx.into(), 255.into()));
+
+                        // TODO: reuse existing
+                        let name = format!(".short_constant_{}", self.short_constants.len());
+                        self.short_constants
+                            .push([Instruction::Symbol(name.clone()), Instruction::Short(255)]);
+
+                        // if rhs is > 255 saturate at 255
+                        self.function_body.push(Instruction::Cmov(
+                            Condition::Greater,
+                            IntRegister::Cx.into(),
+                            Pointer::new(Size::Word, IntRegister::Rip, Offset::Symbol(name)).into(),
+                        ));
+                        IntRegister::Cl.into()
+                    }
+                };
+
+                // shift
+                self.function_body.push(match node.op {
+                    InfixOp::Shl => Instruction::Shl(lhs.into(), rhs),
+                    InfixOp::Shr => Instruction::Sar(lhs.into(), rhs),
+                    _ => unreachable!("this arm is only entered with `<<` or `>>` operator"),
+                });
+
+                // reload spilled register
+                self.reload_int_if_used(spilled_rcx);
+
+                Some(Value::Int(IntValue::Register(lhs)))
             }
             (
                 Some(Value::Float(left)),
