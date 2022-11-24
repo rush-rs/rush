@@ -147,10 +147,7 @@ impl Compiler {
         self.blocks[self.curr_block].instructions = prologue;
 
         // epilogue: exit with code 0
-        self.blocks.push(Block {
-            label: epilogue_label.clone(),
-            instructions: vec![],
-        });
+        self.blocks.push(Block::new(epilogue_label.clone()));
         self.insert_at(&epilogue_label);
         self.insert(Instruction::Li(IntRegister::A0, 0));
         self.insert(Instruction::Call("exit".into()));
@@ -335,10 +332,7 @@ impl Compiler {
         self.blocks[self.curr_block].instructions = prologue;
 
         // compile epilogue
-        self.blocks.push(Block {
-            label: epilogue_label,
-            instructions: vec![],
-        });
+        self.blocks.push(Block::new(epilogue_label));
 
         // generate epilogue
         self.epilogue()

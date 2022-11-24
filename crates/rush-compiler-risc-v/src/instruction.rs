@@ -9,6 +9,8 @@ pub(crate) struct Block {
     /// Holds the block's instructions.
     /// The first element of the tuple is the instruction, the second element is a optional comment.
     pub(crate) instructions: Vec<(Instruction, Option<String>)>,
+    /// Specifies whether the current block is terminated
+    pub(crate) is_terminated: bool,
 }
 
 impl Display for Block {
@@ -37,6 +39,7 @@ impl Block {
         Self {
             label,
             instructions: vec![],
+            is_terminated: false,
         }
     }
 }

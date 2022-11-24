@@ -205,12 +205,7 @@ impl Compiler {
     /// The final label is then returned for later usage.
     pub(crate) fn append_block(&mut self, label: &str) -> String {
         let label = self.gen_label(label);
-
-        self.blocks.push(Block {
-            label: label.clone(),
-            instructions: vec![],
-        });
-
+        self.blocks.push(Block::new(label.clone()));
         label
     }
 
@@ -246,16 +241,21 @@ impl Compiler {
     /// Inserts a jump at the current position.
     /// If the current block is already terminated, the insertion is omitted.
     pub(crate) fn insert_jmp(&mut self, label: String) {
-        // check if the current block already contains a terminator
-        let contains_jmp = self.blocks[self.curr_block]
-            .instructions
-            .iter()
-            .any(|(i, _)| matches!(i, Instruction::Jmp(_)));
-
-        // if there is no terminator, jump
-        if !contains_jmp {
-            self.insert(Instruction::Jmp(label))
+        // only insert a jump if the current block is not already terminated
+        if !self.curr_block().is_terminated {
+            self.insert(Instruction::Jmp(label));
+            self.curr_block_mut().is_terminated = true;
         }
+    }
+
+    #[inline]
+    pub(crate) fn curr_block(&mut self) -> &Block {
+        &self.blocks[self.curr_block]
+    }
+
+    #[inline]
+    pub(crate) fn curr_block_mut(&mut self) -> &mut Block {
+        &mut self.blocks[self.curr_block]
     }
 
     #[inline]

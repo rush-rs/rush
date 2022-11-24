@@ -220,7 +220,11 @@ impl Compiler {
 
         // perform function call
         let func_label = match node.func {
-            "exit" => "exit".to_string(),
+            "exit" => {
+                // mark the current block as terminated (avoid future useless jumps)
+                self.curr_block_mut().is_terminated = true;
+                "exit".to_string()
+            }
             func => format!("main..{func}"),
         };
         self.insert(Instruction::Call(func_label));
