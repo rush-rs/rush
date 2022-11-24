@@ -29,7 +29,6 @@ pub struct AnalyzedParameter<'src> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnalyzedBlock<'src> {
     pub result_type: Type,
-    pub constant: bool,
     pub stmts: Vec<AnalyzedStatement<'src>>,
     pub expr: Option<AnalyzedExpression<'src>>,
 }
@@ -140,20 +139,22 @@ impl AnalyzedExpression<'_> {
     }
 
     pub fn constant(&self) -> bool {
+        matches!(
+            self,
+            Self::Int(_) | Self::Float(_) | Self::Bool(_) | Self::Char(_)
+        )
+    }
+
+    pub fn as_constant(&self) -> Option<Self> {
         match self {
-            Self::Block(expr) => expr.constant,
-            Self::Int(_) => true,
-            Self::Float(_) => true,
-            Self::Bool(_) => true,
-            Self::Char(_) => true,
-            Self::Ident(_) => false,
-            Self::If(expr) => expr.constant,
-            Self::Prefix(expr) => expr.constant,
-            Self::Infix(expr) => expr.constant,
-            Self::Assign(_) => false,
-            Self::Call(_) => false,
-            Self::Cast(expr) => expr.constant,
-            Self::Grouped(expr) => expr.constant(),
+            expr @ (AnalyzedExpression::Int(_)
+            | AnalyzedExpression::Float(_)
+            | AnalyzedExpression::Bool(_)
+            | AnalyzedExpression::Char(_)) => {
+                // this clone is cheap, as inner values of these variants all impl `Copy`
+                Some(expr.clone())
+            }
+            _ => None,
         }
     }
 }
@@ -161,7 +162,6 @@ impl AnalyzedExpression<'_> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnalyzedIfExpr<'src> {
     pub result_type: Type,
-    pub constant: bool,
     pub cond: AnalyzedExpression<'src>,
     pub then_block: AnalyzedBlock<'src>,
     pub else_block: Option<AnalyzedBlock<'src>>,
@@ -176,7 +176,6 @@ pub struct AnalyzedIdentExpr<'src> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnalyzedPrefixExpr<'src> {
     pub result_type: Type,
-    pub constant: bool,
     pub op: PrefixOp,
     pub expr: AnalyzedExpression<'src>,
 }
@@ -184,7 +183,6 @@ pub struct AnalyzedPrefixExpr<'src> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnalyzedInfixExpr<'src> {
     pub result_type: Type,
-    pub constant: bool,
     pub lhs: AnalyzedExpression<'src>,
     pub op: InfixOp,
     pub rhs: AnalyzedExpression<'src>,
@@ -208,7 +206,6 @@ pub struct AnalyzedCallExpr<'src> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnalyzedCastExpr<'src> {
     pub result_type: Type,
-    pub constant: bool,
     pub expr: AnalyzedExpression<'src>,
     pub type_: Type,
 }

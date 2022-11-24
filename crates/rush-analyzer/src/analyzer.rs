@@ -552,11 +552,9 @@ impl<'src> Analyzer<'src> {
             Some(_) => Type::Never,
             None => expr.as_ref().map_or(Type::Unit, |expr| expr.result_type()),
         };
-        let constant = expr.as_ref().map_or(true, |expr| expr.constant()) && stmts.is_empty();
 
         AnalyzedBlock {
             result_type,
-            constant,
             stmts,
             expr,
         }
@@ -765,7 +763,14 @@ impl<'src> Analyzer<'src> {
             // check that the condition is non-constant
             if cond.constant() {
                 self.warn(
-                    "redundant while-statement: condition is constant",
+                    format!(
+                        "redundant while-statement: condition is always {}",
+                        match cond {
+                            AnalyzedExpression::Bool(true) => "true",
+                            AnalyzedExpression::Bool(false) => "false",
+                            _ => unreachable!("type is checked above and expr is constant"),
+                        }
+                    ),
                     vec!["for unconditional loops use a loop-statement".into()],
                     cond_span,
                 )
@@ -855,7 +860,14 @@ impl<'src> Analyzer<'src> {
             // check that the condition is non-constant
             if cond.constant() {
                 self.warn(
-                    "redundant for-statement: condition is constant",
+                    format!(
+                        "redundant for-statement: condition is always {}",
+                        match cond {
+                            AnalyzedExpression::Bool(true) => "true",
+                            AnalyzedExpression::Bool(false) => "false",
+                            _ => unreachable!("type is checked above and expr is constant"),
+                        }
+                    ),
                     vec!["for unconditional loops use a loop-statement".into()],
                     cond_span,
                 )
@@ -979,7 +991,11 @@ impl<'src> Analyzer<'src> {
             Expression::Call(node) => self.call_expr(*node),
             Expression::Cast(node) => self.cast_expr(*node),
             Expression::Grouped(node) => {
-                AnalyzedExpression::Grouped(self.expression(*node.inner).into())
+                let expr = self.expression(*node.inner);
+                match expr.as_constant() {
+                    Some(expr) => expr,
+                    None => AnalyzedExpression::Grouped(expr.into()),
+                }
             }
         }
     }
@@ -989,7 +1005,19 @@ impl<'src> Analyzer<'src> {
         let block = self.block(node);
         self.pop_scope();
 
-        AnalyzedExpression::Block(block.into())
+        match Self::eval_block(&block) {
+            Some(expr) => expr,
+            None => AnalyzedExpression::Block(block.into()),
+        }
+    }
+
+    fn eval_block(block: &AnalyzedBlock<'src>) -> Option<AnalyzedExpression<'src>> {
+        if block.stmts.iter().all(|stmt| stmt.constant()) {
+            if let Some(expr) = block.expr.as_ref().and_then(|expr| expr.as_constant()) {
+                return Some(expr);
+            }
+        }
+        None
     }
 
     fn if_expr(&mut self, node: IfExpr<'src>) -> AnalyzedExpression<'src> {
@@ -1011,7 +1039,14 @@ impl<'src> Analyzer<'src> {
             // check that the condition is non-constant
             if cond.constant() {
                 self.warn(
-                    "redundant if-expression: condition is constant",
+                    format!(
+                        "redundant if-expression: condition is always {}",
+                        match cond {
+                            AnalyzedExpression::Bool(true) => "true",
+                            AnalyzedExpression::Bool(false) => "false",
+                            _ => unreachable!("type is checked above and expr is constant"),
+                        }
+                    ),
                     vec![],
                     cond_span,
                 )
@@ -1083,14 +1118,20 @@ impl<'src> Analyzer<'src> {
             }
         };
 
-        let constant = cond.constant()
-            && then_block.constant
-            && else_block.as_ref().map_or(false, |block| block.constant);
+        // evaluate constant if-exprs
+        match (
+            cond.as_constant(),
+            Self::eval_block(&then_block),
+            else_block.as_ref().and_then(Self::eval_block),
+        ) {
+            (Some(AnalyzedExpression::Bool(true)), Some(val), Some(_)) => return val,
+            (Some(AnalyzedExpression::Bool(false)), Some(_), Some(val)) => return val,
+            _ => {}
+        }
 
         AnalyzedExpression::If(
             AnalyzedIfExpr {
                 result_type,
-                constant,
                 cond,
                 then_block,
                 else_block,
@@ -1164,10 +1205,26 @@ impl<'src> Analyzer<'src> {
             },
         };
 
+        // evaluate constant expressions
+        match (&expr, node.op) {
+            // TODO: allow bitwise not
+            (AnalyzedExpression::Int(num), PrefixOp::Not) => return AnalyzedExpression::Int(!num),
+            (AnalyzedExpression::Int(num), PrefixOp::Neg) => return AnalyzedExpression::Int(-num),
+            (AnalyzedExpression::Float(num), PrefixOp::Neg) => {
+                return AnalyzedExpression::Float(-num)
+            }
+            (AnalyzedExpression::Bool(bool), PrefixOp::Not) => {
+                return AnalyzedExpression::Bool(!bool)
+            }
+            (AnalyzedExpression::Char(num), PrefixOp::Not) => {
+                return AnalyzedExpression::Char(!num & 0x7F)
+            }
+            _ => {}
+        }
+
         AnalyzedExpression::Prefix(
             AnalyzedPrefixExpr {
                 result_type,
-                constant: expr.constant(),
                 op: node.op,
                 expr,
             }
@@ -1183,7 +1240,6 @@ impl<'src> Analyzer<'src> {
 
         let allowed_types: &[Type];
         let mut override_result_type = None;
-        let mut allows_constant = true;
         let mut inherits_never_type = true;
         match node.op {
             InfixOp::Plus | InfixOp::Minus | InfixOp::Mul | InfixOp::Div => {
@@ -1193,12 +1249,7 @@ impl<'src> Analyzer<'src> {
                 allowed_types = &[Type::Int, Type::Float];
                 override_result_type = Some(Type::Bool);
             }
-            InfixOp::Rem | InfixOp::Shl | InfixOp::Shr => {
-                allowed_types = &[Type::Int];
-            }
-            // TODO: make this constant again (after the optimizer is introduced)
-            InfixOp::Pow => {
-                allows_constant = false;
+            InfixOp::Rem | InfixOp::Shl | InfixOp::Shr | InfixOp::Pow => {
                 allowed_types = &[Type::Int];
             }
             InfixOp::Eq | InfixOp::Neq => {
@@ -1262,10 +1313,72 @@ impl<'src> Analyzer<'src> {
             }
         };
 
+        // evaluate constant expressions
+        match (&lhs, &rhs) {
+            (AnalyzedExpression::Int(left), AnalyzedExpression::Int(right)) => match node.op {
+                InfixOp::Plus => return AnalyzedExpression::Int(left + right),
+                InfixOp::Minus => return AnalyzedExpression::Int(left - right),
+                InfixOp::Mul => return AnalyzedExpression::Int(left * right),
+                InfixOp::Div => return AnalyzedExpression::Int(left / right),
+                InfixOp::Rem => return AnalyzedExpression::Int(left % right),
+                InfixOp::Pow => {
+                    return AnalyzedExpression::Int(if *right < 0 {
+                        0
+                    } else {
+                        left.pow(*right as u32)
+                    })
+                }
+                InfixOp::Eq => return AnalyzedExpression::Bool(left == right),
+                InfixOp::Neq => return AnalyzedExpression::Bool(left != right),
+                InfixOp::Lt => return AnalyzedExpression::Bool(left < right),
+                InfixOp::Gt => return AnalyzedExpression::Bool(left > right),
+                InfixOp::Lte => return AnalyzedExpression::Bool(left <= right),
+                InfixOp::Gte => return AnalyzedExpression::Bool(left >= right),
+                InfixOp::Shl => return AnalyzedExpression::Int(left << right),
+                InfixOp::Shr => return AnalyzedExpression::Int(left >> right),
+                InfixOp::BitOr => return AnalyzedExpression::Int(left | right),
+                InfixOp::BitAnd => return AnalyzedExpression::Int(left & right),
+                InfixOp::BitXor => return AnalyzedExpression::Int(left ^ right),
+                _ => {}
+            },
+            (AnalyzedExpression::Float(left), AnalyzedExpression::Float(right)) => match node.op {
+                InfixOp::Plus => return AnalyzedExpression::Float(left + right),
+                InfixOp::Minus => return AnalyzedExpression::Float(left - right),
+                InfixOp::Mul => return AnalyzedExpression::Float(left * right),
+                InfixOp::Div => return AnalyzedExpression::Float(left / right),
+                InfixOp::Eq => return AnalyzedExpression::Bool(left == right),
+                InfixOp::Neq => return AnalyzedExpression::Bool(left != right),
+                InfixOp::Lt => return AnalyzedExpression::Bool(left < right),
+                InfixOp::Gt => return AnalyzedExpression::Bool(left > right),
+                InfixOp::Lte => return AnalyzedExpression::Bool(left <= right),
+                InfixOp::Gte => return AnalyzedExpression::Bool(left >= right),
+                _ => {}
+            },
+            (AnalyzedExpression::Bool(left), AnalyzedExpression::Bool(right)) => match node.op {
+                InfixOp::Eq => return AnalyzedExpression::Bool(left == right),
+                InfixOp::Neq => return AnalyzedExpression::Bool(left != right),
+                InfixOp::BitOr => return AnalyzedExpression::Bool(left | right),
+                InfixOp::BitAnd => return AnalyzedExpression::Bool(left & right),
+                InfixOp::BitXor => return AnalyzedExpression::Bool(left ^ right),
+                InfixOp::And => return AnalyzedExpression::Bool(*left && *right),
+                InfixOp::Or => return AnalyzedExpression::Bool(*left || *right),
+                _ => {}
+            },
+            (AnalyzedExpression::Char(left), AnalyzedExpression::Char(right)) => match node.op {
+                InfixOp::Eq => return AnalyzedExpression::Bool(left == right),
+                InfixOp::Neq => return AnalyzedExpression::Bool(left != right),
+                InfixOp::Lt => return AnalyzedExpression::Bool(left < right),
+                InfixOp::Gt => return AnalyzedExpression::Bool(left > right),
+                InfixOp::Lte => return AnalyzedExpression::Bool(left <= right),
+                InfixOp::Gte => return AnalyzedExpression::Bool(left >= right),
+                _ => {}
+            },
+            _ => {}
+        }
+
         AnalyzedExpression::Infix(
             AnalyzedInfixExpr {
                 result_type,
-                constant: lhs.constant() && rhs.constant() && allows_constant,
                 lhs,
                 op: node.op,
                 rhs,
@@ -1573,15 +1686,39 @@ impl<'src> Analyzer<'src> {
             }
         };
 
-        AnalyzedExpression::Cast(
-            AnalyzedCastExpr {
-                result_type,
-                constant: expr.constant(),
-                expr,
-                type_: node.type_.inner,
+        // evaluate constant expressions
+        match (expr, result_type) {
+            (AnalyzedExpression::Int(val), Type::Int) => AnalyzedExpression::Int(val),
+            (AnalyzedExpression::Int(val), Type::Float) => AnalyzedExpression::Float(val as f64),
+            (AnalyzedExpression::Int(val), Type::Bool) => AnalyzedExpression::Bool(val != 0),
+            (AnalyzedExpression::Int(val), Type::Char) => {
+                AnalyzedExpression::Char((val as u8).min(127))
             }
-            .into(),
-        )
+            (AnalyzedExpression::Float(val), Type::Int) => AnalyzedExpression::Int(val as i64),
+            (AnalyzedExpression::Float(val), Type::Float) => AnalyzedExpression::Float(val),
+            (AnalyzedExpression::Float(val), Type::Bool) => AnalyzedExpression::Bool(val != 0.0),
+            (AnalyzedExpression::Float(val), Type::Char) => {
+                AnalyzedExpression::Char((val as u8).min(127))
+            }
+            (AnalyzedExpression::Bool(val), Type::Int) => AnalyzedExpression::Int(val as i64),
+            (AnalyzedExpression::Bool(val), Type::Float) => {
+                AnalyzedExpression::Float(val as u8 as f64)
+            }
+            (AnalyzedExpression::Bool(val), Type::Bool) => AnalyzedExpression::Bool(val),
+            (AnalyzedExpression::Bool(val), Type::Char) => AnalyzedExpression::Char(val as u8),
+            (AnalyzedExpression::Char(val), Type::Int) => AnalyzedExpression::Int(val as i64),
+            (AnalyzedExpression::Char(val), Type::Float) => AnalyzedExpression::Float(val as f64),
+            (AnalyzedExpression::Char(val), Type::Bool) => AnalyzedExpression::Bool(val != 0),
+            (AnalyzedExpression::Char(val), Type::Char) => AnalyzedExpression::Char(val),
+            (expr, result_type) => AnalyzedExpression::Cast(
+                AnalyzedCastExpr {
+                    result_type,
+                    expr,
+                    type_: node.type_.inner,
+                }
+                .into(),
+            ),
+        }
     }
 }
 
@@ -1656,19 +1793,51 @@ mod tests {
                                     type: Type::Int)],
                             return_type: Type::Int,
                             block: (Block -> Type::Never,
-                                constant: false,
                                 stmts: [
                                     (ReturnStmt, (Some(InfixExpr -> Type::Int,
-                                        constant: false,
                                         lhs: (Ident -> Type::Int, "left"),
                                         op: InfixOp::Plus,
                                         rhs: (Ident -> Type::Int, "right"))))],
                                 expr: (None)))],
                     main_fn: (Block -> Type::Unit,
-                        constant: true,
                         stmts: [],
                         expr: (None)),
                     used_builtins: [])
+            },
+        )?;
+
+        // fn main() { exit(1 + 2); }
+        program_test(
+            tree! {
+                (Program @ 0..26,
+                    functions: [
+                        (FunctionDefinition @ 0..26,
+                            name: ("main", @ 3..7),
+                            params @ 7..9: [],
+                            return_type: (None, @ 8..11),
+                            block: (Block @ 10..26,
+                                stmts: [
+                                    (ExprStmt @ 12..24, (CallExpr @ 12..23,
+                                        func: ("exit", @ 12..16),
+                                        args: [
+                                            (InfixExpr @ 17..22,
+                                                lhs: (Int 1, @ 17..18),
+                                                op: InfixOp::Plus,
+                                                rhs: (Int 2, @ 21..22))]))],
+                                expr: (None)))],
+                    globals: [])
+            },
+            analyzed_tree! {
+                (Program,
+                    globals: [],
+                    functions: [],
+                    main_fn: (Block -> Type::Never,
+                        stmts: [
+                            (ExprStmt, (CallExpr -> Type::Never,
+                                func: "exit",
+                                args: [(Int 3)]))],
+                        expr: (None)),
+                    used_builtins: ["exit"])
             },
         )?;
 

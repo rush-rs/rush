@@ -68,13 +68,11 @@ macro_rules! analyzed_tree {
 
     ((
         Block -> $result_type:expr,
-        constant: $constant:expr,
         stmts: [$($stmt:tt),* $(,)?],
         expr: $expr:tt $(,)?
     )) => {
         AnalyzedBlock {
             result_type: $result_type,
-            constant: $constant,
             stmts: vec![$(analyzed_tree!($stmt)),*],
             expr: analyzed_tree!($expr),
         }
@@ -84,14 +82,12 @@ macro_rules! analyzed_tree {
     };
     ((
         IfExpr -> $result_type:expr,
-        constant: $constant:expr,
         cond: $cond:tt,
         then_block: $then_block:tt,
         else_block: $else_block:tt $(,)?
     )) => {
         AnalyzedExpression::If(AnalyzedIfExpr {
             result_type: $result_type,
-            constant: $constant,
             cond: analyzed_tree!($cond),
             then_block: analyzed_tree!($then_block),
             else_block: analyzed_tree!($else_block),
@@ -112,27 +108,23 @@ macro_rules! analyzed_tree {
     };
     ((
         PrefixExpr -> $result_type:expr,
-        constant: $constant:expr,
         op: $op:expr,
         expr: $expr:tt $(,)?
     )) => {
         AnalyzedExpression::Prefix(AnalyzedPrefixExpr {
             result_type: $result_type,
-            constant: $constant,
             op: $op,
             expr: analyzed_tree!($expr),
         }.into())
     };
     ((
         InfixExpr -> $result_type:expr,
-        constant: $constant:expr,
         lhs: $lhs:tt,
         op: $op:expr,
         rhs: $rhs:tt $(,)?
     )) => {
         AnalyzedExpression::Infix(AnalyzedInfixExpr {
             result_type: $result_type,
-            constant: $constant,
             lhs: analyzed_tree!($lhs),
             op: $op,
             rhs: analyzed_tree!($rhs),
@@ -164,13 +156,11 @@ macro_rules! analyzed_tree {
     };
     ((
         CastExpr -> $result_type:expr,
-        constant: $constant:expr,
         expr: $expr:tt,
         type: $type:expr $(,)?
     )) => {
         AnalyzedExpression::Cast(AnalyzedCastExpr {
             result_type: $result_type,
-            constant: $constant,
             expr: analyzed_tree!($expr),
             type_: $type,
         }.into())
