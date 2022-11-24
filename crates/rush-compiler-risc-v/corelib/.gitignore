@@ -1,2 +1,2 @@
-libcore.a
+libcore*.a
 main

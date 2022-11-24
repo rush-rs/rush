@@ -1,16 +1,23 @@
 src := pow exit cast
 obj := pow.o exit.o cast.o
-dest := libcore.a
+dest := libcore
+
+# default RISC-V ABI
+abi := lp64d
 
 # creates an `.a` file of the entire corelib
 corelib:
-	rm -f $(dest)
 	for file in $(src); do \
-		riscv64-linux-gnu-as src/$$file.s -o $$file.o; \
+		riscv64-linux-gnu-as -mabi=$(abi) src/$$file.s -o $$file.o; \
 	done
 
-	riscv64-linux-gnu-ar -cq $(dest) $(obj)
+	riscv64-linux-gnu-ar -cq $(dest)-$(abi).a $(obj)
 	rm $(obj)
+
+all:
+	rm -f *.a
+	make abi=lp64
+	make abi=lp64d
 
 # runs `main.c` alongside the corelib in order to test it
 test: corelib
