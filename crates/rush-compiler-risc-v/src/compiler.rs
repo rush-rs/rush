@@ -766,7 +766,7 @@ impl Compiler {
                 Type::Int | Type::Bool | Type::Char => {
                     self.insert(Instruction::Mov((dest).into(), rhs_reg.into()))
                 }
-                Type::Float => todo!(), // TODO: impl float assignments
+                Type::Float => self.insert(Instruction::Fmv(dest.into(), rhs_reg.into())),
                 _ => unreachable!("other types cannot exist in an assignment"),
             },
         }
