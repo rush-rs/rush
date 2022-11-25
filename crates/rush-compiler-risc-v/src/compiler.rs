@@ -126,7 +126,7 @@ impl Compiler {
         // declare global variables
         // can be declared before the prologue: exprs are all constant (require no stack)
         for var in globals {
-            self.declare_global(var.name.to_string(), var.expr)
+            self.declare_global(var.name.to_string(), var.mutable, var.expr)
         }
 
         // add the epilogue label
@@ -152,49 +152,43 @@ impl Compiler {
 
     /// Declares a new global variable.
     /// The initializer is put inside the current basic block.
-    fn declare_global(&mut self, label: String, value: AnalyzedExpression) {
-        let comment = format!("let {label} (global)");
+    /// If the variable is non-mutable, it is put under the `.rodata` section
+    fn declare_global(&mut self, label: String, mutable: bool, value: AnalyzedExpression) {
         let type_ = value.result_type();
-
-        // TODO: put constant evaluated globals in .rodata section
         let data = match (type_, value) {
             (Type::Int, AnalyzedExpression::Int(val)) => DataObjType::Dword(val),
-            (Type::Int, expr) => {
-                let res_reg = self.expression(expr).expect("is int");
-                self.insert_w_comment(
-                    Instruction::Sd(res_reg.into(), Pointer::Label(label.clone())),
-                    comment,
-                );
-                DataObjType::Dword(0)
-            }
             (Type::Bool, AnalyzedExpression::Bool(val)) => DataObjType::Byte(val as i64),
-            (Type::Bool | Type::Char, expr) => {
-                let res_reg = self.expression(expr).expect("is not unit");
-                self.insert_w_comment(
-                    Instruction::Sb(res_reg.into(), Pointer::Label(label.clone())),
-                    comment,
-                );
-                DataObjType::Byte(0)
-            }
+            (Type::Char, AnalyzedExpression::Char(val)) => DataObjType::Byte(val as i64),
             (Type::Float, AnalyzedExpression::Float(val)) => DataObjType::Float(val),
-            (Type::Float, expr) => {
-                let res_reg = self.expression(expr).expect("is float");
-                self.insert_w_comment(
-                    Instruction::Fsd(res_reg.into(), Pointer::Label(label.clone())),
-                    comment,
-                );
-                DataObjType::Float(0.0)
-            }
             _ => unreachable!("other types cannot be used as globals"),
         };
 
-        let var = Variable {
-            type_,
-            value: VariableValue::Pointer(Pointer::Label(label.clone())),
+        let value = match mutable {
+            true => {
+                self.data_section.push(DataObj {
+                    label: label.clone(),
+                    data,
+                });
+                VariableValue::Pointer(Pointer::Label(label.clone()))
+            }
+            false => {
+                let value = VariableValue::Pointer(
+                    match self.rodata_section.iter().find(|d| d.data == data) {
+                        Some(DataObj { label, .. }) => Pointer::Label(label.clone()),
+                        None => {
+                            self.rodata_section.push(DataObj {
+                                label: label.clone(),
+                                data,
+                            });
+                            Pointer::Label(label.clone())
+                        }
+                    },
+                );
+                value
+            }
         };
 
-        self.globals.insert(label.clone(), var);
-        self.data_section.push(DataObj { label, data });
+        self.globals.insert(label, Variable { type_, value });
     }
 
     /// Compiles an [`AnalyzedFunctionDefinition`] declaration.
