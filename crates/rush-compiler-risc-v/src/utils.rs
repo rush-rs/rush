@@ -14,10 +14,20 @@ pub(crate) struct Variable {
     pub(crate) value: VariableValue,
 }
 
-#[derive(Debug, Clone)]
+impl Variable {
+    pub(crate) fn unit() -> Self {
+        Self {
+            type_: Type::Unit,
+            value: VariableValue::Unit,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum VariableValue {
     Pointer(Pointer),
     Register(Register),
+    Unit,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -136,7 +146,7 @@ impl Compiler {
     }
 
     /// Returns a mutable reference to the current scope.
-    pub(crate) fn scope_mut(&mut self) -> &mut HashMap<String, Option<Variable>> {
+    pub(crate) fn scope_mut(&mut self) -> &mut HashMap<String, Variable> {
         self.scopes.last_mut().expect("always called from a scope")
     }
 
@@ -156,7 +166,6 @@ impl Compiler {
     }
 
     /// Allocates and returns the next unused, general purpose int register.
-    /// TODO: implement this using the next register after the last used
     pub(crate) fn alloc_ireg(&self) -> IntRegister {
         for reg in INT_REGISTERS {
             if !self
@@ -226,14 +235,13 @@ impl Compiler {
     /// Helper function for resolving identifier names.
     /// Searches the scopes first. If no match was found, the fitting global variable is returned.
     /// Panics if the variable does not exist.
-    pub(crate) fn resolve_name(&self, name: &str) -> &Option<Variable> {
+    pub(crate) fn resolve_name(&self, name: &str) -> &Variable {
         // look for normal variables first
         for scope in self.scopes.iter().rev() {
             if let Some(variable) = scope.get(name) {
                 return variable;
             }
         }
-
         // return reference to global variable
         self.globals.get(name).expect("every variable exists")
     }

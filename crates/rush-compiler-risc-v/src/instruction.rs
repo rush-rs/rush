@@ -248,7 +248,7 @@ impl From<InfixOp> for Condition {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Pointer {
     Stack(IntRegister, i64),
     Label(String),

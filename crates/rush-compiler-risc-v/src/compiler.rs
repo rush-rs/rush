@@ -28,10 +28,9 @@ pub struct Compiler {
     pub(crate) curr_loop: Option<Loop>,
 
     /// The first element is the root scope, the last element is the current scope.
-    pub(crate) scopes: Vec<HashMap<String, Option<Variable>>>,
+    pub(crate) scopes: Vec<HashMap<String, Variable>>,
     /// Holds the global variables of the program.
-    /// TODO: make the v a non-option
-    pub(crate) globals: HashMap<String, Option<Variable>>,
+    pub(crate) globals: HashMap<String, Variable>,
 
     /// Specifies all registers which are currently in use and may not be overwritten.
     pub(crate) used_registers: Vec<(Register, Size)>,
@@ -191,7 +190,7 @@ impl Compiler {
             value: VariableValue::Pointer(Pointer::Label(label.clone())),
         };
 
-        self.globals.insert(label.clone(), Some(var));
+        self.globals.insert(label.clone(), var);
         self.data_section.push(DataObj { label, data });
     }
 
@@ -247,25 +246,25 @@ impl Compiler {
 
                             self.scope_mut().insert(
                                 param.name.to_string(),
-                                Some(Variable {
+                                Variable {
                                     type_: param.type_,
                                     value: VariableValue::Pointer(Pointer::Stack(
                                         IntRegister::Fp,
                                         offset,
                                     )),
-                                }),
+                                },
                             );
                         }
                         None => {
                             self.scope_mut().insert(
                                 param.name.to_string(),
-                                Some(Variable {
+                                Variable {
                                     type_: param.type_,
                                     value: VariableValue::Pointer(Pointer::Stack(
                                         IntRegister::Fp,
                                         mem_offset,
                                     )),
-                                }),
+                                },
                             );
                             mem_offset += 8;
                         }
@@ -287,25 +286,25 @@ impl Compiler {
 
                             self.scope_mut().insert(
                                 param.name.to_string(),
-                                Some(Variable {
+                                Variable {
                                     type_: param.type_,
                                     value: VariableValue::Pointer(Pointer::Stack(
                                         IntRegister::Fp,
                                         offset,
                                     )),
-                                }),
+                                },
                             );
                         }
                         None => {
                             self.scope_mut().insert(
                                 param.name.to_string(),
-                                Some(Variable {
+                                Variable {
                                     type_: param.type_,
                                     value: VariableValue::Pointer(Pointer::Stack(
                                         IntRegister::Fp,
                                         mem_offset,
                                     )),
-                                }),
+                                },
                             );
                             mem_offset += 8;
                         }
@@ -313,8 +312,14 @@ impl Compiler {
                     float_cnt += 1;
                 }
                 Type::Unit | Type::Never => {
-                    // ignore these types (add dummy values)
-                    self.scope_mut().insert(param.name.to_string(), None);
+                    // add dummy values for these types
+                    self.scope_mut().insert(
+                        param.name.to_string(),
+                        Variable {
+                            type_: Type::Unit,
+                            value: VariableValue::Unit,
+                        },
+                    );
                 }
                 Type::Unknown => unreachable!("analyzer would have failed"),
             }
@@ -523,8 +528,14 @@ impl Compiler {
 
         // add a new scope and insert the induction variable into it
         self.push_scope();
-        self.scope_mut()
-            .insert(node.ident.to_string(), res.as_ref().map(|r| r.0.clone()));
+
+        self.scope_mut().insert(
+            node.ident.to_string(),
+            match res {
+                Some((ref var, _)) => var.clone(),
+                None => Variable::unit(),
+            },
+        );
 
         //// CONDITION ////
         self.insert_at(&for_head);
@@ -581,7 +592,8 @@ impl Compiler {
         // filter out any unit / never types
         if matches!(type_, Type::Unit | Type::Never) {
             // unit / never type: insert a dummy variable into the HashMap
-            self.scope_mut().insert(node.name.to_string(), None);
+            self.scope_mut()
+                .insert(node.name.to_string(), Variable::unit());
             return;
         }
 
@@ -616,7 +628,7 @@ impl Compiler {
             type_,
             value: VariableValue::Pointer(Pointer::Stack(IntRegister::Fp, offset)),
         };
-        self.scope_mut().insert(node.name.to_string(), Some(var));
+        self.scope_mut().insert(node.name.to_string(), var);
     }
 
     /// Compiles an [`AnalyzedExpression`].
@@ -669,8 +681,8 @@ impl Compiler {
             AnalyzedExpression::Ident(ident) => {
                 // if this is a placeholder or dummy variable, ignore it
                 let var = match self.resolve_name(ident.ident).clone() {
-                    Some(var) => var,
-                    None => return None,
+                    Variable { value, .. } if value == VariableValue::Unit => return None,
+                    var => var,
                 };
                 self.load_value_from_variable(var)
             }
@@ -711,6 +723,7 @@ impl Compiler {
                 _ => unreachable!("either filtered or impossible"),
             },
             VariableValue::Register(reg) => Some(reg),
+            VariableValue::Unit => None,
         }
     }
 
@@ -722,11 +735,7 @@ impl Compiler {
     fn assign_expr(&mut self, node: AnalyzedAssignExpr) {
         let rhs_type = node.expr.result_type();
 
-        let assignee = self
-            .resolve_name(node.assignee)
-            .as_ref()
-            .expect("filtered above")
-            .clone();
+        let assignee = self.resolve_name(node.assignee).clone();
 
         // holds the value of the rhs (either simple or the result of an operation)
         let rhs_reg = match node.op {
@@ -769,6 +778,7 @@ impl Compiler {
                 Type::Float => self.insert(Instruction::Fmv(dest.into(), rhs_reg.into())),
                 _ => unreachable!("other types cannot exist in an assignment"),
             },
+            VariableValue::Unit => {} // do nothing for unit types
         }
     }
 

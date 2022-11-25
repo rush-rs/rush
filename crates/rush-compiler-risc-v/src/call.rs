@@ -89,13 +89,15 @@ impl Compiler {
     pub(crate) fn call_expr(&mut self, node: AnalyzedCallExpr) -> Option<Register> {
         // before the function is called, all currently used registers are saved
         let mut regs_on_stack = vec![];
+
+        // TODO: differentiate between caller-saved and non caller-saved
         for (reg, size) in self.used_registers.clone() {
             let offset = self.spill_reg(reg, size);
             regs_on_stack.push((reg, offset, size));
         }
 
         // save the previous state of the used registers
-        let used_registers_prev = mem::take(&mut self.used_registers);
+        let used_regs_prev = mem::take(&mut self.used_registers);
 
         // specifies the place of the current register (relative to its type)
         // `a0` would be `int_cnt = 0`, `fa0` would be `float_cnt = 0`
@@ -239,7 +241,7 @@ impl Compiler {
         }
 
         // restore the old list of used registers
-        self.used_registers = used_registers_prev;
+        self.used_registers = used_regs_prev;
 
         let res_reg = match node.result_type {
             Type::Int | Type::Char | Type::Bool => Some(IntRegister::A0.to_reg()),
