@@ -1172,6 +1172,8 @@ impl<'src> Analyzer<'src> {
             PrefixOp::Not => {
                 match expr.result_type() {
                     Type::Bool => Type::Bool,
+                    Type::Int => Type::Int,
+                    Type::Char => Type::Char,
                     Type::Unknown => Type::Unknown,
                     Type::Never => {
                         self.warn_unreachable(node.span, expr_span, true);
@@ -1207,7 +1209,6 @@ impl<'src> Analyzer<'src> {
 
         // evaluate constant expressions
         match (&expr, node.op) {
-            // TODO: allow bitwise not
             (AnalyzedExpression::Int(num), PrefixOp::Not) => return AnalyzedExpression::Int(!num),
             (AnalyzedExpression::Int(num), PrefixOp::Neg) => return AnalyzedExpression::Int(-num),
             (AnalyzedExpression::Float(num), PrefixOp::Neg) => {
