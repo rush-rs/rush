@@ -30,24 +30,25 @@ pub struct Compiler<'src> {
     text_section: Vec<Instruction>,
 
     //////// .data section ////////
-    quad_globals: Vec<Instruction>,
-    // long_globals: Vec<Instruction>,
-    // short_globals: Vec<Instruction>,
-    byte_globals: Vec<Instruction>,
+    quad_globals: Vec<(String, u64)>,
+    quad_float_globals: Vec<(String, f64)>,
+    // long_globals: Vec<(String, u32)>,
+    // short_globals: Vec<(String, u16)>,
+    byte_globals: Vec<(String, u8)>,
 
     //////// .rodata section ////////
     /// Constants with 128-bits
     octa_constants: HashMap<u128, String>,
-    // /// Constants with 64-bits
-    // quad_constants: HashMap<u64, String>,
+    /// Constants with 64-bits
+    quad_constants: HashMap<u64, String>,
     /// Constant floats with 64-bits
     quad_float_constants: HashMap<u64, String>,
     // /// Constants with 32-bits
     // long_constants: HashMap<u32, String>,
     /// Constants with 16-bits
     short_constants: HashMap<u16, String>,
-    // /// Constants with 8-bits
-    // byte_constants: HashMap<u8, String>,
+    /// Constants with 8-bits
+    byte_constants: HashMap<u8, String>,
 }
 
 #[derive(Debug, Clone)]
@@ -85,10 +86,36 @@ impl<'src> Compiler<'src> {
 
         // mutable globals
         buf.push(Instruction::Section(Section::Data));
-        buf.append(&mut self.quad_globals);
-        // buf.append(&mut self.long_globals);
-        // buf.append(&mut self.short_globals);
-        buf.append(&mut self.byte_globals);
+        buf.extend(
+            self.quad_globals
+                .into_iter()
+                .flat_map(|(name, value)| [Instruction::Symbol(name), Instruction::QuadInt(value)]),
+        );
+        buf.extend(
+            self.quad_float_globals
+                .into_iter()
+                .flat_map(|(name, value)| {
+                    [
+                        Instruction::Symbol(name),
+                        Instruction::QuadFloat(value.to_bits()),
+                    ]
+                }),
+        );
+        // buf.extend(
+        //     self.long_globals
+        //         .into_iter()
+        //         .flat_map(|(name, value)| [Instruction::Symbol(name), Instruction::Long(value)]),
+        // );
+        // buf.extend(
+        //     self.short_globals
+        //         .into_iter()
+        //         .flat_map(|(name, value)| [Instruction::Symbol(name), Instruction::Short(value)]),
+        // );
+        buf.extend(
+            self.byte_globals
+                .into_iter()
+                .flat_map(|(name, value)| [Instruction::Symbol(name), Instruction::Byte(value)]),
+        );
 
         // constants
         buf.push(Instruction::Section(Section::ReadOnlyData));
@@ -97,11 +124,11 @@ impl<'src> Compiler<'src> {
                 .into_iter()
                 .flat_map(|(value, name)| [Instruction::Symbol(name), Instruction::Octa(value)]),
         );
-        // buf.extend(
-        //     self.quad_constants
-        //         .into_iter()
-        //         .flat_map(|(value, name)| [Instruction::Symbol(name), Instruction::QuadInt(value)]),
-        // );
+        buf.extend(
+            self.quad_constants
+                .into_iter()
+                .flat_map(|(value, name)| [Instruction::Symbol(name), Instruction::QuadInt(value)]),
+        );
         buf.extend(
             self.quad_float_constants
                 .into_iter()
@@ -119,11 +146,11 @@ impl<'src> Compiler<'src> {
                 .into_iter()
                 .flat_map(|(value, name)| [Instruction::Symbol(name), Instruction::Short(value)]),
         );
-        // buf.extend(
-        //     self.byte_constants
-        //         .into_iter()
-        //         .flat_map(|(value, name)| [Instruction::Symbol(name), Instruction::Byte(value)]),
-        // );
+        buf.extend(
+            self.byte_constants
+                .into_iter()
+                .flat_map(|(value, name)| [Instruction::Symbol(name), Instruction::Byte(value)]),
+        );
 
         buf.into_iter().map(|instr| instr.to_string()).collect()
     }
@@ -299,10 +326,54 @@ impl<'src> Compiler<'src> {
     /////////////////////////////////////////
 
     fn program(&mut self, node: AnalyzedProgram<'src>) {
+        for global in node.globals {
+            self.global(global);
+        }
+
         self.main_fn(node.main_fn);
 
         for func in node.functions.into_iter().filter(|func| func.used) {
             self.function_definition(func);
+        }
+    }
+
+    fn global(&mut self, node: AnalyzedLetStmt<'src>) {
+        let name = format!("main..{}", node.name);
+
+        self.scopes[0].insert(
+            node.name,
+            Some(Variable {
+                ptr: Pointer::new(
+                    Size::try_from(node.expr.result_type())
+                        .expect("the analyzer guarantees constant globals"),
+                    IntRegister::Rip,
+                    Offset::Symbol(name.clone()),
+                ),
+                kind: match node.expr.result_type() {
+                    Type::Float => VariableKind::Float,
+                    _ => VariableKind::Int,
+                },
+            }),
+        );
+
+        match (node.expr, node.mutable) {
+            (AnalyzedExpression::Int(num), true) => self.quad_globals.push((name, num as u64)),
+            (AnalyzedExpression::Int(num), false) => {
+                self.quad_constants.insert(num as u64, name);
+            }
+            (AnalyzedExpression::Float(num), true) => self.quad_float_globals.push((name, num)),
+            (AnalyzedExpression::Float(num), false) => {
+                self.quad_float_constants.insert(num.to_bits(), name);
+            }
+            (AnalyzedExpression::Bool(bool), true) => self.byte_globals.push((name, bool as u8)),
+            (AnalyzedExpression::Bool(bool), false) => {
+                self.byte_constants.insert(bool as u8, name);
+            }
+            (AnalyzedExpression::Char(num), true) => self.byte_globals.push((name, num)),
+            (AnalyzedExpression::Char(num), false) => {
+                self.byte_constants.insert(num, name);
+            }
+            _ => unreachable!("the analyzer guarantees constant globals"),
         }
     }
 
