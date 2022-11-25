@@ -1319,7 +1319,19 @@ impl<'src> Analyzer<'src> {
                 InfixOp::Plus => return AnalyzedExpression::Int(left + right),
                 InfixOp::Minus => return AnalyzedExpression::Int(left - right),
                 InfixOp::Mul => return AnalyzedExpression::Int(left * right),
+                InfixOp::Div if *right == 0 => self.error(
+                    ErrorKind::Semantic,
+                    format!("cannot divide {left} by 0"),
+                    vec!["division by 0 is illegal".into()],
+                    node.span,
+                ),
                 InfixOp::Div => return AnalyzedExpression::Int(left / right),
+                InfixOp::Rem if *right == 0 => self.error(
+                    ErrorKind::Semantic,
+                    format!("cannot get remainder of {left} with a divisor of 0"),
+                    vec!["division by 0 is illegal".into()],
+                    node.span,
+                ),
                 InfixOp::Rem => return AnalyzedExpression::Int(left % right),
                 InfixOp::Pow => {
                     return AnalyzedExpression::Int(if *right < 0 {
@@ -1345,6 +1357,12 @@ impl<'src> Analyzer<'src> {
                 InfixOp::Plus => return AnalyzedExpression::Float(left + right),
                 InfixOp::Minus => return AnalyzedExpression::Float(left - right),
                 InfixOp::Mul => return AnalyzedExpression::Float(left * right),
+                InfixOp::Div if *right == 0.0 => self.error(
+                    ErrorKind::Semantic,
+                    format!("cannot get remainder of {left} with a divisor of 0"),
+                    vec!["division by 0 is illegal".into()],
+                    node.span,
+                ),
                 InfixOp::Div => return AnalyzedExpression::Float(left / right),
                 InfixOp::Eq => return AnalyzedExpression::Bool(left == right),
                 InfixOp::Neq => return AnalyzedExpression::Bool(left != right),
