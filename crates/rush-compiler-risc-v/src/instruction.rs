@@ -200,6 +200,7 @@ impl Display for Instruction {
             }
             Instruction::CastIntToFloat(dest, src) => write!(f, "fcvt.d.l {dest}, {src}"),
             Instruction::CastByteToFloat(dest, src) => write!(f, "fcvt.d.wu {dest}, {src}"),
+            // rounding mode: round down
             Instruction::CastFloatToInt(dest, src) => write!(f, "fcvt.l.d {dest}, {src}, rdn"),
             Instruction::Neg(dest, src) => write!(f, "neg {dest}, {src}"),
             Instruction::FNeg(dest, src) => write!(f, "fneg.d {dest}, {src}"),

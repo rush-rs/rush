@@ -117,14 +117,10 @@ impl Compiler {
         let fn_block = self.append_block("main..main");
         self.exports.push(start_label);
 
-        // if there are global variables, declare them
+        // declare global variables
         // can be declared before the prologue: exprs are all constant (require no stack)
-        if !globals.is_empty() {
-            self.insert(Instruction::Comment("begin init globals".to_string()));
-            for var in globals {
-                self.declare_global(var.name.to_string(), var.expr)
-            }
-            self.insert(Instruction::Comment("end init globals".to_string()));
+        for var in globals {
+            self.declare_global(var.name.to_string(), var.expr)
         }
 
         // jump to the function body
@@ -157,26 +153,30 @@ impl Compiler {
     /// The initializer is put inside the current basic block.
     fn declare_global(&mut self, label: String, value: AnalyzedExpression) {
         let comment = format!("let {label} (global)");
-
         let type_ = value.result_type();
-        let res_reg = self.expression(value).expect("globals are non-unit");
 
-        let data = match type_ {
-            Type::Int => {
+        let data = match (type_, value) {
+            (Type::Int, AnalyzedExpression::Int(val)) => DataObjType::Dword(val),
+            (Type::Int, expr) => {
+                let res_reg = self.expression(expr).expect("is int");
                 self.insert_w_comment(
                     Instruction::Sd(res_reg.into(), Pointer::Label(label.clone())),
                     comment,
                 );
                 DataObjType::Dword(0)
             }
-            Type::Bool | Type::Char => {
+            (Type::Bool, AnalyzedExpression::Bool(val)) => DataObjType::Byte(val as i64),
+            (Type::Bool | Type::Char, expr) => {
+                let res_reg = self.expression(expr).expect("is not unit");
                 self.insert_w_comment(
                     Instruction::Sb(res_reg.into(), Pointer::Label(label.clone())),
                     comment,
                 );
                 DataObjType::Byte(0)
             }
-            Type::Float => {
+            (Type::Float, AnalyzedExpression::Float(val)) => DataObjType::Float(val),
+            (Type::Float, expr) => {
+                let res_reg = self.expression(expr).expect("is float");
                 self.insert_w_comment(
                     Instruction::Fsd(res_reg.into(), Pointer::Label(label.clone())),
                     comment,
