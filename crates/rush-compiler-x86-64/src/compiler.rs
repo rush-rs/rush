@@ -366,15 +366,17 @@ impl<'src> Compiler<'src> {
     }
 
     fn main_fn(&mut self, body: AnalyzedBlock<'src>) {
-        self.text_section.push(Instruction::Symbol("_start".into()));
         self.exports.push(Instruction::Global("_start".into()));
-
-        self.function_body(body);
-
+        self.text_section.push(Instruction::Symbol("_start".into()));
+        self.text_section
+            .push(Instruction::Call("main..main".into()));
         self.text_section
             .push(Instruction::Mov(IntRegister::Rax.into(), 0.into()));
+        self.text_section.push(Instruction::Call("exit".into()));
+
         self.text_section
-            .push(Instruction::Call("exit".to_string()));
+            .push(Instruction::Symbol("main..main".into()));
+        self.function_body(body);
     }
 
     fn function_definition(&mut self, node: AnalyzedFunctionDefinition<'src>) {
@@ -437,9 +439,6 @@ impl<'src> Compiler<'src> {
 
         self.function_body(node.block);
         self.pop_scope();
-
-        // return to caller
-        self.text_section.push(Instruction::Ret);
     }
 
     fn function_body(&mut self, node: AnalyzedBlock<'src>) {
@@ -516,6 +515,7 @@ impl<'src> Compiler<'src> {
             // deallocate space on stack and restore base pointer
             self.text_section.push(Instruction::Leave);
         }
+        self.text_section.push(Instruction::Ret);
     }
 
     /////////////////////////////////////////
