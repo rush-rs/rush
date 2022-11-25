@@ -1328,7 +1328,7 @@ impl<'src> Analyzer<'src> {
                 InfixOp::Div => return AnalyzedExpression::Int(left / right),
                 InfixOp::Rem if *right == 0 => self.error(
                     ErrorKind::Semantic,
-                    format!("cannot get remainder of {left} with a divisor of 0"),
+                    format!("cannot calculate remainder of {left} with a divisor of 0"),
                     vec!["division by 0 is illegal".into()],
                     node.span,
                 ),
@@ -1359,7 +1359,7 @@ impl<'src> Analyzer<'src> {
                 InfixOp::Mul => return AnalyzedExpression::Float(left * right),
                 InfixOp::Div if *right == 0.0 => self.error(
                     ErrorKind::Semantic,
-                    format!("cannot get remainder of {left} with a divisor of 0"),
+                    format!("cannot calculate remainder of {left} with a divisor of 0"),
                     vec!["division by 0 is illegal".into()],
                     node.span,
                 ),
