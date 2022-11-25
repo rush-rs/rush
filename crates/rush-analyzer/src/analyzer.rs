@@ -1718,13 +1718,13 @@ impl<'src> Analyzer<'src> {
             (AnalyzedExpression::Int(val), Type::Float) => AnalyzedExpression::Float(val as f64),
             (AnalyzedExpression::Int(val), Type::Bool) => AnalyzedExpression::Bool(val != 0),
             (AnalyzedExpression::Int(val), Type::Char) => {
-                AnalyzedExpression::Char((val as u8).min(127))
+                AnalyzedExpression::Char(val.clamp(0, 127) as u8)
             }
             (AnalyzedExpression::Float(val), Type::Int) => AnalyzedExpression::Int(val as i64),
             (AnalyzedExpression::Float(val), Type::Float) => AnalyzedExpression::Float(val),
             (AnalyzedExpression::Float(val), Type::Bool) => AnalyzedExpression::Bool(val != 0.0),
             (AnalyzedExpression::Float(val), Type::Char) => {
-                AnalyzedExpression::Char((val as u8).min(127))
+                AnalyzedExpression::Char(val.clamp(0.0, 127.0) as u8)
             }
             (AnalyzedExpression::Bool(val), Type::Int) => AnalyzedExpression::Int(val as i64),
             (AnalyzedExpression::Bool(val), Type::Float) => {
