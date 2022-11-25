@@ -1346,16 +1346,20 @@ impl<'src> Analyzer<'src> {
                 InfixOp::Gt => return AnalyzedExpression::Bool(left > right),
                 InfixOp::Lte => return AnalyzedExpression::Bool(left <= right),
                 InfixOp::Gte => return AnalyzedExpression::Bool(left >= right),
-                // TODO: define how to handle casts and negative shifts
-                InfixOp::Shl => {
-                    return AnalyzedExpression::Int(left.checked_shl(*right as u32).unwrap_or(0))
-                }
-                InfixOp::Shr => {
-                    return AnalyzedExpression::Int(
-                        left.checked_shr(*right as u32)
-                            .unwrap_or(if *left > 0 { 0 } else { -1 }),
-                    )
-                }
+                InfixOp::Shl | InfixOp::Shr => match *right {
+                    0..=63 => {
+                        return AnalyzedExpression::Int(match node.op == InfixOp::Shl {
+                            true => left << right,
+                            false => left >> right,
+                        })
+                    }
+                    _ => self.error(
+                        ErrorKind::Semantic,
+                        format!("cannot shift by {right}"),
+                        vec!["shifting by a number outside the range `0..=63` is undefined".into()],
+                        node.span,
+                    ),
+                },
                 InfixOp::BitOr => return AnalyzedExpression::Int(left | right),
                 InfixOp::BitAnd => return AnalyzedExpression::Int(left & right),
                 InfixOp::BitXor => return AnalyzedExpression::Int(left ^ right),

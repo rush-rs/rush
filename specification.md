@@ -78,6 +78,9 @@ the specified exit-code.
 | \&       | `int`, `bool` | same as operands |
 | \^       | `int`, `bool` | same as operands |
 
+> **Note:** Shifting by a number outside the range `0..=63` is undefined
+> behavior and may vary per backend.
+
 ### Logical Operators
 
 | Operator | Operand Types                  | Produces (Type) |
