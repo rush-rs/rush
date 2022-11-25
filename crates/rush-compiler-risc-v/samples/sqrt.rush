@@ -1,0 +1,23 @@
+fn main() {
+    let sqrt = sqrt(15);
+    let success = sqrt > 3.8; // should be true
+    exit(success as int);
+}
+
+fn sqrt(n: int) -> float {
+    let mut res = 1.0;
+
+    while (abs(res * res - n as float) >= 0.001) {
+        res = ((n as float / res) + res) / 2.0;
+    }
+
+    res
+}
+
+fn abs(n: float) -> float {
+    if (n < 0.0) {
+        -1.0 * n
+    } else {
+        n
+    }
+}
