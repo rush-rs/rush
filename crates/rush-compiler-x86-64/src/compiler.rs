@@ -39,16 +39,16 @@ pub struct Compiler<'src> {
     //////// .rodata section ////////
     /// Constants with 128-bits
     octa_constants: HashMap<u128, String>,
-    /// Constants with 64-bits
-    quad_constants: HashMap<u64, String>,
+    // /// Constants with 64-bits
+    // quad_constants: HashMap<u64, String>,
     /// Constant floats with 64-bits
     quad_float_constants: HashMap<u64, String>,
     // /// Constants with 32-bits
     // long_constants: HashMap<u32, String>,
     /// Constants with 16-bits
     short_constants: HashMap<u16, String>,
-    /// Constants with 8-bits
-    byte_constants: HashMap<u8, String>,
+    // /// Constants with 8-bits
+    // byte_constants: HashMap<u8, String>,
 }
 
 #[derive(Debug, Clone)]
@@ -124,11 +124,11 @@ impl<'src> Compiler<'src> {
                 .into_iter()
                 .flat_map(|(value, name)| [Instruction::Symbol(name), Instruction::Octa(value)]),
         );
-        buf.extend(
-            self.quad_constants
-                .into_iter()
-                .flat_map(|(value, name)| [Instruction::Symbol(name), Instruction::QuadInt(value)]),
-        );
+        // buf.extend(
+        //     self.quad_constants
+        //         .into_iter()
+        //         .flat_map(|(value, name)| [Instruction::Symbol(name), Instruction::QuadInt(value)]),
+        // );
         buf.extend(
             self.quad_float_constants
                 .into_iter()
@@ -146,11 +146,11 @@ impl<'src> Compiler<'src> {
                 .into_iter()
                 .flat_map(|(value, name)| [Instruction::Symbol(name), Instruction::Short(value)]),
         );
-        buf.extend(
-            self.byte_constants
-                .into_iter()
-                .flat_map(|(value, name)| [Instruction::Symbol(name), Instruction::Byte(value)]),
-        );
+        // buf.extend(
+        //     self.byte_constants
+        //         .into_iter()
+        //         .flat_map(|(value, name)| [Instruction::Symbol(name), Instruction::Byte(value)]),
+        // );
 
         buf.into_iter().map(|instr| instr.to_string()).collect()
     }
@@ -356,23 +356,11 @@ impl<'src> Compiler<'src> {
             }),
         );
 
-        match (node.expr, node.mutable) {
-            (AnalyzedExpression::Int(num), true) => self.quad_globals.push((name, num as u64)),
-            (AnalyzedExpression::Int(num), false) => {
-                self.quad_constants.insert(num as u64, name);
-            }
-            (AnalyzedExpression::Float(num), true) => self.quad_float_globals.push((name, num)),
-            (AnalyzedExpression::Float(num), false) => {
-                self.quad_float_constants.insert(num.to_bits(), name);
-            }
-            (AnalyzedExpression::Bool(bool), true) => self.byte_globals.push((name, bool as u8)),
-            (AnalyzedExpression::Bool(bool), false) => {
-                self.byte_constants.insert(bool as u8, name);
-            }
-            (AnalyzedExpression::Char(num), true) => self.byte_globals.push((name, num)),
-            (AnalyzedExpression::Char(num), false) => {
-                self.byte_constants.insert(num, name);
-            }
+        match node.expr {
+            AnalyzedExpression::Int(num) => self.quad_globals.push((name, num as u64)),
+            AnalyzedExpression::Float(num) => self.quad_float_globals.push((name, num)),
+            AnalyzedExpression::Bool(bool) => self.byte_globals.push((name, bool as u8)),
+            AnalyzedExpression::Char(num) => self.byte_globals.push((name, num)),
             _ => unreachable!("the analyzer guarantees constant globals"),
         }
     }

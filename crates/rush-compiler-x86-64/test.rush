@@ -8,6 +8,7 @@ fn sized_args(_a: int, _b: bool, _c: bool, d: int) -> int { d }
 
 let global_a = 1 + 2;
 let mut global_b = 'b';
+let global_c = 3;
 
 fn main() {
     let a = 1;
