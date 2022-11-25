@@ -7,7 +7,7 @@ use crate::{
     value::{FloatValue, IntValue},
 };
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Instruction {
     /// Wraps an instruction with an additional comment
     Commented(Box<Instruction>, String),
@@ -20,7 +20,7 @@ pub enum Instruction {
     Short(u16),
     Long(u32),
     QuadInt(u64),
-    QuadFloat(f64),
+    QuadFloat(u64),
     Octa(u128),
 
     Leave,
@@ -129,12 +129,12 @@ impl Display for Instruction {
             Instruction::Long(num) => write!(f, "    {:11} {num:#010x}  # = {num}", ".long"),
             Instruction::QuadInt(num) => write!(f, "    {:11} {num:#018x}  # = {num}", ".quad"),
             Instruction::QuadFloat(num) => {
+                let float = f64::from_bits(*num);
                 write!(
                     f,
-                    "    {:11} {bits:#018x}  # = {num}{zero}",
+                    "    {:11} {num:#018x}  # = {float}{zero}",
                     ".quad",
-                    zero = if num.fract() == 0.0 { ".0" } else { "" },
-                    bits = num.to_bits()
+                    zero = if float.fract() == 0.0 { ".0" } else { "" },
                 )
             }
             Instruction::Octa(num) => write!(f, "    {:11} {num:#034x}\t# = {num}", ".octa"),

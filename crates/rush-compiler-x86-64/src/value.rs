@@ -138,12 +138,21 @@ impl Display for Size {
         write!(
             f,
             "{}",
-            match self {
-                Size::Byte => "byte",
-                Size::Word => "word",
-                Size::Dword => "dword",
-                Size::Qword => "qword",
-                Size::Oword => "oword",
+            match f.alternate() {
+                true => match self {
+                    Size::Byte => "byte",
+                    Size::Word => "short",
+                    Size::Dword => "long",
+                    Size::Qword => "quad",
+                    Size::Oword => "octa",
+                },
+                false => match self {
+                    Size::Byte => "byte",
+                    Size::Word => "word",
+                    Size::Dword => "dword",
+                    Size::Qword => "qword",
+                    Size::Oword => "oword",
+                },
             }
         )
     }

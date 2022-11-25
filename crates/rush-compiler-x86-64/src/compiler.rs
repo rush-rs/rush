@@ -1,4 +1,4 @@
-use std::{collections::HashMap, mem};
+use std::{collections::HashMap, hash::Hash, mem};
 
 use rush_analyzer::{ast::*, InfixOp, PrefixOp, Type};
 
@@ -36,16 +36,18 @@ pub struct Compiler<'src> {
     byte_globals: Vec<Instruction>,
 
     //////// .rodata section ////////
-    /// Constants with 128-bits, saved as `[symbol, value]`
-    octa_constants: Vec<[Instruction; 2]>,
-    /// Constants with 64-bits, saved as `[symbol, value]`
-    quad_constants: Vec<[Instruction; 2]>,
-    // /// Constants with 32-bits, saved as `[symbol, value]`
-    // long_constants: Vec<[Instruction; 2]>,
-    /// Constants with 16-bits, saved as `[symbol, value]`
-    short_constants: Vec<[Instruction; 2]>,
-    // /// Constants with 8-bits, saved as `[symbol, value]`
-    // byte_constants: Vec<[Instruction; 2]>,
+    /// Constants with 128-bits
+    octa_constants: HashMap<u128, String>,
+    // /// Constants with 64-bits
+    // quad_constants: HashMap<u64, String>,
+    /// Constant floats with 64-bits
+    quad_float_constants: HashMap<u64, String>,
+    // /// Constants with 32-bits
+    // long_constants: HashMap<u32, String>,
+    /// Constants with 16-bits
+    short_constants: HashMap<u16, String>,
+    // /// Constants with 8-bits
+    // byte_constants: HashMap<u8, String>,
 }
 
 #[derive(Debug, Clone)]
@@ -72,28 +74,56 @@ impl<'src> Compiler<'src> {
     pub fn compile(mut self, tree: AnalyzedProgram<'src>) -> String {
         self.program(tree);
 
+        // use intel syntax
         let mut buf = vec![Instruction::IntelSyntax];
+        // exports
         buf.append(&mut self.exports);
 
+        // text section
         buf.push(Instruction::Section(Section::Text));
         buf.append(&mut self.text_section);
 
-        if !self.quad_globals.is_empty() || !self.byte_globals.is_empty() {
-            buf.push(Instruction::Section(Section::Data));
-            buf.append(&mut self.quad_globals);
-            // buf.append(&mut self.long_globals);
-            // buf.append(&mut self.short_globals);
-            buf.append(&mut self.byte_globals);
-        }
+        // mutable globals
+        buf.push(Instruction::Section(Section::Data));
+        buf.append(&mut self.quad_globals);
+        // buf.append(&mut self.long_globals);
+        // buf.append(&mut self.short_globals);
+        buf.append(&mut self.byte_globals);
 
-        if !self.octa_constants.is_empty() || !self.quad_constants.is_empty() {
-            buf.push(Instruction::Section(Section::ReadOnlyData));
-            buf.extend(self.octa_constants.into_iter().flatten());
-            buf.extend(self.quad_constants.into_iter().flatten());
-            // buf.extend(self.long_constants.into_iter().flatten());
-            buf.extend(self.short_constants.into_iter().flatten());
-            // buf.extend(self.byte_constants.into_iter().flatten());
-        }
+        // constants
+        buf.push(Instruction::Section(Section::ReadOnlyData));
+        buf.extend(
+            self.octa_constants
+                .into_iter()
+                .flat_map(|(value, name)| [Instruction::Symbol(name), Instruction::Octa(value)]),
+        );
+        // buf.extend(
+        //     self.quad_constants
+        //         .into_iter()
+        //         .flat_map(|(value, name)| [Instruction::Symbol(name), Instruction::QuadInt(value)]),
+        // );
+        buf.extend(
+            self.quad_float_constants
+                .into_iter()
+                .flat_map(|(value, name)| {
+                    [Instruction::Symbol(name), Instruction::QuadFloat(value)]
+                }),
+        );
+        // buf.extend(
+        //     self.long_constants
+        //         .into_iter()
+        //         .flat_map(|(value, name)| [Instruction::Symbol(name), Instruction::Long(value)]),
+        // );
+        buf.extend(
+            self.short_constants
+                .into_iter()
+                .flat_map(|(value, name)| [Instruction::Symbol(name), Instruction::Short(value)]),
+        );
+        // buf.extend(
+        //     self.byte_constants
+        //         .into_iter()
+        //         .flat_map(|(value, name)| [Instruction::Symbol(name), Instruction::Byte(value)]),
+        // );
 
         buf.into_iter().map(|instr| instr.to_string()).collect()
     }
@@ -101,6 +131,19 @@ impl<'src> Compiler<'src> {
     fn align(ptr: &mut i64, size: Size) {
         if *ptr % size.byte_count() != 0 {
             *ptr += size.byte_count() - *ptr % size.byte_count();
+        }
+    }
+
+    fn add_constant<T: Eq + Hash>(map: &mut HashMap<T, String>, value: T, size: Size) -> String {
+        match map.get(&value) {
+            // when a constant with the same value already exists, reuse it
+            Some(name) => name.clone(),
+            // else create a new one
+            None => {
+                let name = format!(".{size:#}_constant_{}", map.len());
+                map.insert(value, name.clone());
+                name
+            }
         }
     }
 
@@ -491,23 +534,8 @@ impl<'src> Compiler<'src> {
             AnalyzedExpression::If(_node) => todo!(),
             AnalyzedExpression::Int(num) => Some(Value::Int(IntValue::Immediate(num))),
             AnalyzedExpression::Float(num) => {
-                let symbol_name = match self
-                    .quad_constants
-                    .iter()
-                    .find(|[_name, value]| value == &Instruction::QuadFloat(num))
-                {
-                    // when a constant with the same value already exists, reuse it
-                    Some([Instruction::Symbol(name), _]) => name.clone(),
-                    // else create a new one
-                    _ => {
-                        let name = format!(".quad_constant_{}", self.quad_constants.len());
-                        self.quad_constants.push([
-                            Instruction::Symbol(name.clone()),
-                            Instruction::QuadFloat(num),
-                        ]);
-                        name
-                    }
-                };
+                let symbol_name =
+                    Self::add_constant(&mut self.quad_float_constants, num.to_bits(), Size::Qword);
                 Some(Value::Float(FloatValue::Ptr(Pointer::new(
                     Size::Qword,
                     IntRegister::Rip,
@@ -584,12 +612,8 @@ impl<'src> Compiler<'src> {
                         reg
                     }
                 };
-                // TODO: reuse existing
-                let negate_symbol = format!(".octa_constant_{}", self.octa_constants.len());
-                self.octa_constants.push([
-                    Instruction::Symbol(negate_symbol.clone()),
-                    Instruction::Octa(1_u128 << 63), // only sign bit is 1
-                ]);
+                let negate_symbol =
+                    Self::add_constant(&mut self.octa_constants, 1_u128 << 63, Size::Oword);
                 let negate_ptr =
                     Pointer::new(Size::Oword, IntRegister::Rip, Offset::Symbol(negate_symbol));
                 self.function_body
@@ -761,16 +785,18 @@ impl<'src> Compiler<'src> {
                         self.function_body
                             .push(Instruction::Cmp(IntRegister::Rcx.into(), 255.into()));
 
-                        // TODO: reuse existing
-                        let name = format!(".short_constant_{}", self.short_constants.len());
-                        self.short_constants
-                            .push([Instruction::Symbol(name.clone()), Instruction::Short(255)]);
-
                         // if rhs is > 255 saturate at 255
+                        let const_255_name =
+                            Self::add_constant(&mut self.short_constants, 255, Size::Word);
                         self.function_body.push(Instruction::Cmov(
                             Condition::Greater,
                             IntRegister::Cx.into(),
-                            Pointer::new(Size::Word, IntRegister::Rip, Offset::Symbol(name)).into(),
+                            Pointer::new(
+                                Size::Word,
+                                IntRegister::Rip,
+                                Offset::Symbol(const_255_name),
+                            )
+                            .into(),
                         ));
                         IntRegister::Cl.into()
                     }
