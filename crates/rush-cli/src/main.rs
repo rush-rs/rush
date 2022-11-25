@@ -6,6 +6,7 @@ use cli::{Backend, Cli};
 mod analyzer;
 mod cli;
 mod llvm;
+mod riscv;
 
 fn main() {
     match Cli::parse() {
@@ -21,7 +22,7 @@ fn main() {
             match args.backend {
                 Backend::Llvm => llvm::compile(ast, args),
                 Backend::Wasm => todo!(),
-                Backend::RiscV => todo!(),
+                Backend::RiscV => riscv::compile(ast, args),
                 Backend::X86_64 => todo!(),
             }
         }
@@ -37,8 +38,10 @@ fn main() {
             match args.backend {
                 Backend::Llvm => llvm::run(ast, args),
                 Backend::Wasm => todo!(),
-                Backend::RiscV => todo!(),
-                Backend::X86_64 => todo!(),
+                Backend::RiscV | Backend::X86_64 => {
+                    eprintln!("cannot run rush using the backend: `{}`", args.backend);
+                    process::exit(1);
+                }
             }
         }
         Cli::Check { file } => {

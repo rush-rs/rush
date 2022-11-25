@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{fmt::Display, path::PathBuf};
 
 use clap::{Args, Parser, ValueEnum};
 use rush_compiler_llvm::inkwell::OptimizationLevel;
@@ -56,6 +56,21 @@ pub enum Backend {
     RiscV,
     /// X86_64 compiler: no dependencies
     X86_64,
+}
+
+impl Display for Backend {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Backend::Llvm => "llvm",
+                Backend::Wasm => "wasm",
+                Backend::RiscV => "risc-v",
+                Backend::X86_64 => "x86_64",
+            }
+        )
+    }
 }
 
 #[derive(ValueEnum, Clone, Debug, PartialEq, Eq)]
