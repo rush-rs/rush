@@ -15,11 +15,16 @@ pub fn compile(ast: AnalyzedProgram, args: BuildArgs) {
         None => TargetMachine::get_default_triple(),
     };
 
-    let (obj, ir) =
-        rush_compiler_llvm::compile(ast, target, args.llvm_opt.into()).unwrap_or_else(|err| {
-            eprintln!("compilation failed: llvm error: {err}");
-            process::exit(1);
-        });
+    let (obj, ir) = rush_compiler_llvm::compile(
+        ast,
+        target,
+        args.llvm_opt.into(),
+        args.llvm_target.is_none(), // only compile a main fn if target is native
+    )
+    .unwrap_or_else(|err| {
+        eprintln!("compilation failed: llvm error: {err}");
+        process::exit(1);
+    });
 
     if args.llvm_show_ir {
         println!("{ir}");
