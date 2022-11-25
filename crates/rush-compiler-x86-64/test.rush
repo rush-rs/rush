@@ -11,8 +11,10 @@ fn main() {
     1;
     3.0;
     'a';
-    let yes = true;
-    let no = false;
+    let yes = !false;
+    let no = !yes;
+    let hundred = 100;
+    let nine = 9f;
     exit(
         1 + 2 + a + call() - float(3.5) as int
         + params(1, 2.0, '\x03', true, 5, 6, 7, 8, 9, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0)
@@ -20,7 +22,8 @@ fn main() {
         + add4(0, 0, 10 / 3, 10 % 3)
         + (3 << a) + (2 << 300)
         + (3 >> 300) + (6 >> a)
-    ); // = 209
+        + -hundred + (-nine) as int
+    ); // = 100
 }
 
 fn float(a: float) -> float {

@@ -1,6 +1,6 @@
 use std::{collections::HashMap, mem};
 
-use rush_analyzer::{ast::*, InfixOp, Type};
+use rush_analyzer::{ast::*, InfixOp, PrefixOp, Type};
 
 use crate::{
     instruction::{Condition, Instruction, Section},
@@ -517,7 +517,7 @@ impl<'src> Compiler<'src> {
             AnalyzedExpression::Bool(bool) => Some(Value::Int(IntValue::Immediate(bool as i64))),
             AnalyzedExpression::Char(num) => Some(Value::Int(IntValue::Immediate(num as i64))),
             AnalyzedExpression::Ident(node) => self.ident_expr(node),
-            AnalyzedExpression::Prefix(_node) => todo!(),
+            AnalyzedExpression::Prefix(node) => self.prefix_expr(*node),
             AnalyzedExpression::Infix(node) => self.infix_expr(*node),
             AnalyzedExpression::Assign(_node) => todo!(),
             AnalyzedExpression::Call(node) => self.call_expr(*node),
@@ -531,6 +531,73 @@ impl<'src> Compiler<'src> {
             VariableKind::Int => Value::Int(var.ptr.into()),
             VariableKind::Float => Value::Float(var.ptr.into()),
         })
+    }
+
+    fn prefix_expr(&mut self, node: AnalyzedPrefixExpr<'src>) -> Option<Value> {
+        let expr_type = node.expr.result_type();
+        let expr = self.expression(node.expr);
+        match (expr, expr_type, node.op) {
+            (Some(Value::Int(value)), Type::Int, PrefixOp::Neg) => match value {
+                IntValue::Register(reg) => {
+                    // negate the value in register
+                    self.function_body.push(Instruction::Neg(reg.into()));
+                    Some(Value::Int(reg.into()))
+                }
+                IntValue::Ptr(ptr) => {
+                    // move value into free register
+                    let reg = self.get_free_register(ptr.size);
+                    self.function_body
+                        .push(Instruction::Mov(reg.into(), ptr.into()));
+                    // negate register
+                    self.function_body.push(Instruction::Neg(reg.into()));
+                    Some(Value::Int(reg.into()))
+                }
+                // return negated immediate
+                IntValue::Immediate(num) => Some(Value::Int(IntValue::Immediate(-num))),
+            },
+            (Some(Value::Int(value)), Type::Bool, PrefixOp::Not) => match value {
+                IntValue::Register(reg) => {
+                    // xor value in register with 1
+                    self.function_body
+                        .push(Instruction::Xor(reg.into(), 1.into()));
+                    Some(Value::Int(reg.into()))
+                }
+                IntValue::Ptr(ptr) => {
+                    // move value into free register
+                    let reg = self.get_free_register(ptr.size);
+                    self.function_body
+                        .push(Instruction::Mov(reg.into(), ptr.into()));
+                    // xor register with 1
+                    self.function_body
+                        .push(Instruction::Xor(reg.into(), 1.into()));
+                    Some(Value::Int(reg.into()))
+                }
+                IntValue::Immediate(num) => Some(Value::Int(IntValue::Immediate(num ^ 1))),
+            },
+            (Some(Value::Float(value)), Type::Float, PrefixOp::Neg) => {
+                let reg = match value {
+                    FloatValue::Register(reg) => reg,
+                    FloatValue::Ptr(ptr) => {
+                        let reg = self.get_free_float_register();
+                        self.function_body
+                            .push(Instruction::Movsd(reg.into(), ptr.into()));
+                        reg
+                    }
+                };
+                // TODO: reuse existing
+                let negate_symbol = format!(".octa_constant_{}", self.octa_constants.len());
+                self.octa_constants.push([
+                    Instruction::Symbol(negate_symbol.clone()),
+                    Instruction::Octa(1_u128 << 63), // only sign bit is 1
+                ]);
+                let negate_ptr =
+                    Pointer::new(Size::Oword, IntRegister::Rip, Offset::Symbol(negate_symbol));
+                self.function_body
+                    .push(Instruction::Xorpd(reg.into(), negate_ptr.into()));
+                Some(Value::Float(reg.into()))
+            }
+            _ => unreachable!("the analyzer guarantees one of the above to match"),
+        }
     }
 
     fn infix_expr(&mut self, node: AnalyzedInfixExpr<'src>) -> Option<Value> {
