@@ -179,7 +179,7 @@ impl<'src> Compiler<'src> {
             "{} {name} = {value}",
             if is_param { "param" } else { "let" }
         );
-        let ptr = self.push(size, value, Some(comment));
+        let ptr = self.push_to_stack(size, value, Some(comment));
 
         // save pointer in scope
         self.curr_scope().insert(name, Some(Variable { ptr, kind }));
@@ -188,7 +188,7 @@ impl<'src> Compiler<'src> {
         self.requires_frame = true;
     }
 
-    fn push(&mut self, size: Size, value: Value, comment: Option<String>) -> Pointer {
+    fn push_to_stack(&mut self, size: Size, value: Value, comment: Option<String>) -> Pointer {
         // add padding for correct alignment
         Self::align(&mut self.stack_pointer, size);
 
@@ -217,7 +217,7 @@ impl<'src> Compiler<'src> {
         ptr
     }
 
-    fn pop(&mut self, ptr: Pointer, dest: Value, comment: Option<String>) {
+    fn pop_from_stack(&mut self, ptr: Pointer, dest: Value, comment: Option<String>) {
         let offset = match ptr.offset {
             Offset::Immediate(offset) => -offset,
             Offset::Symbol(_) => panic!("called `Compiler::pop()` with a symbol offset in ptr"),
@@ -267,7 +267,7 @@ impl<'src> Compiler<'src> {
     }
 
     fn spill_int(&mut self, reg: IntRegister) -> Pointer {
-        self.push(
+        self.push_to_stack(
             reg.size(),
             Value::Int(reg.into()),
             Some(format!("{} byte spill: {reg}", reg.size().byte_count())),
@@ -283,7 +283,7 @@ impl<'src> Compiler<'src> {
     }
 
     fn reload_int(&mut self, ptr: Pointer, reg: IntRegister) {
-        self.pop(
+        self.pop_from_stack(
             ptr,
             Value::Int(reg.into()),
             Some(format!("{} byte reload: {reg}", reg.size().byte_count())),
@@ -871,7 +871,7 @@ impl<'src> Compiler<'src> {
             saved_register_pointers.push(self.spill_int(*reg));
         }
         for reg in &prev_used_float_registers {
-            saved_float_register_pointers.push(self.push(
+            saved_float_register_pointers.push(self.push_to_stack(
                 Size::Qword,
                 Value::Float((*reg).into()),
                 Some(format!("8 byte spill: {reg}")),
@@ -1024,7 +1024,7 @@ impl<'src> Compiler<'src> {
             .zip(saved_float_register_pointers)
             .rev()
         {
-            self.pop(
+            self.pop_from_stack(
                 ptr,
                 Value::Float(reg.into()),
                 Some(format!("8 byte reload: {reg}")),
