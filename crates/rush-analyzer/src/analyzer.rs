@@ -1346,8 +1346,16 @@ impl<'src> Analyzer<'src> {
                 InfixOp::Gt => return AnalyzedExpression::Bool(left > right),
                 InfixOp::Lte => return AnalyzedExpression::Bool(left <= right),
                 InfixOp::Gte => return AnalyzedExpression::Bool(left >= right),
-                InfixOp::Shl => return AnalyzedExpression::Int(left << right),
-                InfixOp::Shr => return AnalyzedExpression::Int(left >> right),
+                // TODO: define how to handle casts and negative shifts
+                InfixOp::Shl => {
+                    return AnalyzedExpression::Int(left.checked_shl(*right as u32).unwrap_or(0))
+                }
+                InfixOp::Shr => {
+                    return AnalyzedExpression::Int(
+                        left.checked_shr(*right as u32)
+                            .unwrap_or(if *left > 0 { 0 } else { -1 }),
+                    )
+                }
                 InfixOp::BitOr => return AnalyzedExpression::Int(left | right),
                 InfixOp::BitAnd => return AnalyzedExpression::Int(left & right),
                 InfixOp::BitXor => return AnalyzedExpression::Int(left ^ right),
