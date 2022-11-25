@@ -108,7 +108,12 @@ impl<'ctx> Compiler<'ctx> {
 
     /// Compiles the given [`AnalyzedProgram`] to object code and the LLVM IR.
     /// Errors can occur if the target triple is invalid or the code generation fails
-    pub fn compile(&mut self, program: AnalyzedProgram) -> Result<(MemoryBuffer, String)> {
+    /// The `main_fn` param specifies whether the entry is the main function or `_start`.
+    pub fn compile(
+        &mut self,
+        program: AnalyzedProgram,
+        main_fn: bool,
+    ) -> Result<(MemoryBuffer, String)> {
         // declare all global variables
         for global in program.globals {
             self.declare_global(global.name.to_string(), &global.expr);
@@ -125,7 +130,7 @@ impl<'ctx> Compiler<'ctx> {
         }
 
         // compile the main function
-        self.compile_main_fn(&program.main_fn);
+        self.compile_main_fn(&program.main_fn, main_fn);
 
         // verify the LLVM module when using debug
         #[cfg(debug_assertions)]
@@ -170,12 +175,14 @@ impl<'ctx> Compiler<'ctx> {
         link_time_optimizations.run_on(&self.module);
     }
 
-    fn compile_main_fn(&mut self, node: &AnalyzedBlock) {
+    fn compile_main_fn(&mut self, node: &AnalyzedBlock, main_fn: bool) {
         // main fn takes no arguments but returns an i8 (exit-code)
         let fn_type = self.context.i32_type().fn_type(&[], false);
-        let main_fn = self
-            .module
-            .add_function("_start", fn_type, Some(Linkage::External));
+        let main_fn = self.module.add_function(
+            if main_fn { "main" } else { "_start" },
+            fn_type,
+            Some(Linkage::External),
+        );
 
         // create basic block for the main function
         let main_basic_block = self.context.append_basic_block(main_fn, "entry");
