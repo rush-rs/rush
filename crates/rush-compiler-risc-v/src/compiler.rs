@@ -154,6 +154,7 @@ impl Compiler {
         let comment = format!("let {label} (global)");
         let type_ = value.result_type();
 
+        // TODO: put constant evaluated globals in .rodata section
         let data = match (type_, value) {
             (Type::Int, AnalyzedExpression::Int(val)) => DataObjType::Dword(val),
             (Type::Int, expr) => {
@@ -997,6 +998,16 @@ impl Compiler {
                 self.insert(Instruction::Neg(dest_reg, lhs_reg.into()));
                 Some(dest_reg.to_reg())
             }
+            (Type::Int, PrefixOp::Not) => {
+                let dest_reg = self.alloc_ireg();
+                self.insert(Instruction::Not(dest_reg, lhs_reg.into()));
+                Some(dest_reg.to_reg())
+            }
+            (Type::Char, PrefixOp::Not) => {
+                let dest_reg = self.alloc_ireg();
+                self.insert(Instruction::Not(dest_reg, lhs_reg.into()));
+                Some(dest_reg.to_reg())
+            }
             (Type::Bool, PrefixOp::Not) => {
                 let dest_reg = self.alloc_ireg();
                 self.insert(Instruction::Seqz(dest_reg, lhs_reg.into()));
@@ -1007,7 +1018,7 @@ impl Compiler {
                 self.insert(Instruction::FNeg(dest_reg, lhs_reg.into()));
                 Some(dest_reg.to_reg())
             }
-            _ => unreachable!("other types cannot occur in infix expressions"),
+            _ => unreachable!("other combinations cannot occur in prefix expressions"),
         }
     }
 

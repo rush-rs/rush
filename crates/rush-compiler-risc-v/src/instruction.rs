@@ -59,6 +59,7 @@ pub enum Instruction {
     Li(IntRegister, i64),
     Mov(IntRegister, IntRegister),
     Neg(IntRegister, IntRegister),
+    Not(IntRegister, IntRegister),
     Add(IntRegister, IntRegister, IntRegister),
     Addi(IntRegister, IntRegister, i64),
     Sub(IntRegister, IntRegister, IntRegister),
@@ -203,6 +204,7 @@ impl Display for Instruction {
             // rounding mode: round down
             Instruction::CastFloatToInt(dest, src) => write!(f, "fcvt.l.d {dest}, {src}, rdn"),
             Instruction::Neg(dest, src) => write!(f, "neg {dest}, {src}"),
+            Instruction::Not(dest, src) => write!(f, "not {dest}, {src}"),
             Instruction::FNeg(dest, src) => write!(f, "fneg.d {dest}, {src}"),
         }
     }
