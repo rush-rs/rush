@@ -116,14 +116,18 @@ impl Compiler {
         let fn_block = self.append_block("main..main");
         self.exports.push(start_label);
 
+        // call the main function
+        self.insert(Instruction::Call(fn_block.clone()));
+
+        // default: exit with code 0
+        self.insert(Instruction::Li(IntRegister::A0, 0));
+        self.insert(Instruction::Call("exit".into()));
+
         // declare global variables
         // can be declared before the prologue: exprs are all constant (require no stack)
         for var in globals {
             self.declare_global(var.name.to_string(), var.expr)
         }
-
-        // jump to the function body
-        self.insert(Instruction::Jmp(fn_block.clone()));
 
         // add the epilogue label
         let epilogue_label = self.gen_label("epilogue");
@@ -141,11 +145,9 @@ impl Compiler {
         prologue.append(&mut self.blocks[self.curr_block].instructions);
         self.blocks[self.curr_block].instructions = prologue;
 
-        // epilogue: exit with code 0
         self.blocks.push(Block::new(epilogue_label.clone()));
         self.insert_at(&epilogue_label);
-        self.insert(Instruction::Li(IntRegister::A0, 0));
-        self.insert(Instruction::Call("exit".into()));
+        self.epilogue()
     }
 
     /// Declares a new global variable.
