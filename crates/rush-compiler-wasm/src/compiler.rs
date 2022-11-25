@@ -230,20 +230,24 @@ impl<'src> Compiler<'src> {
             let mut buf = vec![
                 utils::type_to_byte(global.expr.result_type())
                     .expect("globals cannot be `()` or `!`"), // type of global
-                1, // always mutable (for now), TODO: constant globals
+                global.mutable as u8,
             ];
-            match global.expr.result_type() {
-                Type::Int => {
+            match global.expr {
+                AnalyzedExpression::Int(num) => {
                     buf.push(instructions::I64_CONST);
-                    buf.push(0); // dummy 0 (for now), TODO: constant globals
+                    num.write_sleb128(&mut buf);
                 }
-                Type::Float => {
+                AnalyzedExpression::Float(num) => {
                     buf.push(instructions::F64_CONST);
-                    buf.extend_from_slice(&0_f64.to_le_bytes()); // dummy 0 (for now), TODO: constant globals
+                    buf.extend_from_slice(&num.to_le_bytes());
                 }
-                Type::Bool | Type::Char => {
+                AnalyzedExpression::Bool(bool) => {
                     buf.push(instructions::I32_CONST);
-                    buf.push(0); // dummy 0 (for now), TODO: constant globals
+                    bool.write_sleb128(&mut buf);
+                }
+                AnalyzedExpression::Char(num) => {
+                    buf.push(instructions::I32_CONST);
+                    num.write_sleb128(&mut buf);
                 }
                 _ => panic!("globals cannot be `()` or `!`"),
             }
@@ -287,7 +291,7 @@ impl<'src> Compiler<'src> {
         }
 
         // compile functions
-        self.main_fn(node.main_fn, node.globals);
+        self.main_fn(node.main_fn);
         for (idx, func) in node
             .functions
             .into_iter()
@@ -302,7 +306,7 @@ impl<'src> Compiler<'src> {
         self.code_section.append(&mut self.builtins_code);
     }
 
-    fn main_fn(&mut self, body: AnalyzedBlock<'src>, globals: Vec<AnalyzedLetStmt<'src>>) {
+    fn main_fn(&mut self, body: AnalyzedBlock<'src>) {
         let main_idx = self.import_count.to_uleb128();
 
         // export main func as WASI `_start` func
@@ -326,14 +330,6 @@ impl<'src> Compiler<'src> {
 
         // set param_count to 0
         self.param_count = 0;
-
-        // set globals to initial values, TODO: constant globals
-        for global in globals {
-            self.expression(global.expr);
-            self.function_body.push(instructions::GLOBAL_SET);
-            self.function_body
-                .extend_from_slice(&self.global_scope[global.name]);
-        }
 
         // function body
         self.push_scope();

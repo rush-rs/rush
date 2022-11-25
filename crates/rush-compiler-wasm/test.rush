@@ -1,7 +1,8 @@
 let mut a = 234;
+let b = 2;
 
 fn set() {
-    a += 2;
+    a += b;
 }
 
 fn main() {
