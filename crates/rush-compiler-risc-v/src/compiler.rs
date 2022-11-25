@@ -1106,3 +1106,9 @@ impl Compiler {
         Some(res)
     }
 }
+
+impl Default for Compiler {
+    fn default() -> Self {
+        Self::new()
+    }
+}

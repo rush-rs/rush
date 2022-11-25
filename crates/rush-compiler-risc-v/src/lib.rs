@@ -1,4 +1,4 @@
-use compiler::Compiler;
+pub use compiler::Compiler;
 use rush_analyzer::Diagnostic;
 
 mod call;

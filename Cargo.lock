@@ -524,6 +524,7 @@ dependencies = [
  "clap",
  "rush-analyzer",
  "rush-compiler-llvm",
+ "rush-compiler-risc-v",
  "rush-compiler-wasm",
 ]
 
