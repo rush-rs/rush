@@ -817,17 +817,6 @@ impl<'src> Compiler<'src> {
                 // make sure the %rcx register is free
                 let spilled_rcx = self.spill_int_if_used(IntRegister::Rcx);
 
-                let lhs = match left {
-                    // when left side already uses a register, use that register
-                    IntValue::Register(reg) => reg,
-                    // else move into free one
-                    left => {
-                        let reg = self.get_free_register(Size::Qword);
-                        self.function_body.push(Instruction::Mov(reg.into(), left));
-                        reg
-                    }
-                };
-
                 let rhs = match right {
                     IntValue::Immediate(num) => num.min(255).into(),
                     right => {
@@ -858,6 +847,17 @@ impl<'src> Compiler<'src> {
                             .into(),
                         ));
                         IntRegister::Cl.into()
+                    }
+                };
+
+                let lhs = match left {
+                    // when left side already uses a register, use that register
+                    IntValue::Register(reg) => reg,
+                    // else move into free one
+                    left => {
+                        let reg = self.get_free_register(Size::Qword);
+                        self.function_body.push(Instruction::Mov(reg.into(), left));
+                        reg
                     }
                 };
 
