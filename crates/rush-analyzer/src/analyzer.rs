@@ -1463,6 +1463,7 @@ impl<'src> Analyzer<'src> {
                     );
                     Type::Unknown
                 }
+                None if node.assignee.inner.is_empty() => Type::Unknown,
                 None => {
                     self.error(
                         ErrorKind::Reference,

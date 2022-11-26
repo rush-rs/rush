@@ -712,7 +712,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             _ => {
                 self.errors.push(Error::new(
                     "left hand side of assignment must be an identifier".to_string(),
-                    self.curr_tok.span,
+                    self.prev_tok.span,
                     self.lexer.source(),
                 ));
                 Spanned {
