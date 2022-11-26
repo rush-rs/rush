@@ -39,8 +39,8 @@ pub struct Compiler<'src> {
     //////// .rodata section ////////
     /// Constants with 128-bits
     octa_constants: HashMap<u128, String>,
-    // /// Constants with 64-bits
-    // quad_constants: HashMap<u64, String>,
+    /// Constants with 64-bits
+    quad_constants: HashMap<u64, String>,
     /// Constant floats with 64-bits
     quad_float_constants: HashMap<u64, String>,
     // /// Constants with 32-bits
@@ -124,11 +124,11 @@ impl<'src> Compiler<'src> {
                 .into_iter()
                 .flat_map(|(value, name)| [Instruction::Symbol(name), Instruction::Octa(value)]),
         );
-        // buf.extend(
-        //     self.quad_constants
-        //         .into_iter()
-        //         .flat_map(|(value, name)| [Instruction::Symbol(name), Instruction::QuadInt(value)]),
-        // );
+        buf.extend(
+            self.quad_constants
+                .into_iter()
+                .flat_map(|(value, name)| [Instruction::Symbol(name), Instruction::QuadInt(value)]),
+        );
         buf.extend(
             self.quad_float_constants
                 .into_iter()
@@ -161,13 +161,18 @@ impl<'src> Compiler<'src> {
         }
     }
 
-    fn add_constant<T: Eq + Hash>(map: &mut HashMap<T, String>, value: T, size: Size) -> String {
+    fn add_constant<T: Eq + Hash>(
+        map: &mut HashMap<T, String>,
+        value: T,
+        size: Size,
+        extra_len: usize,
+    ) -> String {
         match map.get(&value) {
             // when a constant with the same value already exists, reuse it
             Some(name) => name.clone(),
             // else create a new one
             None => {
-                let name = format!(".{size:#}_constant_{}", map.len());
+                let name = format!(".{size:#}_constant_{}", map.len() + extra_len);
                 map.insert(value, name.clone());
                 name
             }
@@ -591,10 +596,29 @@ impl<'src> Compiler<'src> {
         match node {
             AnalyzedExpression::Block(_node) => todo!(),
             AnalyzedExpression::If(_node) => todo!(),
-            AnalyzedExpression::Int(num) => Some(Value::Int(IntValue::Immediate(num))),
+            AnalyzedExpression::Int(num) => match num > i32::MAX as i64 || num < i32::MIN as i64 {
+                true => {
+                    let symbol = Self::add_constant(
+                        &mut self.quad_constants,
+                        num as u64,
+                        Size::Qword,
+                        self.quad_float_constants.len(),
+                    );
+                    Some(Value::Int(IntValue::Ptr(Pointer::new(
+                        Size::Qword,
+                        IntRegister::Rip,
+                        Offset::Symbol(symbol),
+                    ))))
+                }
+                false => Some(Value::Int(IntValue::Immediate(num))),
+            },
             AnalyzedExpression::Float(num) => {
-                let symbol_name =
-                    Self::add_constant(&mut self.quad_float_constants, num.to_bits(), Size::Qword);
+                let symbol_name = Self::add_constant(
+                    &mut self.quad_float_constants,
+                    num.to_bits(),
+                    Size::Qword,
+                    self.quad_constants.len(),
+                );
                 Some(Value::Float(FloatValue::Ptr(Pointer::new(
                     Size::Qword,
                     IntRegister::Rip,
@@ -672,7 +696,7 @@ impl<'src> Compiler<'src> {
                     }
                 };
                 let negate_symbol =
-                    Self::add_constant(&mut self.octa_constants, 1_u128 << 63, Size::Oword);
+                    Self::add_constant(&mut self.octa_constants, 1_u128 << 63, Size::Oword, 0);
                 let negate_ptr =
                     Pointer::new(Size::Oword, IntRegister::Rip, Offset::Symbol(negate_symbol));
                 self.function_body
@@ -835,7 +859,7 @@ impl<'src> Compiler<'src> {
 
                         // if rhs is > 255 saturate at 255
                         let const_255_name =
-                            Self::add_constant(&mut self.short_constants, 255, Size::Word);
+                            Self::add_constant(&mut self.short_constants, 255, Size::Word, 0);
                         self.function_body.push(Instruction::Cmov(
                             Condition::Greater,
                             IntRegister::Cx.into(),
