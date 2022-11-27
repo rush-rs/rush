@@ -709,13 +709,33 @@ impl<'src> Compiler<'src> {
     }
 
     fn infix_expr(&mut self, node: AnalyzedInfixExpr<'src>) -> Option<Value> {
+        // some ops handle compilation of the expressions themselves
+        match node.op {
+            // integer pow
+            InfixOp::Pow => {
+                return self.call_func(
+                    Type::Int,
+                    "__rush_internal_pow_int".into(),
+                    vec![node.lhs, node.rhs],
+                )
+            }
+            // logical AND
+            InfixOp::And => todo!(),
+            // logical OR
+            InfixOp::Or => todo!(),
+            _ => {}
+        }
+
+        // else compile the expressions
         let lhs = self.expression(node.lhs);
         let rhs = self.expression(node.rhs);
 
+        // and the operation on them
         match (lhs, rhs, node.op) {
             // `None` means a value of type `!` in this context, so don't do anything, as this
             // expression is unreachable at runtime
             (None, _, _) | (_, None, _) => None,
+            // basic arithmetic for `int` and bitwise ops for `int` and `bool`
             (
                 Some(Value::Int(left)),
                 Some(Value::Int(right)),
@@ -772,6 +792,7 @@ impl<'src> Compiler<'src> {
                 }
                 Some(Value::Int(left.into()))
             }
+            // integer division
             (Some(Value::Int(left)), Some(Value::Int(right)), InfixOp::Div | InfixOp::Rem) => {
                 // make sure the rax and rdx registers are free
                 let spilled_rax = self.spill_int_if_used(IntRegister::Rax);
@@ -838,6 +859,7 @@ impl<'src> Compiler<'src> {
 
                 Some(Value::Int(IntValue::Register(result_reg)))
             }
+            // integer shifts
             (Some(Value::Int(left)), Some(Value::Int(right)), InfixOp::Shl | InfixOp::Shr) => {
                 // make sure the %rcx register is free
                 let spilled_rcx = self.spill_int_if_used(IntRegister::Rcx);
@@ -898,6 +920,7 @@ impl<'src> Compiler<'src> {
 
                 Some(Value::Int(IntValue::Register(lhs)))
             }
+            // float arithmetic
             (
                 Some(Value::Float(left)),
                 Some(Value::Float(right)),
@@ -941,7 +964,30 @@ impl<'src> Compiler<'src> {
         }
     }
 
-    fn call_expr(&mut self, node: AnalyzedCallExpr<'src>) -> Option<Value> {
+    fn call_expr(
+        &mut self,
+        AnalyzedCallExpr {
+            result_type,
+            func,
+            args,
+        }: AnalyzedCallExpr<'src>,
+    ) -> Option<Value> {
+        self.call_func(
+            result_type,
+            match BUILTIN_FUNCS.contains(&func) {
+                true => func.to_string(),
+                false => format!("main..{func}"),
+            },
+            args,
+        )
+    }
+
+    fn call_func(
+        &mut self,
+        result_type: Type,
+        func: String,
+        args: Vec<AnalyzedExpression<'src>>,
+    ) -> Option<Value> {
         let prev_used_registers = mem::take(&mut self.used_registers);
         let prev_used_float_registers = mem::take(&mut self.used_float_registers);
 
@@ -968,7 +1014,7 @@ impl<'src> Compiler<'src> {
         let mut int_register_index = 0;
         let mut float_register_index = 0;
         let mut memory_offset = 0;
-        for arg in node.args {
+        for arg in args {
             match self.expression(arg) {
                 None => {}
                 Some(Value::Int(value)) => {
@@ -1070,22 +1116,16 @@ impl<'src> Compiler<'src> {
         self.frame_size += memory_offset;
 
         // call function
-        self.function_body.push(Instruction::Call(
-            match BUILTIN_FUNCS.contains(&node.func) {
-                true => node.func.to_string(),
-                false => format!("main..{}", node.func),
-            },
-        ));
+        self.function_body.push(Instruction::Call(func));
 
         // move result to free register
         self.in_args -= 1;
         self.used_registers = prev_used_registers.clone();
         self.used_float_registers = prev_used_float_registers.clone();
-        let result_reg = match node.result_type {
+        let result_reg = match result_type {
             Type::Unit | Type::Never => None,
             Type::Int | Type::Char | Type::Bool => {
-                let size =
-                    Size::try_from(node.result_type).expect("int, char and bool have a size");
+                let size = Size::try_from(result_type).expect("int, char and bool have a size");
                 let reg = self.get_free_register(size);
                 self.function_body.push(Instruction::Mov(
                     reg.into(),
