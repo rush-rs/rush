@@ -110,6 +110,8 @@ pub enum Condition {
     GreaterOrEqual,
     Less,
     LessOrEqual,
+
+    NotParity,
 }
 
 /////////////////////////////////////////////////
@@ -220,6 +222,7 @@ impl Display for Condition {
                 Condition::GreaterOrEqual => "ge",
                 Condition::Less => "l",
                 Condition::LessOrEqual => "le",
+                Condition::NotParity => "np",
             }
         )
     }

@@ -1023,6 +1023,88 @@ impl<'src> Compiler<'src> {
                 }
                 Some(Value::Float(left.into()))
             }
+            // float comparisons
+            (
+                Some(Value::Float(left)),
+                Some(Value::Float(right)),
+                InfixOp::Eq
+                | InfixOp::Neq
+                | InfixOp::Lt
+                | InfixOp::Lte
+                | InfixOp::Gt
+                | InfixOp::Gte,
+            ) => {
+                let (lhs, rhs) = match (left, right) {
+                    (left @ FloatValue::Register(_), right @ FloatValue::Register(_)) => {
+                        // free both registers
+                        self.used_float_registers.pop();
+                        self.used_float_registers.pop();
+
+                        (left, right)
+                    }
+                    (left @ FloatValue::Register(_), right) => {
+                        // free the left register
+                        self.used_float_registers.pop();
+
+                        (left, right)
+                    }
+                    (left, right @ FloatValue::Register(_)) => {
+                        // move left side into free register
+                        let reg = self.get_free_float_register();
+                        self.function_body
+                            .push(Instruction::Movsd(reg.into(), left));
+
+                        // free both registers
+                        self.used_float_registers.pop();
+                        self.used_float_registers.pop();
+
+                        (reg.into(), right)
+                    }
+                    (left, right) => {
+                        // move left side into free register
+                        let reg = self.get_free_float_register();
+                        self.function_body
+                            .push(Instruction::Movsd(reg.into(), left));
+
+                        // free the register
+                        self.used_float_registers.pop();
+
+                        (reg.into(), right)
+                    }
+                };
+
+                // compare the sides
+                self.function_body.push(Instruction::Ucomisd(lhs, rhs));
+
+                // set the result
+                let reg = self.get_free_register(Size::Byte);
+                self.function_body.push(Instruction::SetCond(
+                    match node.op {
+                        InfixOp::Eq => Condition::Equal,
+                        InfixOp::Neq => Condition::NotEqual,
+                        InfixOp::Lt => Condition::Below,
+                        InfixOp::Gt => Condition::Above,
+                        InfixOp::Lte => Condition::BelowOrEqual,
+                        InfixOp::Gte => Condition::AboveOrEqual,
+                        _ => unreachable!("this block is only run with above ops"),
+                    },
+                    reg,
+                ));
+
+                // save parity
+                let parity_reg = self.get_free_register(Size::Byte);
+                self.function_body
+                    .push(Instruction::SetCond(Condition::NotParity, parity_reg));
+
+                // both results must be true (result must not be unordered)
+                self.function_body
+                    .push(Instruction::And(reg.into(), parity_reg.into()));
+
+                // free the parity reg
+                self.used_registers.pop();
+
+                Some(Value::Int(IntValue::Register(reg)))
+            }
             _ => todo!(),
         }
     }
