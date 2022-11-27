@@ -1210,7 +1210,9 @@ impl<'src> Analyzer<'src> {
         // evaluate constant expressions
         match (&expr, node.op) {
             (AnalyzedExpression::Int(num), PrefixOp::Not) => return AnalyzedExpression::Int(!num),
-            (AnalyzedExpression::Int(num), PrefixOp::Neg) => return AnalyzedExpression::Int(-num),
+            (AnalyzedExpression::Int(num), PrefixOp::Neg) => {
+                return AnalyzedExpression::Int(num.wrapping_neg())
+            }
             (AnalyzedExpression::Float(num), PrefixOp::Neg) => {
                 return AnalyzedExpression::Float(-num)
             }
@@ -1317,23 +1319,23 @@ impl<'src> Analyzer<'src> {
         // evaluate constant expressions
         match (&lhs, &rhs) {
             (AnalyzedExpression::Int(left), AnalyzedExpression::Int(right)) => match node.op {
-                InfixOp::Plus => return AnalyzedExpression::Int(left + right),
-                InfixOp::Minus => return AnalyzedExpression::Int(left - right),
-                InfixOp::Mul => return AnalyzedExpression::Int(left * right),
+                InfixOp::Plus => return AnalyzedExpression::Int(left.wrapping_add(*right)),
+                InfixOp::Minus => return AnalyzedExpression::Int(left.wrapping_sub(*right)),
+                InfixOp::Mul => return AnalyzedExpression::Int(left.wrapping_mul(*right)),
                 InfixOp::Div if *right == 0 => self.error(
                     ErrorKind::Semantic,
                     format!("cannot divide {left} by 0"),
                     vec!["division by 0 is undefined".into()],
                     node.span,
                 ),
-                InfixOp::Div => return AnalyzedExpression::Int(left / right),
+                InfixOp::Div => return AnalyzedExpression::Int(left.wrapping_div(*right)),
                 InfixOp::Rem if *right == 0 => self.error(
                     ErrorKind::Semantic,
                     format!("cannot calculate remainder of {left} with a divisor of 0"),
                     vec!["division by 0 is undefined".into()],
                     node.span,
                 ),
-                InfixOp::Rem => return AnalyzedExpression::Int(left % right),
+                InfixOp::Rem => return AnalyzedExpression::Int(left.wrapping_rem(*right)),
                 InfixOp::Pow => {
                     return AnalyzedExpression::Int(if *right < 0 {
                         0
