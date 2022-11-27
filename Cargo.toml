@@ -4,6 +4,7 @@ members = [
     "crates/rush-cli",
     "crates/rush-parser",
     "crates/rush-analyzer",
+    "crates/rush-interpreter-vm",
     "crates/rush-compiler-wasm",
     "crates/rush-compiler-llvm",
     "crates/rush-compiler-risc-v",

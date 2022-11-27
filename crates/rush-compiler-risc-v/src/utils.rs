@@ -326,10 +326,10 @@ impl Function {
 
 pub(crate) struct Loop {
     /// Specifies the `loop_head` label of the current loop.
-    /// Used int the `continue` statement.
+    /// Used in the `continue` statement.
     pub(crate) loop_head: String,
     /// Specifies the `after_loop` label of the current loop.
-    /// Used int the `break` statement.
+    /// Used in the `break` statement.
     pub(crate) after_loop: String,
 }
 
