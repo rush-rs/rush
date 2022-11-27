@@ -667,6 +667,28 @@ impl<'src> Compiler<'src> {
                 // return negated immediate
                 IntValue::Immediate(num) => Some(Value::Int(IntValue::Immediate(-num))),
             },
+            (Some(Value::Int(value)), Type::Int | Type::Char, PrefixOp::Not) => {
+                let reg = match value {
+                    IntValue::Register(reg) => reg,
+                    IntValue::Ptr(ptr) => {
+                        let reg = self.get_free_register(ptr.size);
+                        self.function_body
+                            .push(Instruction::Mov(reg.into(), ptr.into()));
+                        reg
+                    }
+                    IntValue::Immediate(num) => {
+                        return Some(Value::Int(IntValue::Immediate(
+                            match expr_type == Type::Int {
+                                true => !num,
+                                false => !num & 0x7F,
+                            },
+                        )))
+                    }
+                };
+
+                self.function_body.push(Instruction::Not(reg.into()));
+                Some(Value::Int(reg.into()))
+            }
             (Some(Value::Int(value)), Type::Bool, PrefixOp::Not) => match value {
                 IntValue::Register(reg) => {
                     // xor value in register with 1

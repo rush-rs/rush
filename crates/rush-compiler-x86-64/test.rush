@@ -34,7 +34,8 @@ fn main() {
         + base**3
         + comparisons() + float_comparisons()
         + casts()
-    ); // = 206
+        + !hundred
+    ); // = 105
 }
 
 fn comparisons() -> int {

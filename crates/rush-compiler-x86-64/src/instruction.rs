@@ -48,6 +48,7 @@ pub enum Instruction {
     Inc(IntValue),
     Dec(IntValue),
     Neg(IntValue),
+    Not(IntValue),
 
     /// Logical shift left
     Shl(IntValue, IntValue),
@@ -163,6 +164,7 @@ impl Display for Instruction {
             Instruction::Inc(reg) => write!(f, "    {:11} {reg}", "inc"),
             Instruction::Dec(reg) => write!(f, "    {:11} {reg}", "dec"),
             Instruction::Neg(reg) => write!(f, "    {:11} {reg}", "neg"),
+            Instruction::Not(reg) => write!(f, "    {:11} {reg}", "not"),
             Instruction::Shl(dest, src) => write!(f, "    {:11} {dest}, {src}", "shl"),
             Instruction::Sar(dest, src) => write!(f, "    {:11} {dest}, {src}", "sar"),
             Instruction::And(dest, src) => write!(f, "    {:11} {dest}, {src}", "and"),
