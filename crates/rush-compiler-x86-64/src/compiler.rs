@@ -492,6 +492,7 @@ impl<'src> Compiler<'src> {
         // get and reset frame size
         let mut frame_size = self.frame_size;
         self.frame_size = 0;
+        self.stack_pointer = 0;
 
         // align frame size to 16 bytes
         Self::align(&mut frame_size, Size::Oword);
