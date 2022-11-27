@@ -1091,17 +1091,32 @@ impl<'src> Compiler<'src> {
                     reg,
                 ));
 
-                // save parity
-                let parity_reg = self.get_free_register(Size::Byte);
-                self.function_body
-                    .push(Instruction::SetCond(Condition::NotParity, parity_reg));
+                // consider unordered results for equality checks
+                if node.op == InfixOp::Eq {
+                    // save parity
+                    let parity_reg = self.get_free_register(Size::Byte);
+                    self.function_body
+                        .push(Instruction::SetCond(Condition::NotParity, parity_reg));
 
-                // both results must be true (result must not be unordered)
-                self.function_body
-                    .push(Instruction::And(reg.into(), parity_reg.into()));
+                    // both results must be true (result must not be unordered)
+                    self.function_body
+                        .push(Instruction::And(reg.into(), parity_reg.into()));
 
-                // free the parity reg
-                self.used_registers.pop();
+                    // free the parity reg
+                    self.used_registers.pop();
+                } else if node.op == InfixOp::Neq {
+                    // save parity
+                    let parity_reg = self.get_free_register(Size::Byte);
+                    self.function_body
+                        .push(Instruction::SetCond(Condition::Parity, parity_reg));
+
+                    // either result can be true (result can be unordered)
+                    self.function_body
+                        .push(Instruction::Or(reg.into(), parity_reg.into()));
+
+                    // free the parity reg
+                    self.used_registers.pop();
+                }
 
                 Some(Value::Int(IntValue::Register(reg)))
             }
