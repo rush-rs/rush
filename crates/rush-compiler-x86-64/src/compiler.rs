@@ -570,7 +570,7 @@ impl<'src> Compiler<'src> {
                 self.add_var(node.name, size, Value::Int(reg.into()), false);
             }
             Some(Value::Float(FloatValue::Register(reg))) => {
-                self.add_var(node.name, Size::Dword, Value::Float(reg.into()), false);
+                self.add_var(node.name, Size::Qword, Value::Float(reg.into()), false);
             }
             Some(Value::Float(FloatValue::Ptr(ptr))) => {
                 // store ptr size
@@ -1035,14 +1035,14 @@ impl<'src> Compiler<'src> {
                 | InfixOp::Gte,
             ) => {
                 let (lhs, rhs) = match (left, right) {
-                    (left @ FloatValue::Register(_), right @ FloatValue::Register(_)) => {
+                    (FloatValue::Register(left), right @ FloatValue::Register(_)) => {
                         // free both registers
                         self.used_float_registers.pop();
                         self.used_float_registers.pop();
 
                         (left, right)
                     }
-                    (left @ FloatValue::Register(_), right) => {
+                    (FloatValue::Register(left), right) => {
                         // free the left register
                         self.used_float_registers.pop();
 
@@ -1058,7 +1058,7 @@ impl<'src> Compiler<'src> {
                         self.used_float_registers.pop();
                         self.used_float_registers.pop();
 
-                        (reg.into(), right)
+                        (reg, right)
                     }
                     (left, right) => {
                         // move left side into free register
@@ -1069,7 +1069,7 @@ impl<'src> Compiler<'src> {
                         // free the register
                         self.used_float_registers.pop();
 
-                        (reg.into(), right)
+                        (reg, right)
                     }
                 };
 
@@ -1105,7 +1105,7 @@ impl<'src> Compiler<'src> {
 
                 Some(Value::Int(IntValue::Register(reg)))
             }
-            _ => todo!(),
+            _ => unreachable!("the analyzer guarantees one of the above to match"),
         }
     }
 
@@ -1315,31 +1315,146 @@ impl<'src> Compiler<'src> {
 
     fn cast_expr(&mut self, node: AnalyzedCastExpr<'src>) -> Option<Value> {
         let expr_type = node.expr.result_type();
+
+        match (expr_type, node.type_) {
+            (Type::Int, Type::Char) => {
+                return self.call_func(
+                    Type::Char,
+                    "__rush_internal_cast_int_to_char".into(),
+                    vec![node.expr],
+                )
+            }
+            (Type::Float, Type::Char) => {
+                return self.call_func(
+                    Type::Char,
+                    "__rush_internal_cast_float_to_char".into(),
+                    vec![node.expr],
+                )
+            }
+            _ => {}
+        }
+
         let expr = self.expression(node.expr);
         match (expr, expr_type, node.type_) {
             (None, _, _) => None,
             (Some(Value::Int(val)), left, right) if left == right => Some(Value::Int(val)),
             (Some(Value::Float(val)), left, right) if left == right => Some(Value::Float(val)),
-            (Some(Value::Int(_val)), Type::Int, Type::Float) => todo!(),
-            (Some(Value::Int(_val)), Type::Int, Type::Bool) => todo!(),
-            (Some(Value::Int(_val)), Type::Int, Type::Char) => todo!(),
+
+            (Some(Value::Int(val)), Type::Int | Type::Char | Type::Bool, Type::Float) => {
+                match val {
+                    IntValue::Register(reg) => {
+                        let float_reg = self.get_free_float_register();
+                        self.function_body.push(Instruction::Cvtsi2sd(
+                            float_reg.into(),
+                            reg.in_qword_size().into(),
+                        ));
+                        self.used_registers.pop();
+                        Some(Value::Float(float_reg.into()))
+                    }
+                    IntValue::Ptr(ptr) if ptr.size == Size::Qword => {
+                        let reg = self.get_free_float_register();
+                        self.function_body
+                            .push(Instruction::Cvtsi2sd(reg.into(), ptr.into()));
+                        Some(Value::Float(reg.into()))
+                    }
+                    IntValue::Ptr(ptr) => {
+                        let reg = self.get_free_register(ptr.size);
+                        self.function_body
+                            .push(Instruction::Mov(reg.into(), ptr.into()));
+
+                        let float_reg = self.get_free_float_register();
+                        self.function_body.push(Instruction::Cvtsi2sd(
+                            float_reg.into(),
+                            reg.in_dword_size().into(),
+                        ));
+                        self.used_registers.pop();
+                        Some(Value::Float(float_reg.into()))
+                    }
+                    IntValue::Immediate(num) => Some(Value::Float(FloatValue::Ptr(Pointer::new(
+                        Size::Qword,
+                        IntRegister::Rip,
+                        Offset::Symbol(Self::add_constant(
+                            &mut self.quad_float_constants,
+                            (num as f64).to_bits(),
+                            Size::Qword,
+                            self.quad_constants.len(),
+                        )),
+                    )))),
+                }
+            }
+            (Some(Value::Int(val)), Type::Int | Type::Char, Type::Bool) => match val {
+                IntValue::Register(reg) => {
+                    self.function_body
+                        .push(Instruction::Cmp(reg.into(), 0.into()));
+                    self.function_body.push(Instruction::SetCond(
+                        Condition::NotEqual,
+                        reg.in_byte_size(),
+                    ));
+                    Some(Value::Int(reg.into()))
+                }
+                val @ IntValue::Ptr(_) => {
+                    self.function_body.push(Instruction::Cmp(val, 0.into()));
+                    let reg = self.get_free_register(Size::Byte);
+                    self.function_body
+                        .push(Instruction::SetCond(Condition::NotEqual, reg));
+                    Some(Value::Int(reg.into()))
+                }
+                IntValue::Immediate(num) => {
+                    Some(Value::Int(IntValue::Immediate((num != 0) as i64)))
+                }
+            },
             (Some(Value::Float(val)), Type::Float, Type::Int) => {
                 let reg = self.get_free_register(Size::Qword);
-                if let FloatValue::Register(reg) = val {
-                    // TODO: .iter().position() slow?
-                    self.used_float_registers.remove(
-                        self.used_float_registers
-                            .iter()
-                            .position(|r| *r == reg)
-                            .expect("returned registers should be marked as used"),
-                    );
+                if let FloatValue::Register(_) = val {
+                    self.used_float_registers.pop();
                 }
                 self.function_body
                     .push(Instruction::Cvttsd2si(reg.into(), val));
                 Some(Value::Int(reg.into()))
             }
-            (Some(Value::Float(_val)), Type::Float, Type::Bool) => todo!(),
-            (Some(Value::Float(_val)), Type::Float, Type::Char) => todo!(),
+            (Some(Value::Float(val)), Type::Float, Type::Bool) => {
+                // move the value into a register
+                let reg = match val {
+                    FloatValue::Register(reg) => reg,
+                    FloatValue::Ptr(ptr) => {
+                        let reg = self.get_free_float_register();
+                        self.function_body
+                            .push(Instruction::Movsd(reg.into(), ptr.into()));
+                        reg
+                    }
+                };
+
+                // get a constant zero to compare against
+                let float_zero_symbol = Self::add_constant(
+                    &mut self.quad_float_constants,
+                    0_f64.to_bits(),
+                    Size::Qword,
+                    self.quad_constants.len(),
+                );
+
+                // compare
+                self.function_body.push(Instruction::Ucomisd(
+                    reg,
+                    FloatValue::Ptr(Pointer::new(
+                        Size::Qword,
+                        IntRegister::Rip,
+                        Offset::Symbol(float_zero_symbol),
+                    )),
+                ));
+
+                // get result
+                let reg = self.get_free_register(Size::Byte);
+                self.function_body
+                    .push(Instruction::SetCond(Condition::NotEqual, reg));
+                let parity_reg = self.get_free_register(Size::Byte);
+                self.function_body
+                    .push(Instruction::SetCond(Condition::Parity, parity_reg));
+                self.function_body
+                    .push(Instruction::Or(reg.into(), parity_reg.into()));
+                self.used_registers.pop();
+
+                Some(Value::Int(IntValue::Register(reg)))
+            }
             (Some(Value::Int(val)), Type::Bool | Type::Char, Type::Int) => match val {
                 IntValue::Ptr(ptr) => {
                     let reg = self.get_free_register(Size::Byte);
@@ -1350,10 +1465,7 @@ impl<'src> Compiler<'src> {
                 IntValue::Register(reg) => Some(Value::Int(reg.in_qword_size().into())),
                 IntValue::Immediate(value) => Some(Value::Int((value as i64).into())),
             },
-            (Some(Value::Int(_val)), Type::Bool, Type::Float) => todo!(),
-            (Some(Value::Int(_val)), Type::Bool, Type::Char) => todo!(),
-            (Some(Value::Int(_val)), Type::Char, Type::Float) => todo!(),
-            (Some(Value::Int(_val)), Type::Char, Type::Bool) => todo!(),
+            (Some(Value::Int(val)), Type::Bool, Type::Char) => Some(Value::Int(val)),
             _ => unreachable!("the analyzer guarantees one of the above to match"),
         }
     }

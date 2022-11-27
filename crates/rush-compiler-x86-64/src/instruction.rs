@@ -3,7 +3,7 @@
 use std::fmt::{self, Display, Formatter};
 
 use crate::{
-    register::IntRegister,
+    register::{FloatRegister, IntRegister},
     value::{FloatValue, IntValue},
 };
 
@@ -83,7 +83,7 @@ pub enum Instruction {
     Xorpd(FloatValue, FloatValue),
 
     /// Compare floats. (**u**nordered **com**pare **s**calar **d**ouble)
-    Ucomisd(FloatValue, FloatValue),
+    Ucomisd(FloatRegister, FloatValue),
     /// Convert float to int. (**c**on**v**er**t** **t**runcating **s**calar **d**ouble to
     /// **s**igned **i**nteger)
     Cvttsd2si(IntValue, FloatValue),
@@ -111,6 +111,7 @@ pub enum Condition {
     Less,
     LessOrEqual,
 
+    Parity,
     NotParity,
 }
 
@@ -222,6 +223,7 @@ impl Display for Condition {
                 Condition::GreaterOrEqual => "ge",
                 Condition::Less => "l",
                 Condition::LessOrEqual => "le",
+                Condition::Parity => "p",
                 Condition::NotParity => "np",
             }
         )
@@ -246,7 +248,7 @@ mod tests {
             Instruction::JCond(Condition::Less, "return_0".to_string()),
             Instruction::Mov(IntValue::Register(IntRegister::Rax), IntValue::Immediate(1)),
             Instruction::Ucomisd(
-                FloatValue::Register(FloatRegister::Xmm0),
+                FloatRegister::Xmm0,
                 FloatValue::Ptr(Pointer::new(
                     Size::Qword,
                     IntRegister::Rip,

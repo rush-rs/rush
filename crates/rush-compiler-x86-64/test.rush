@@ -33,7 +33,8 @@ fn main() {
         + global_b as int - global_a
         + base**3
         + comparisons() + float_comparisons()
-    ); // = 205
+        + casts()
+    ); // = 206
 }
 
 fn comparisons() -> int {
@@ -58,6 +59,25 @@ fn float_comparisons() -> int {
     let e = a < x;
 
     (b & c & d & e) as int
+}
+
+fn casts() -> int {
+    let a = 300;
+
+    let b = a as char; // = '\x7F'
+    let c = b as bool; // = true
+    let d = c as float; // = 1.0
+    let e = d as int; // = 1
+    let f = e as bool; // = true
+    let g = f as char; // = '\x01'
+    let h = g as float; // = 1.0
+    let i = h as char; // = '\x01'
+    let j = i as int; // = 1
+    let k = j as float; // = 1.0
+    let l = k as bool; // = true
+    let m = l as int; // = 1
+
+    m
 }
 
 fn float(a: float) -> float {
