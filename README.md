@@ -12,7 +12,7 @@ execution and compilation.
 - [Semantic Analyzer](./crates/rush-analyzer/)
 
 - TODO: Tree-walking interpreter
-- TODO: Virtual machine
+- [Virtual Machine Interpreter](./crates/rush-interpreter-vm)
 
 - [WASM Compiler](./crates/rush-compiler-wasm/)
 - [LLVM Compiler](./crates/rush-compiler-llvm/)
