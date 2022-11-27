@@ -920,6 +920,69 @@ impl<'src> Compiler<'src> {
 
                 Some(Value::Int(IntValue::Register(lhs)))
             }
+            // int comparisons
+            (
+                Some(Value::Int(left)),
+                Some(Value::Int(right)),
+                InfixOp::Eq
+                | InfixOp::Neq
+                | InfixOp::Lt
+                | InfixOp::Lte
+                | InfixOp::Gt
+                | InfixOp::Gte,
+            ) => {
+                let (lhs, rhs, reg) = match (left, right) {
+                    (IntValue::Register(reg), right @ IntValue::Register(_)) => {
+                        // free right register
+                        self.used_registers.pop();
+
+                        // use left register for result
+                        (reg.into(), right, reg.in_byte_size())
+                    }
+                    (IntValue::Register(reg), right) => (reg.into(), right, reg.in_byte_size()),
+                    (left, IntValue::Register(reg)) => (left, reg.into(), reg.in_byte_size()),
+                    (left, IntValue::Ptr(ptr)) => {
+                        let reg = self.get_free_register(ptr.size);
+                        self.function_body.push(Instruction::Mov(reg.into(), left));
+                        (reg.into(), ptr.into(), reg.in_byte_size())
+                    }
+                    (IntValue::Ptr(ptr), right @ IntValue::Immediate(_)) => {
+                        let reg = self.get_free_register(ptr.size);
+                        (ptr.into(), right, reg.in_byte_size())
+                    }
+                    (IntValue::Immediate(left), IntValue::Immediate(right)) => {
+                        return Some(Value::Int(IntValue::Immediate(match node.op {
+                            InfixOp::Eq => left == right,
+                            InfixOp::Neq => left != right,
+                            InfixOp::Lt => left < right,
+                            InfixOp::Gt => left > right,
+                            InfixOp::Lte => left <= right,
+                            InfixOp::Gte => left >= right,
+                            _ => unreachable!("this block is only run with above ops"),
+                        }
+                            as i64)))
+                    }
+                };
+
+                // compare the sides
+                self.function_body.push(Instruction::Cmp(lhs, rhs));
+
+                // set the result
+                self.function_body.push(Instruction::SetCond(
+                    match node.op {
+                        InfixOp::Eq => Condition::Equal,
+                        InfixOp::Neq => Condition::NotEqual,
+                        InfixOp::Lt => Condition::Less,
+                        InfixOp::Gt => Condition::Greater,
+                        InfixOp::Lte => Condition::LessOrEqual,
+                        InfixOp::Gte => Condition::GreaterOrEqual,
+                        _ => unreachable!("this block is only run with above ops"),
+                    },
+                    reg,
+                ));
+
+                Some(Value::Int(IntValue::Register(reg)))
+            }
             // float arithmetic
             (
                 Some(Value::Float(left)),

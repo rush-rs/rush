@@ -32,7 +32,20 @@ fn main() {
         + -hundred + (-nine) as int
         + global_b as int - global_a
         + base**3
-    ); // = 203
+        + comparisons()
+    ); // = 204
+}
+
+fn comparisons() -> int {
+    let a = 3;
+    let x = 5;
+
+    let b = a > 1;
+    let c = a == 3;
+    let d = 4 != a;
+    let e = a < x;
+
+    (b & c & d & e) as int
 }
 
 fn float(a: float) -> float {
