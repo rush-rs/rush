@@ -184,11 +184,23 @@ impl Vm {
                 // must return because the ip would be incremented otherwise
                 return Ok(None);
             }
+            Instruction::Cast(to) => {
+                let from = self.pop();
+                self.push(from.cast(*to))?
+            }
             Instruction::Ret => {
                 self.call_stack.pop();
             }
             Instruction::Exit => {
                 return Ok(Some(self.pop().into_int()));
+            }
+            Instruction::Neg => {
+                let top = self.pop();
+                self.push(top.neg())?;
+            }
+            Instruction::Not => {
+                let top = self.pop();
+                self.push(top.not())?;
             }
             Instruction::Add => {
                 let rhs = self.pop();

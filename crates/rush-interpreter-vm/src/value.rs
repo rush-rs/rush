@@ -1,12 +1,15 @@
 use std::fmt::Display;
 
-use crate::vm::{RuntimeError, RuntimeErrorKind};
+use crate::{
+    instruction::Type,
+    vm::{RuntimeError, RuntimeErrorKind},
+};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Value {
     Int(i64),
     Bool(bool),
-    Char(char),
+    Char(u8),
     Float(f64),
     Unit,
 }
@@ -26,17 +29,27 @@ impl Value {
         }
     }
 
-    pub(crate) fn _into_char(self) -> char {
-        match self {
-            Value::Char(value) => value,
-            _ => unreachable!("no illegal calls exist"),
-        }
-    }
-
     pub(crate) fn into_float(self) -> f64 {
         match self {
             Value::Float(value) => value,
             _ => unreachable!("no illegal calls exist"),
+        }
+    }
+
+    pub(crate) fn neg(&self) -> Value {
+        match self {
+            Value::Int(val) => Value::Int(-val),
+            Value::Float(val) => Value::Float(-val),
+            _ => unreachable!("never called this way"),
+        }
+    }
+
+    pub(crate) fn not(&self) -> Value {
+        match self {
+            Value::Int(val) => Value::Int(!val),
+            Value::Bool(value) => Value::Bool(!value),
+            Value::Char(_value) => todo!(), // TODO: is this correct?
+            _ => unreachable!("never called this way"),
         }
     }
 
@@ -206,6 +219,59 @@ impl Value {
                 format!("{self} >> {rhs} is illegal"),
             )),
         }
+    }
+
+    pub(crate) fn cast(self, to: Type) -> Value {
+        match to {
+            Type::Int => self.cast_int(),
+            Type::Bool => self.cast_bool(),
+            Type::Char => self.cast_char(),
+            Type::Float => self.cast_float(),
+        }
+    }
+
+    fn cast_int(self) -> Value {
+        let res = match self {
+            Value::Bool(val) => val as i64,
+            Value::Char(val) => val as i64,
+            Value::Float(val) => val as i64,
+            _ => unreachable!("other combinations are impossible"),
+        };
+        Value::Int(res)
+    }
+
+    fn cast_bool(self) -> Value {
+        let res = match self {
+            Value::Int(val) => val != 0,
+            Value::Char(val) => val != 0,
+            Value::Float(val) => val != 0.0,
+            _ => unreachable!("other combinations are impossible"),
+        };
+        Value::Bool(res)
+    }
+
+    fn cast_char(self) -> Value {
+        let res = match self {
+            Value::Int(i64::MIN..=0) => 0,
+            Value::Int(127..=i64::MAX) => 127,
+            Value::Int(val) => val as u8,
+            Value::Bool(val) => val as u8,
+            Value::Float(val) if val < 0.0 => 0,
+            Value::Float(val) if val > 127.0 => 127,
+            Value::Float(val) => val as u8,
+            _ => unreachable!("other combinations are impossible"),
+        };
+        Value::Char(res)
+    }
+
+    fn cast_float(self) -> Value {
+        let res = match self {
+            Value::Int(val) => val as f64,
+            Value::Bool(val) => val as u8 as f64,
+            Value::Char(val) => val as f64,
+            _ => unreachable!("other combinations are impossible"),
+        };
+        Value::Float(res)
     }
 }
 

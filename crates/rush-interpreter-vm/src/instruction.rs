@@ -1,6 +1,41 @@
 use std::fmt::Display;
 
-use rush_analyzer::{AssignOp, InfixOp};
+use rush_analyzer::{AssignOp, InfixOp, PrefixOp, Type as AnalyzerType};
+
+#[derive(Debug, Clone, Copy)]
+pub enum Type {
+    Int,
+    Bool,
+    Char,
+    Float,
+}
+
+impl From<AnalyzerType> for Type {
+    fn from(src: AnalyzerType) -> Self {
+        match src {
+            AnalyzerType::Int => Self::Int,
+            AnalyzerType::Float => Self::Float,
+            AnalyzerType::Bool => Self::Bool,
+            AnalyzerType::Char => Self::Char,
+            _ => unreachable!("cannot convert from these types"),
+        }
+    }
+}
+
+impl Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Type::Int => "int",
+                Type::Bool => "bool",
+                Type::Char => "char",
+                Type::Float => "float",
+            }
+        )
+    }
+}
 
 use crate::Value;
 
@@ -27,6 +62,12 @@ pub enum Instruction {
     SetGlob(usize),
     /// Retrieves the global with the specified index and places it on top of the stack.
     GetGlob(usize),
+    /// Cast the current item on the stack to the specified type.
+    Cast(Type),
+
+    // Prefix operators
+    Neg,
+    Not,
 
     // Infix operators
     Add,
@@ -95,6 +136,15 @@ impl From<AssignOp> for Instruction {
     }
 }
 
+impl From<PrefixOp> for Instruction {
+    fn from(src: PrefixOp) -> Self {
+        match src {
+            PrefixOp::Not => Self::Not,
+            PrefixOp::Neg => Self::Neg,
+        }
+    }
+}
+
 impl Display for Instruction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -107,8 +157,11 @@ impl Display for Instruction {
             Instruction::SetGlob(idx) => write!(f, "setglob {idx}"),
             Instruction::GetGlob(idx) => write!(f, "getglob {idx}"),
             Instruction::Call(idx) => write!(f, "call {idx}"),
+            Instruction::Cast(to) => write!(f, "cast {to}"),
             Instruction::Ret => write!(f, "ret"),
             Instruction::Exit => write!(f, "exit"),
+            Instruction::Not => write!(f, "not"),
+            Instruction::Neg => write!(f, "neg"),
             Instruction::Add => write!(f, "add"),
             Instruction::Sub => write!(f, "sub"),
             Instruction::Mul => write!(f, "mul"),

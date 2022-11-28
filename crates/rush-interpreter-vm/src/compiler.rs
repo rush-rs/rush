@@ -2,7 +2,10 @@ use std::{collections::HashMap, vec};
 
 use rush_analyzer::{ast::*, AssignOp};
 
-use crate::{instruction::Instruction, value::Value};
+use crate::{
+    instruction::{Instruction, Type as InstructionType},
+    value::Value,
+};
 
 pub(crate) struct Compiler<'src> {
     /// The first item is the main function: execution will start here
@@ -210,17 +213,15 @@ impl<'src> Compiler<'src> {
                 self.insert(Instruction::Push(Value::Float(*value)))
             }
             AnalyzedExpression::Bool(value) => self.insert(Instruction::Push(Value::Bool(*value))),
-            AnalyzedExpression::Char(value) => {
-                self.insert(Instruction::Push(Value::Char(*value as char)))
-            }
+            AnalyzedExpression::Char(value) => self.insert(Instruction::Push(Value::Char(*value))),
             AnalyzedExpression::Ident(node) => self.load_var(node.ident),
             AnalyzedExpression::Block(node) => self.block(node),
             AnalyzedExpression::If(node) => self.if_expr(node),
-            AnalyzedExpression::Prefix(_) => todo!(),
+            AnalyzedExpression::Prefix(node) => self.prefix_expr(node),
             AnalyzedExpression::Infix(node) => self.infix_expr(node),
             AnalyzedExpression::Assign(node) => self.assign_expr(node),
             AnalyzedExpression::Call(node) => self.call_expr(node),
-            AnalyzedExpression::Cast(_) => todo!(),
+            AnalyzedExpression::Cast(node) => self.cast_expr(node),
             AnalyzedExpression::Grouped(node) => self.expression(node),
         }
     }
@@ -245,6 +246,11 @@ impl<'src> Compiler<'src> {
             let after_else = self.functions[self.fp].len();
             self.functions[self.fp].insert(after_then_idx + 2, Instruction::Jmp(after_else + 1))
         }
+    }
+
+    fn prefix_expr(&mut self, node: &'src AnalyzedPrefixExpr) {
+        self.expression(&node.expr);
+        self.insert(Instruction::from(node.op));
     }
 
     fn infix_expr(&mut self, node: &'src AnalyzedInfixExpr) {
@@ -288,6 +294,14 @@ impl<'src> Compiler<'src> {
                 let fn_idx = self.fn_names.get(func).expect("every function exists");
                 self.insert(Instruction::Call(*fn_idx));
             }
+        }
+    }
+
+    fn cast_expr(&mut self, node: &'src AnalyzedCastExpr) {
+        self.expression(&node.expr);
+        match (node.expr.result_type(), node.type_) {
+            (from, to) if from == to => {}
+            (_, to) => self.insert(Instruction::Cast(InstructionType::from(to))),
         }
     }
 }
