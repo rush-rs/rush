@@ -23,9 +23,12 @@ pub(crate) struct Compiler<'src> {
     scopes: Vec<Scope<'src>>,
 
     curr_fn: Function,
+
+    /// Contains information about the current loop
+    curr_loop: Loop,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct Scope<'src> {
     /// Maps an ident to a stack offset
     vars: HashMap<&'src str, usize>,
@@ -35,6 +38,24 @@ struct Scope<'src> {
 struct Function {
     /// Counter for let bindings.
     pub let_cnt: usize,
+}
+
+#[derive(Default)]
+struct Loop {
+    /// Specifies the instruction index of the loop head
+    head: usize,
+    /// Specifies the instruction indices in the current function of `break` statements.
+    /// Used for replacing the offset with the real value after the loop body has been compiled.
+    break_jmp_indices: Vec<usize>,
+}
+
+impl Loop {
+    fn new(head: usize) -> Self {
+        Self {
+            head,
+            break_jmp_indices: vec![],
+        }
+    }
 }
 
 impl<'src> Compiler<'src> {
@@ -48,6 +69,7 @@ impl<'src> Compiler<'src> {
             scopes: vec![],
             globals: HashMap::new(),
             global_idx: 0,
+            curr_loop: Loop::default(),
         }
     }
 
@@ -63,24 +85,21 @@ impl<'src> Compiler<'src> {
         self.scopes.last_mut().expect("there is always a scope")
     }
 
-    #[inline]
-    /// Returns a reference to the current scope
-    fn scope(&self) -> &Scope {
-        self.scopes.last().expect("there is always a scope")
+    /// Returns the index of the specified variable or `None` if it is global.
+    fn var_idx(&self, name: &'src str) -> Option<usize> {
+        for scope in self.scopes.iter().rev() {
+            if let Some(i) = scope.vars.get(name) {
+                return Some(*i);
+            };
+        }
+        None
     }
 
     /// Loads the value of the specified variable name on the stack
     fn load_var(&mut self, name: &'src str) {
-        let mut idx = None;
-        for scope in self.scopes.iter().rev() {
-            if let Some(i) = scope.vars.get(name) {
-                idx = Some(i);
-                break;
-            };
-        }
-
+        let idx = self.var_idx(name);
         match idx {
-            Some(idx) => self.insert(Instruction::GetVar(*idx)),
+            Some(idx) => self.insert(Instruction::GetVar(idx)),
             None => {
                 let idx = self.globals.get(name).expect("every variable was declared");
                 self.insert(Instruction::GetGlob(*idx));
@@ -186,13 +205,20 @@ impl<'src> Compiler<'src> {
                 }
                 self.insert(Instruction::Ret);
             }
-            AnalyzedStatement::Loop(_) => todo!(),
-            AnalyzedStatement::While(_) => todo!(),
+            AnalyzedStatement::Loop(node) => self.loop_stmt(node),
+            AnalyzedStatement::While(node) => self.while_stmt(node),
             AnalyzedStatement::For(_) => todo!(),
-            AnalyzedStatement::Break => todo!(),
-            AnalyzedStatement::Continue => todo!(),
+            AnalyzedStatement::Break => {
+                // the jmp instruction is corrected later
+                self.curr_loop
+                    .break_jmp_indices
+                    .push(self.functions[self.fp].len() + 1);
+                self.insert(Instruction::Jmp(usize::MAX));
+            }
+            AnalyzedStatement::Continue => self.insert(Instruction::Jmp(self.curr_loop.head)),
             AnalyzedStatement::Expr(node) => {
                 self.expression(node);
+                // TODO: remove unit values
                 self.insert(Instruction::Pop)
             }
         }
@@ -204,6 +230,57 @@ impl<'src> Compiler<'src> {
         self.insert(Instruction::SetVar(let_cnt));
         self.scope_mut().vars.insert(node.name, let_cnt);
         self.curr_fn.let_cnt += 1;
+    }
+
+    fn loop_stmt(&mut self, node: &'src AnalyzedLoopStmt) {
+        // save location of the loop head (for continue stmts)
+        let loop_head_pos = self.functions[self.fp].len();
+        self.curr_loop = Loop::new(loop_head_pos);
+
+        // compile the loop body
+        self.block(&node.block);
+        self.insert(Instruction::Pop);
+
+        // jump back to the top
+        self.insert(Instruction::Jmp(loop_head_pos));
+
+        // fill in any blank-value `break` statement instructions
+        let jump_to = self.functions[self.fp].len();
+        for idx in &self.curr_loop.break_jmp_indices {
+            self.functions[self.fp][*idx] = Instruction::Jmp(jump_to)
+        }
+    }
+
+    fn while_stmt(&mut self, node: &'src AnalyzedWhileStmt) {
+        // save location of the loop head (for continue stmts)
+        let loop_head_pos = self.functions[self.fp].len();
+        self.curr_loop = Loop::new(loop_head_pos);
+
+        // compile the while condition
+        self.expression(&node.cond);
+
+        // jump to the end if the condition is false
+        self.curr_loop
+            .break_jmp_indices
+            .push(self.functions[self.fp].len());
+        self.insert(Instruction::JmpCond(usize::MAX));
+
+        // compile the loop body
+        self.block(&node.block);
+        self.insert(Instruction::Pop);
+
+        // jump back to the top
+        self.insert(Instruction::Jmp(loop_head_pos));
+
+        // fill in any blank-value `break` statement instructions
+        let jump_to = self.functions[self.fp].len();
+        for idx in &self.curr_loop.break_jmp_indices {
+            match &mut self.functions[self.fp][*idx] {
+                Instruction::Jmp(offset) => *offset = jump_to,
+                Instruction::JmpCond(offset) => *offset = jump_to,
+                _ => unreachable!("other instructions do not jump"),
+            }
+        }
     }
 
     fn expression(&mut self, node: &'src AnalyzedExpression) {
@@ -269,8 +346,9 @@ impl<'src> Compiler<'src> {
             self.expression(&node.expr);
         }
 
-        match self.scope().vars.get(node.assignee) {
-            Some(idx) => self.insert(Instruction::SetVar(*idx)),
+        let assignee_idx = self.var_idx(node.assignee);
+        match assignee_idx {
+            Some(idx) => self.insert(Instruction::SetVar(idx)),
             None => {
                 let idx = self
                     .globals
@@ -279,6 +357,7 @@ impl<'src> Compiler<'src> {
                 self.insert(Instruction::SetGlob(*idx));
             }
         };
+
         // result value of assignments is `()`
         self.insert(Instruction::Push(Value::Unit))
     }

@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, thread::sleep, time::Duration};
 
 use crate::{instruction::Instruction, value::Value};
 
@@ -14,7 +14,7 @@ pub(crate) struct Vm {
 #[derive(Debug, Default)]
 struct CallFrame {
     /// Variable bindings for the current function.
-    mem: Vec<Value>,
+    mem: Vec<Option<Value>>,
     /// Specifies the instruction pointer relative to the function
     ip: usize,
     /// Specifies the function pointer
@@ -105,8 +105,8 @@ impl Vm {
             let instruction = &program[self.call_frame().fp][self.call_frame().ip];
 
             // TODO: remove this debug comment eventually
-            /* println!(
-                "[{:02}/{:02}] {:10} | {}",
+            println!(
+                "[{:02}/{:02}] {:10} | {:20} | {}",
                 self.call_frame().fp,
                 self.call_frame().ip,
                 instruction.to_string(),
@@ -115,8 +115,18 @@ impl Vm {
                     .rev()
                     .map(|v| v.to_string())
                     .collect::<Vec<String>>()
-                    .join(",")
-            ); */
+                    .join(", "),
+                self.call_frame()
+                    .mem
+                    .iter()
+                    .map(|v| match v {
+                        Some(v) => v.to_string(),
+                        None => "NONE".to_string(),
+                    })
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            );
+            sleep(Duration::from_millis(50));
 
             // if the current instruction exists the VM, terminate execution
             if let Some(code) = self.instruction(instruction)? {
@@ -152,12 +162,15 @@ impl Vm {
                 let val = self.pop();
                 // if there is already an entry in the memory, use it
                 // otherwise, new memory is allocated
-                match self.call_frame().mem.len() < *idx + 1 {
-                    true => self.call_frame_mut().mem.push(val),
-                    false => self.call_frame_mut().mem[*idx] = val,
+
+                while self.call_frame().mem.len() < idx + 1 {
+                    self.call_frame_mut().mem.push(None)
                 }
+                self.call_frame_mut().mem[*idx] = Some(val);
             }
-            Instruction::GetVar(idx) => self.push(self.call_frame().mem[*idx])?,
+            Instruction::GetVar(idx) => {
+                self.push(self.call_frame().mem[*idx].expect("variables are always initialized"))?
+            }
             Instruction::SetGlob(idx) => {
                 let val = self.pop();
                 match self.globals.len() < *idx + 1 {
