@@ -100,11 +100,16 @@ impl Vm {
             .expect("there is always the root")
     }
 
-    pub(crate) fn run(&mut self, program: Vec<Vec<Instruction>>) -> Result<i64> {
+    /// Runs the specified program but includes debug prints after each instruction.
+    /// Also accepts the `clock_hz` parameter which specifies the speed of the VM.
+    pub(crate) fn debug_run(
+        &mut self,
+        program: Vec<Vec<Instruction>>,
+        clock_hz: u64,
+    ) -> Result<i64> {
         while self.call_frame().ip < program[self.call_frame().fp].len() {
             let instruction = &program[self.call_frame().fp][self.call_frame().ip];
 
-            // TODO: remove this debug comment eventually
             println!(
                 "[{:02}/{:02}] {:10} | {:20} | {}",
                 self.call_frame().fp,
@@ -126,16 +131,26 @@ impl Vm {
                     .collect::<Vec<String>>()
                     .join(", ")
             );
-            sleep(Duration::from_millis(50));
+            sleep(Duration::from_millis(1000 / clock_hz));
 
             // if the current instruction exists the VM, terminate execution
             if let Some(code) = self.instruction(instruction)? {
                 return Ok(code);
             };
         }
-
-        #[cfg(debug_assertions)]
         assert_eq!(self.stack.last(), Some(&Value::Unit));
+        Ok(0)
+    }
+
+    pub(crate) fn run(&mut self, program: Vec<Vec<Instruction>>) -> Result<i64> {
+        while self.call_frame().ip < program[self.call_frame().fp].len() {
+            let instruction = &program[self.call_frame().fp][self.call_frame().ip];
+
+            // if the current instruction exists the VM, terminate execution
+            if let Some(code) = self.instruction(instruction)? {
+                return Ok(code);
+            };
+        }
 
         Ok(0)
     }
@@ -159,14 +174,13 @@ impl Vm {
                 }
             }
             Instruction::SetVar(idx) => {
-                let val = self.pop();
-                // if there is already an entry in the memory, use it
+                // if there is already an entry in the memory, use it.
                 // otherwise, new memory is allocated
-
                 while self.call_frame().mem.len() < idx + 1 {
                     self.call_frame_mut().mem.push(None)
                 }
-                self.call_frame_mut().mem[*idx] = Some(val);
+
+                self.call_frame_mut().mem[*idx] = Some(self.pop());
             }
             Instruction::GetVar(idx) => {
                 self.push(self.call_frame().mem[*idx].expect("variables are always initialized"))?
@@ -285,11 +299,31 @@ impl Vm {
                 let lhs = self.pop();
                 self.push(lhs.shr(rhs)?)?;
             }
-            Instruction::BitOr => todo!(),
-            Instruction::BitAnd => todo!(),
-            Instruction::BitXor => todo!(),
-            Instruction::And => todo!(),
-            Instruction::Or => todo!(),
+            Instruction::BitOr => {
+                let rhs = self.pop();
+                let lhs = self.pop();
+                self.push(lhs.bit_or(rhs))?;
+            }
+            Instruction::BitAnd => {
+                let rhs = self.pop();
+                let lhs = self.pop();
+                self.push(lhs.bit_and(rhs))?;
+            }
+            Instruction::BitXor => {
+                let rhs = self.pop();
+                let lhs = self.pop();
+                self.push(lhs.bit_xor(rhs))?;
+            }
+            Instruction::And => {
+                let rhs = self.pop();
+                let lhs = self.pop();
+                self.push(lhs.and(rhs))?;
+            }
+            Instruction::Or => {
+                let rhs = self.pop();
+                let lhs = self.pop();
+                self.push(lhs.or(rhs))?;
+            }
         }
         self.call_frame_mut().ip += 1;
         Ok(None)

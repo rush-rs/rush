@@ -207,7 +207,7 @@ impl<'src> Compiler<'src> {
             }
             AnalyzedStatement::Loop(node) => self.loop_stmt(node),
             AnalyzedStatement::While(node) => self.while_stmt(node),
-            AnalyzedStatement::For(_) => todo!(),
+            AnalyzedStatement::For(node) => self.for_stmt(node),
             AnalyzedStatement::Break => {
                 // the jmp instruction is corrected later
                 self.curr_loop
@@ -244,18 +244,11 @@ impl<'src> Compiler<'src> {
         // jump back to the top
         self.insert(Instruction::Jmp(loop_head_pos));
 
-        // fill in any blank-value `break` statement instructions
-        let jump_to = self.functions[self.fp].len();
-        for idx in &self.curr_loop.break_jmp_indices {
-            self.functions[self.fp][*idx] = Instruction::Jmp(jump_to)
-        }
+        // correct placeholder break values
+        self.fill_blank_jmps(self.functions[self.fp].len());
     }
 
     fn while_stmt(&mut self, node: &'src AnalyzedWhileStmt) {
-        // save location of the loop head (for continue stmts)
-        let loop_head_pos = self.functions[self.fp].len();
-        self.curr_loop = Loop::new(loop_head_pos);
-
         // compile the while condition
         self.expression(&node.cond);
 
@@ -265,6 +258,10 @@ impl<'src> Compiler<'src> {
             .push(self.functions[self.fp].len());
         self.insert(Instruction::JmpCond(usize::MAX));
 
+        // save location of the loop head (for continue stmts)
+        let loop_head_pos = self.functions[self.fp].len();
+        self.curr_loop = Loop::new(loop_head_pos);
+
         // compile the loop body
         self.block(&node.block);
         self.insert(Instruction::Pop);
@@ -272,15 +269,63 @@ impl<'src> Compiler<'src> {
         // jump back to the top
         self.insert(Instruction::Jmp(loop_head_pos));
 
-        // fill in any blank-value `break` statement instructions
-        let jump_to = self.functions[self.fp].len();
+        // correct placeholder break values
+        self.fill_blank_jmps(self.functions[self.fp].len());
+    }
+
+    /// Fills in any blank-value `break` statement instructions.
+    fn fill_blank_jmps(&mut self, offset: usize) {
         for idx in &self.curr_loop.break_jmp_indices {
             match &mut self.functions[self.fp][*idx] {
-                Instruction::Jmp(offset) => *offset = jump_to,
-                Instruction::JmpCond(offset) => *offset = jump_to,
+                Instruction::Jmp(o) => *o = offset,
+                Instruction::JmpCond(o) => *o = offset,
                 _ => unreachable!("other instructions do not jump"),
             }
         }
+    }
+
+    fn for_stmt(&mut self, node: &'src AnalyzedForStmt) {
+        // compile the init expression
+        self.expression(&node.initializer);
+        let let_cnt = self.curr_fn.let_cnt;
+        self.insert(Instruction::SetVar(let_cnt));
+        self.scope_mut().vars.insert(node.ident, let_cnt);
+        self.curr_fn.let_cnt += 1;
+
+        // save location of the loop head (for continue stmts)
+        let loop_head_pos = self.functions[self.fp].len();
+        self.curr_loop = Loop::new(loop_head_pos);
+
+        // compile the condition expr
+        self.expression(&node.cond);
+
+        // jump to the end if the condition is false
+        self.curr_loop
+            .break_jmp_indices
+            .push(self.functions[self.fp].len());
+        self.insert(Instruction::JmpCond(usize::MAX));
+
+        // compile the loop body
+        for stmt in &node.block.stmts {
+            self.statement(stmt);
+        }
+        match &node.block.expr {
+            Some(expr) => {
+                self.expression(expr);
+                self.insert(Instruction::Pop)
+            }
+            None => {}
+        }
+
+        // compile the update expression
+        self.expression(&node.update);
+        self.insert(Instruction::Pop);
+
+        // jump back to the top
+        self.insert(Instruction::Jmp(loop_head_pos));
+
+        // correct placeholder break values
+        self.fill_blank_jmps(self.functions[self.fp].len());
     }
 
     fn expression(&mut self, node: &'src AnalyzedExpression) {

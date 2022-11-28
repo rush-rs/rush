@@ -221,6 +221,44 @@ impl Value {
         }
     }
 
+    pub(crate) fn bit_or(&self, rhs: Value) -> Value {
+        match self {
+            Value::Int(val) => Value::Int(val | rhs.into_int()),
+            Value::Bool(val) => Value::Bool(val | rhs.into_bool()),
+            _ => unreachable!("other types are illegal"),
+        }
+    }
+
+    pub(crate) fn bit_and(&self, rhs: Value) -> Value {
+        match self {
+            Value::Int(val) => Value::Int(val & rhs.into_int()),
+            Value::Bool(val) => Value::Bool(val & rhs.into_bool()),
+            _ => unreachable!("other types are illegal"),
+        }
+    }
+
+    pub(crate) fn bit_xor(&self, rhs: Value) -> Value {
+        match self {
+            Value::Int(val) => Value::Int(val ^ rhs.into_int()),
+            Value::Bool(val) => Value::Bool(val ^ rhs.into_bool()),
+            _ => unreachable!("other types are illegal"),
+        }
+    }
+
+    pub(crate) fn and(&self, rhs: Value) -> Value {
+        match self {
+            Value::Bool(val) => Value::Bool(*val && rhs.into_bool()),
+            _ => unreachable!("other types are illegal"),
+        }
+    }
+
+    pub(crate) fn or(&self, rhs: Value) -> Value {
+        match self {
+            Value::Bool(val) => Value::Bool(*val || rhs.into_bool()),
+            _ => unreachable!("other types are illegal"),
+        }
+    }
+
     pub(crate) fn cast(self, to: Type) -> Value {
         match to {
             Type::Int => self.cast_int(),
