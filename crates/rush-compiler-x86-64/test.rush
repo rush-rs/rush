@@ -21,7 +21,7 @@ fn main() {
     let hundred = 100;
     let nine = 9f;
     let base = 2;
-    /* global_b = (global_b as int - global_a) as char; */
+    global_b = (global_b as int - global_a) as char;
     exit(
         1 + 2 + a + call() - float(3.5) as int
         + params(1, 2.0, '\x03', true, 5, 6, 7, 8, 9, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0)
@@ -30,7 +30,7 @@ fn main() {
         + (3 << a)
         + (6 >> a)
         + -hundred + (-nine) as int
-        + global_b as int - global_a
+        + global_b as int
         + base**3
         + comparisons() + float_comparisons()
         + casts()

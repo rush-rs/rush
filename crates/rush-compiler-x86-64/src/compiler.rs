@@ -1,6 +1,6 @@
 use std::{collections::HashMap, hash::Hash, mem};
 
-use rush_analyzer::{ast::*, InfixOp, PrefixOp, Type};
+use rush_analyzer::{ast::*, AssignOp, InfixOp, PrefixOp, Type};
 
 use crate::{
     instruction::{Condition, Instruction, Section},
@@ -272,9 +272,8 @@ impl<'src> Compiler<'src> {
         });
     }
 
-    fn get_free_register(&mut self, size: Size) -> IntRegister {
-        let next = self
-            .used_registers
+    fn get_tmp_register(&self, size: Size) -> IntRegister {
+        self.used_registers
             .last()
             .map_or(
                 if self.in_args != 0 {
@@ -284,16 +283,23 @@ impl<'src> Compiler<'src> {
                 },
                 |reg| reg.next(),
             )
-            .in_size(size);
+            .in_size(size)
+    }
+
+    fn get_tmp_float_register(&self) -> FloatRegister {
+        self.used_float_registers
+            .last()
+            .map_or(FloatRegister::Xmm0, |reg| reg.next())
+    }
+
+    fn get_free_register(&mut self, size: Size) -> IntRegister {
+        let next = self.get_tmp_register(size);
         self.used_registers.push(next);
         next
     }
 
     fn get_free_float_register(&mut self) -> FloatRegister {
-        let next = self
-            .used_float_registers
-            .last()
-            .map_or(FloatRegister::Xmm0, |reg| reg.next());
+        let next = self.get_tmp_float_register();
         self.used_float_registers.push(next);
         next
     }
@@ -631,7 +637,7 @@ impl<'src> Compiler<'src> {
             AnalyzedExpression::Ident(node) => self.ident_expr(node),
             AnalyzedExpression::Prefix(node) => self.prefix_expr(*node),
             AnalyzedExpression::Infix(node) => self.infix_expr(*node),
-            AnalyzedExpression::Assign(_node) => todo!(),
+            AnalyzedExpression::Assign(node) => self.assign_expr(*node),
             AnalyzedExpression::Call(node) => self.call_expr(*node),
             AnalyzedExpression::Cast(node) => self.cast_expr(*node),
             AnalyzedExpression::Grouped(node) => self.expression(*node),
@@ -1144,6 +1150,73 @@ impl<'src> Compiler<'src> {
             }
             _ => unreachable!("the analyzer guarantees one of the above to match"),
         }
+    }
+
+    fn assign_expr(&mut self, node: AnalyzedAssignExpr<'src>) -> Option<Value> {
+        let var = self.get_var(node.assignee).clone()?;
+        let val = self.expression(node.expr)?;
+
+        match (val, node.op) {
+            (Value::Int(IntValue::Immediate(1)), AssignOp::Plus)
+            | (Value::Int(IntValue::Immediate(-1)), AssignOp::Minus) => {
+                self.function_body.push(Instruction::Inc(var.ptr.into()))
+            }
+            (Value::Int(IntValue::Immediate(-1)), AssignOp::Plus)
+            | (Value::Int(IntValue::Immediate(1)), AssignOp::Minus) => {
+                self.function_body.push(Instruction::Dec(var.ptr.into()))
+            }
+
+            (Value::Int(val), AssignOp::Basic) => {
+                let source = match val {
+                    val @ (IntValue::Register(_) | IntValue::Immediate(_)) => val,
+                    IntValue::Ptr(ptr) => {
+                        let reg = self.get_tmp_register(ptr.size);
+                        self.function_body
+                            .push(Instruction::Mov(reg.into(), ptr.into()));
+                        reg.into()
+                    }
+                };
+                self.function_body
+                    .push(Instruction::Mov(var.ptr.into(), source));
+            }
+            (Value::Int(_), AssignOp::Plus) => todo!(),
+            (Value::Int(_), AssignOp::Minus) => todo!(),
+            (Value::Int(_), AssignOp::Mul) => todo!(),
+            (Value::Int(_), AssignOp::Div) => todo!(),
+            (Value::Int(_), AssignOp::Rem) => todo!(),
+            (Value::Int(_), AssignOp::Pow) => todo!(),
+            (Value::Int(_), AssignOp::Shl) => todo!(),
+            (Value::Int(_), AssignOp::Shr) => todo!(),
+            (Value::Int(_), AssignOp::BitOr) => todo!(),
+            (Value::Int(_), AssignOp::BitAnd) => todo!(),
+            (Value::Int(_), AssignOp::BitXor) => todo!(),
+            (Value::Float(val), AssignOp::Basic) => {
+                let reg = match val {
+                    FloatValue::Register(reg) => reg,
+                    FloatValue::Ptr(ptr) => {
+                        let reg = self.get_tmp_float_register();
+                        self.function_body
+                            .push(Instruction::Movsd(reg.into(), ptr.into()));
+                        reg
+                    }
+                };
+                self.function_body
+                    .push(Instruction::Movsd(var.ptr.into(), reg.into()));
+            }
+            (Value::Float(_), AssignOp::Plus) => todo!(),
+            (Value::Float(_), AssignOp::Minus) => todo!(),
+            (Value::Float(_), AssignOp::Mul) => todo!(),
+            (Value::Float(_), AssignOp::Div) => todo!(),
+            (Value::Float(_), AssignOp::Rem) => todo!(),
+            (Value::Float(_), AssignOp::Pow) => todo!(),
+            (Value::Float(_), AssignOp::Shl) => todo!(),
+            (Value::Float(_), AssignOp::Shr) => todo!(),
+            (Value::Float(_), AssignOp::BitOr) => todo!(),
+            (Value::Float(_), AssignOp::BitAnd) => todo!(),
+            (Value::Float(_), AssignOp::BitXor) => todo!(),
+        }
+
+        None
     }
 
     fn call_expr(
