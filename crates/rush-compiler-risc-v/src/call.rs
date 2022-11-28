@@ -9,10 +9,11 @@ use crate::{
     utils::Size,
 };
 
+/// Specifies the default stack offset to be allocated.
 /// An offset of 16 accounts for `fp` and `ra`.
 const BASE_STACK_ALLOCATIONS: i64 = 16;
 
-impl Compiler {
+impl<'src> Compiler<'src> {
     /// Returns the instructions of a function prologue.
     /// Automatically sets up any stack allocations and saves `ra` and `fp`.
     /// Must be invoked after the fn body since the stack frame size must be known at this point.
@@ -86,7 +87,7 @@ impl Compiler {
     }
 
     // TODO: document + refactor this function
-    pub(crate) fn call_expr(&mut self, node: AnalyzedCallExpr) -> Option<Register> {
+    pub(crate) fn call_expr(&mut self, node: &'src AnalyzedCallExpr) -> Option<Register> {
         // before the function is called, all currently used registers are saved
         let mut regs_on_stack = vec![];
 
@@ -148,7 +149,7 @@ impl Compiler {
         // specifies the count of the current register spill
         let mut spill_count = 0;
 
-        for arg in node.args.into_iter() {
+        for arg in &node.args {
             match arg.result_type() {
                 Type::Unit | Type::Never => continue,
                 Type::Int | Type::Bool | Type::Char => {

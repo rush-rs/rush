@@ -8,7 +8,7 @@ use crate::{
     utils::{DataObj, DataObjType, Function, Loop, Size, Variable, VariableValue},
 };
 
-pub struct Compiler {
+pub struct Compiler<'src> {
     /// Specifies all exported labels of the program.
     pub(crate) exports: Vec<String>,
 
@@ -28,15 +28,15 @@ pub struct Compiler {
     pub(crate) curr_loop: Option<Loop>,
 
     /// The first element is the root scope, the last element is the current scope.
-    pub(crate) scopes: Vec<HashMap<String, Variable>>,
+    pub(crate) scopes: Vec<HashMap<&'src str, Variable>>,
     /// Holds the global variables of the program.
-    pub(crate) globals: HashMap<String, Variable>,
+    pub(crate) globals: HashMap<&'src str, Variable>,
 
     /// Specifies all registers which are currently in use and may not be overwritten.
     pub(crate) used_registers: Vec<(Register, Size)>,
 }
 
-impl Compiler {
+impl<'src> Compiler<'src> {
     /// Creates and returns a new [`Compiler`].
     pub fn new() -> Self {
         Self {
@@ -54,10 +54,10 @@ impl Compiler {
     }
 
     /// Compiles the source AST into a RISC-V targeted Assembly program.
-    pub fn compile(&mut self, ast: AnalyzedProgram) -> String {
-        self.declare_main_fn(ast.main_fn, ast.globals);
+    pub fn compile(&mut self, ast: &'src AnalyzedProgram) -> String {
+        self.declare_main_fn(&ast.main_fn, &ast.globals);
 
-        for func in ast.functions.into_iter().filter(|f| f.used) {
+        for func in ast.functions.iter().filter(|f| f.used) {
             self.function_declaration(func)
         }
 
@@ -110,7 +110,7 @@ impl Compiler {
     }
 
     /// Compiles the `main` function and the global variables of the program.
-    fn declare_main_fn(&mut self, node: AnalyzedBlock, globals: Vec<AnalyzedLetStmt>) {
+    fn declare_main_fn(&mut self, node: &'src AnalyzedBlock, globals: &'src Vec<AnalyzedLetStmt>) {
         // create `_start` label
         let start_label = self.append_block("_start");
         let fn_block = self.append_block("main..main");
@@ -126,7 +126,7 @@ impl Compiler {
         // declare global variables
         // can be declared before the prologue: exprs are all constant (require no stack)
         for var in globals {
-            self.declare_global(var.name.to_string(), var.mutable, var.expr)
+            self.declare_global(var.name, var.mutable, &var.expr)
         }
 
         // add the epilogue label
@@ -153,34 +153,34 @@ impl Compiler {
     /// Declares a new global variable.
     /// The initializer is put inside the current basic block.
     /// If the variable is non-mutable, it is put under the `.rodata` section
-    fn declare_global(&mut self, label: String, mutable: bool, value: AnalyzedExpression) {
+    fn declare_global(&mut self, label: &'src str, mutable: bool, value: &'src AnalyzedExpression) {
         let type_ = value.result_type();
         let data = match (type_, value) {
-            (Type::Int, AnalyzedExpression::Int(val)) => DataObjType::Dword(val),
-            (Type::Bool, AnalyzedExpression::Bool(val)) => DataObjType::Byte(val as i64),
-            (Type::Char, AnalyzedExpression::Char(val)) => DataObjType::Byte(val as i64),
-            (Type::Float, AnalyzedExpression::Float(val)) => DataObjType::Float(val),
+            (Type::Int, AnalyzedExpression::Int(val)) => DataObjType::Dword(*val),
+            (Type::Bool, AnalyzedExpression::Bool(val)) => DataObjType::Byte(*val as i64),
+            (Type::Char, AnalyzedExpression::Char(val)) => DataObjType::Byte(*val as i64),
+            (Type::Float, AnalyzedExpression::Float(val)) => DataObjType::Float(*val),
             _ => unreachable!("other types cannot be used as globals"),
         };
 
         let value = match mutable {
             true => {
                 self.data_section.push(DataObj {
-                    label: label.clone(),
+                    label: label.to_string(),
                     data,
                 });
-                VariableValue::Pointer(Pointer::Label(label.clone()))
+                VariableValue::Pointer(Pointer::Label(label.to_string()))
             }
             false => {
                 let value = VariableValue::Pointer(
                     match self.rodata_section.iter().find(|d| d.data == data) {
-                        Some(DataObj { label, .. }) => Pointer::Label(label.clone()),
+                        Some(DataObj { label, .. }) => Pointer::Label(label.to_string()),
                         None => {
                             self.rodata_section.push(DataObj {
-                                label: label.clone(),
+                                label: label.to_string(),
                                 data,
                             });
-                            Pointer::Label(label.clone())
+                            Pointer::Label(label.to_string())
                         }
                     },
                 );
@@ -192,7 +192,7 @@ impl Compiler {
     }
 
     /// Compiles an [`AnalyzedFunctionDefinition`] declaration.
-    fn function_declaration(&mut self, node: AnalyzedFunctionDefinition) {
+    fn function_declaration(&mut self, node: &'src AnalyzedFunctionDefinition) {
         // append block for the function
         let fn_block = format!("main..{}", node.name);
         self.append_block(&fn_block);
@@ -219,7 +219,7 @@ impl Compiler {
         )];
 
         // save all param values in the current scope / on the stack
-        for param in node.params {
+        for param in &node.params {
             match param.type_ {
                 Type::Int | Type::Char | Type::Bool => {
                     match IntRegister::nth_param(int_cnt) {
@@ -242,7 +242,7 @@ impl Compiler {
                             }
 
                             self.scope_mut().insert(
-                                param.name.to_string(),
+                                param.name,
                                 Variable {
                                     type_: param.type_,
                                     value: VariableValue::Pointer(Pointer::Stack(
@@ -254,7 +254,7 @@ impl Compiler {
                         }
                         None => {
                             self.scope_mut().insert(
-                                param.name.to_string(),
+                                param.name,
                                 Variable {
                                     type_: param.type_,
                                     value: VariableValue::Pointer(Pointer::Stack(
@@ -282,7 +282,7 @@ impl Compiler {
                             ));
 
                             self.scope_mut().insert(
-                                param.name.to_string(),
+                                param.name,
                                 Variable {
                                     type_: param.type_,
                                     value: VariableValue::Pointer(Pointer::Stack(
@@ -294,7 +294,7 @@ impl Compiler {
                         }
                         None => {
                             self.scope_mut().insert(
-                                param.name.to_string(),
+                                param.name,
                                 Variable {
                                     type_: param.type_,
                                     value: VariableValue::Pointer(Pointer::Stack(
@@ -311,7 +311,7 @@ impl Compiler {
                 Type::Unit | Type::Never => {
                     // add dummy values for these types
                     self.scope_mut().insert(
-                        param.name.to_string(),
+                        param.name,
                         Variable {
                             type_: Type::Unit,
                             value: VariableValue::Unit,
@@ -323,7 +323,7 @@ impl Compiler {
         }
 
         // compile the function body
-        self.function_body(node.block, epilogue_label.clone());
+        self.function_body(&node.block, epilogue_label.clone());
         self.pop_scope();
 
         // compile prologue
@@ -341,20 +341,20 @@ impl Compiler {
     }
 
     /// Compiles the body of a function.
-    fn function_body(&mut self, node: AnalyzedBlock, epilogue_label: String) {
+    fn function_body(&mut self, node: &'src AnalyzedBlock, epilogue_label: String) {
         // add debugging comment
         #[cfg(debug_assertions)]
         self.insert(Instruction::Comment("begin body".to_string()));
 
         // compile each statement
-        for stmt in node.stmts {
+        for stmt in &node.stmts {
             self.statement(stmt);
         }
 
         // place the result of the optional expression in a return value register(s)
         // for `int`, `bool`, and `char`: `a0`
         // for `float`: `fa0`
-        if let Some(expr) = node.expr {
+        if let Some(expr) = &node.expr {
             let res_reg = self.expression(expr);
             match res_reg {
                 Some(Register::Int(reg)) => {
@@ -377,16 +377,16 @@ impl Compiler {
 
     /// Compiles an [`AnalyzedBlock`].
     /// Automatically pushes a new scope for the block.
-    fn block(&mut self, node: AnalyzedBlock) -> Option<Register> {
+    fn block(&mut self, node: &'src AnalyzedBlock) -> Option<Register> {
         // push a new scope
         self.push_scope();
 
-        for stmt in node.stmts {
+        for stmt in &node.stmts {
             self.statement(stmt)
         }
 
         // return expression register if there is an expr
-        let res = match node.expr {
+        let res = match &node.expr {
             Some(expr) => self.expression(expr),
             None => None,
         };
@@ -399,7 +399,7 @@ impl Compiler {
 
     /// Copiles an [`AnalyzedStatement`].
     /// Invokes the corresponding function for most of the statement options.
-    fn statement(&mut self, node: AnalyzedStatement) {
+    fn statement(&mut self, node: &'src AnalyzedStatement) {
         match node {
             AnalyzedStatement::Let(node) => self.let_statement(node),
             AnalyzedStatement::Return(node) => self.return_stmt(node),
@@ -425,7 +425,7 @@ impl Compiler {
     /// Compiles an [`AnalyzedReturnStmt`].
     /// If the node contains an optional expr, it is compiled and its result is moved into the
     /// correct return-value register (corresponding to the result type of the expr).
-    fn return_stmt(&mut self, node: AnalyzedReturnStmt) {
+    fn return_stmt(&mut self, node: &'src AnalyzedReturnStmt) {
         // if there is an expression, compile it
         if let Some(expr) = node {
             match self.expression(expr) {
@@ -443,7 +443,7 @@ impl Compiler {
     /// Compiles an [`AnalyzedLoopStmt`].
     /// After each iteration, there is an unconditional jump back to the loop head (i.e. `continue`).
     /// In this looping construct, manual control flow like `break` is mandatory.
-    fn loop_stmt(&mut self, node: AnalyzedLoopStmt) {
+    fn loop_stmt(&mut self, node: &'src AnalyzedLoopStmt) {
         let loop_head = self.append_block("loop_head");
         let after_loop = self.gen_label("after_loop");
         self.curr_loop = Some(Loop {
@@ -452,7 +452,7 @@ impl Compiler {
         });
 
         self.insert_at(&loop_head);
-        self.block(node.block);
+        self.block(&node.block);
         self.insert_jmp(loop_head);
 
         self.blocks.push(Block::new(after_loop.clone()));
@@ -462,7 +462,7 @@ impl Compiler {
     /// Compiles an [`AnalyzedWhileStmt`].
     /// Before each iteration, the loop condition is evaluated and compared against `false`.
     /// If the result is `false`, there is a jump to the basic block after the loop (i.e. `break`).
-    fn while_stmt(&mut self, node: AnalyzedWhileStmt) {
+    fn while_stmt(&mut self, node: &'src AnalyzedWhileStmt) {
         let while_head = self.append_block("while_head");
         let after_loop = self.gen_label("after_while");
         self.insert_at(&while_head);
@@ -471,7 +471,7 @@ impl Compiler {
         #[cfg(debug_assertions)]
         self.insert(Instruction::Comment("while condition".to_string()));
 
-        let expr_res = self.expression(node.cond).expect("cond is not unit");
+        let expr_res = self.expression(&node.cond).expect("cond is not unit");
         // if the condition evaluates to `false`, break out of the loop
         self.insert(Instruction::BrCond(
             Condition::Eq,
@@ -489,7 +489,7 @@ impl Compiler {
         #[cfg(debug_assertions)]
         self.insert(Instruction::Comment("while body".to_string()));
 
-        self.block(node.block);
+        self.block(&node.block);
         // jump back to the loop head
         self.insert_jmp(while_head);
 
@@ -504,7 +504,7 @@ impl Compiler {
     /// Before each iteration, the loop condition is verified to be `true`.
     /// Otherwise, there will be a `break` out of the looping construct.
     /// At the end of each iteration, the update expression is invoked, its value is omitted.
-    fn for_stmt(&mut self, node: AnalyzedForStmt) {
+    fn for_stmt(&mut self, node: &'src AnalyzedForStmt) {
         let for_head = self.append_block("for_head");
         let after_loop = self.append_block("after_for");
 
@@ -512,7 +512,7 @@ impl Compiler {
         self.insert(Instruction::Comment(format!("loop init: {}", node.ident)));
 
         let type_ = node.initializer.result_type();
-        let res = self.expression(node.initializer).map(|reg| {
+        let res = self.expression(&node.initializer).map(|reg| {
             self.use_reg(reg, Size::from(type_));
             (
                 Variable {
@@ -527,7 +527,7 @@ impl Compiler {
         self.push_scope();
 
         self.scope_mut().insert(
-            node.ident.to_string(),
+            node.ident,
             match res {
                 Some((ref var, _)) => var.clone(),
                 None => Variable::unit(),
@@ -539,7 +539,7 @@ impl Compiler {
 
         self.insert(Instruction::Comment("loop condition".to_string()));
 
-        let expr_res = self.expression(node.cond).expect("cond is non-unit");
+        let expr_res = self.expression(&node.cond).expect("cond is non-unit");
         self.insert(Instruction::BrCond(
             Condition::Eq,
             IntRegister::Zero,
@@ -556,16 +556,20 @@ impl Compiler {
         });
 
         // compile the loop block: cannot use `self.block` due to scoping
-        for stmt in node.block.stmts {
+        for stmt in &node.block.stmts {
             self.statement(stmt)
         }
         // compile optional expr
-        node.block.expr.map(|e| self.expression(e));
+        //node.block.expr.map(|e| self.expression(&e));
+
+        if let Some(expr) = &node.block.expr {
+            self.expression(expr);
+        };
 
         //// UPDATE EXPR ////
         self.insert(Instruction::Comment("loop update".to_string()));
 
-        self.expression(node.update);
+        self.expression(&node.update);
         self.pop_scope();
 
         // jump back to the loop start
@@ -583,14 +587,13 @@ impl Compiler {
     /// Compiles an [`AnalyzedLetStmt`]
     /// Allocates a new variable on the stack.
     /// Also increments the `stack_allocs` value of the current function
-    fn let_statement(&mut self, node: AnalyzedLetStmt) {
+    fn let_statement(&mut self, node: &'src AnalyzedLetStmt) {
         let type_ = node.expr.result_type();
 
         // filter out any unit / never types
         if matches!(type_, Type::Unit | Type::Never) {
             // unit / never type: insert a dummy variable into the HashMap
-            self.scope_mut()
-                .insert(node.name.to_string(), Variable::unit());
+            self.scope_mut().insert(node.name, Variable::unit());
             return;
         }
 
@@ -600,7 +603,7 @@ impl Compiler {
         self.curr_fn_mut().stack_allocs += size as i64;
         let offset = -self.curr_fn().stack_allocs as i64 - 16;
 
-        let rhs_reg = self.expression(node.expr).expect("unit filtered above");
+        let rhs_reg = self.expression(&node.expr).expect("unit filtered above");
         let comment = format!("let {} = {rhs_reg}", node.name,);
         match rhs_reg {
             Register::Int(reg) => match type_ {
@@ -625,25 +628,25 @@ impl Compiler {
             type_,
             value: VariableValue::Pointer(Pointer::Stack(IntRegister::Fp, offset)),
         };
-        self.scope_mut().insert(node.name.to_string(), var);
+        self.scope_mut().insert(node.name, var);
     }
 
     /// Compiles an [`AnalyzedExpression`].
-    pub(crate) fn expression(&mut self, node: AnalyzedExpression) -> Option<Register> {
+    pub(crate) fn expression(&mut self, node: &'src AnalyzedExpression) -> Option<Register> {
         match node {
             AnalyzedExpression::Int(value) => {
                 let dest_reg = self.alloc_ireg();
-                self.insert(Instruction::Li(dest_reg, value));
+                self.insert(Instruction::Li(dest_reg, *value));
                 Some(Register::Int(dest_reg))
             }
             AnalyzedExpression::Bool(value) => {
                 let dest_reg = self.alloc_ireg();
-                self.insert(Instruction::Li(dest_reg, value as i64));
+                self.insert(Instruction::Li(dest_reg, *value as i64));
                 Some(Register::Int(dest_reg))
             }
             AnalyzedExpression::Char(value) => {
                 let dest_reg = self.alloc_ireg();
-                self.insert(Instruction::Li(dest_reg, value as i64));
+                self.insert(Instruction::Li(dest_reg, *value as i64));
                 Some(Register::Int(dest_reg))
             }
             AnalyzedExpression::Float(value) => {
@@ -654,14 +657,14 @@ impl Compiler {
                 let float_value_label = match self
                     .rodata_section
                     .iter()
-                    .find(|o| o.data == DataObjType::Float(value))
+                    .find(|o| o.data == DataObjType::Float(*value))
                 {
                     Some(obj) => obj.label.clone(),
                     None => {
                         let label = format!("float_constant_{}", self.rodata_section.len());
                         self.rodata_section.push(DataObj {
                             label: label.clone(),
-                            data: DataObjType::Float(value),
+                            data: DataObjType::Float(*value),
                         });
                         label
                     }
@@ -683,17 +686,17 @@ impl Compiler {
                 };
                 self.load_value_from_variable(var)
             }
-            AnalyzedExpression::Prefix(node) => self.prefix_expr(*node),
-            AnalyzedExpression::Infix(node) => self.infix_expr(*node),
+            AnalyzedExpression::Prefix(node) => self.prefix_expr(node),
+            AnalyzedExpression::Infix(node) => self.infix_expr(node),
             AnalyzedExpression::Assign(node) => {
-                self.assign_expr(*node);
+                self.assign_expr(node);
                 None
             }
-            AnalyzedExpression::Call(node) => self.call_expr(*node),
-            AnalyzedExpression::Cast(node) => self.cast_expr(*node),
-            AnalyzedExpression::Grouped(node) => self.expression(*node),
-            AnalyzedExpression::Block(node) => self.block(*node),
-            AnalyzedExpression::If(node) => self.if_expr(*node),
+            AnalyzedExpression::Call(node) => self.call_expr(node),
+            AnalyzedExpression::Cast(node) => self.cast_expr(node),
+            AnalyzedExpression::Grouped(node) => self.expression(node),
+            AnalyzedExpression::Block(node) => self.block(node),
+            AnalyzedExpression::If(node) => self.if_expr(node),
         }
     }
 
@@ -729,14 +732,14 @@ impl Compiler {
     /// For the latter, the assignee's current value is loaded into a temporary register.
     /// Following that, the operation is performed by `self.infix_helper`.
     /// Lastly, a correct store instruction is used to assign the resulting value to the assignee.
-    fn assign_expr(&mut self, node: AnalyzedAssignExpr) {
+    fn assign_expr(&mut self, node: &'src AnalyzedAssignExpr) {
         let rhs_type = node.expr.result_type();
 
         let assignee = self.resolve_name(node.assignee).clone();
 
         // holds the value of the rhs (either simple or the result of an operation)
         let rhs_reg = match node.op {
-            AssignOp::Basic => match self.expression(node.expr) {
+            AssignOp::Basic => match self.expression(&node.expr) {
                 Some(reg) => reg,
                 None => return,
             },
@@ -748,7 +751,7 @@ impl Compiler {
                 self.use_reg(lhs, Size::from(assignee.type_));
 
                 // compile the rhs
-                let Some(rhs) = self.expression(node.expr) else {return };
+                let Some(rhs) = self.expression(&node.expr) else {return };
                 self.use_reg(rhs, Size::from(rhs_type));
 
                 // perform pre-assign operation using the infix helper
@@ -783,10 +786,10 @@ impl Compiler {
     /// The result of the expression is saved in a single register (reflecting the result type).
     /// Control flow is accomplished through the use of branches.
     /// The condition is verified using a normal conditional branch, comparing it to `true`.
-    fn if_expr(&mut self, node: AnalyzedIfExpr) -> Option<Register> {
+    fn if_expr(&mut self, node: &'src AnalyzedIfExpr) -> Option<Register> {
         // (bool) result of the condition
         let cond_reg = self
-            .expression(node.cond)
+            .expression(&node.cond)
             .expect("cond is not unit / never");
 
         // will later hold the result of this expr
@@ -808,7 +811,7 @@ impl Compiler {
         ));
 
         // if there is an `else` block, compile it
-        if let Some(else_block) = node.else_block {
+        if let Some(else_block) = &node.else_block {
             let else_block_label = self.append_block("else");
             // stands directly below the conditional branch
             self.insert_jmp(else_block_label.clone());
@@ -831,7 +834,7 @@ impl Compiler {
         self.insert_jmp(merge_block.clone());
 
         self.insert_at(&then_block);
-        let then_reg = self.block(node.then_block);
+        let then_reg = self.block(&node.then_block);
 
         // if the block returns a register other than res, move the block register into res
         match (res_reg, then_reg) {
@@ -855,15 +858,15 @@ impl Compiler {
 
     /// Compiles an [`AnalyzedInfixExpr`].
     /// After compiling the lhs and rhs, the `infix_helper` is invoked.
-    fn infix_expr(&mut self, node: AnalyzedInfixExpr) -> Option<Register> {
+    fn infix_expr(&mut self, node: &'src AnalyzedInfixExpr) -> Option<Register> {
         let lhs_type = node.lhs.result_type();
 
-        let lhs_reg = self.expression(node.lhs)?;
+        let lhs_reg = self.expression(&node.lhs)?;
         // mark the lhs register as used
         self.use_reg(lhs_reg, Size::from(lhs_type));
 
         let rhs_type = node.rhs.result_type();
-        let rhs_reg = self.expression(node.rhs)?;
+        let rhs_reg = self.expression(&node.rhs)?;
         // mark the rhs register as used
         self.use_reg(rhs_reg, Size::from(rhs_type));
 
@@ -984,9 +987,9 @@ impl Compiler {
     }
 
     /// Compiles an [`AnalyzedPrefixExpr`].
-    fn prefix_expr(&mut self, node: AnalyzedPrefixExpr) -> Option<Register> {
+    fn prefix_expr(&mut self, node: &'src AnalyzedPrefixExpr) -> Option<Register> {
         let lhs_type = node.expr.result_type();
-        let lhs_reg = self.expression(node.expr)?;
+        let lhs_reg = self.expression(&node.expr)?;
 
         match (lhs_type, node.op) {
             (Type::Int, PrefixOp::Neg) => {
@@ -1020,9 +1023,9 @@ impl Compiler {
 
     /// Compiles an [`AnalyzedCastExpr`].
     /// When casting to `char` values, cast functions from the `corelib` are invoked.
-    fn cast_expr(&mut self, node: AnalyzedCastExpr) -> Option<Register> {
+    fn cast_expr(&mut self, node: &'src AnalyzedCastExpr) -> Option<Register> {
         let lhs_type = node.expr.result_type();
-        let lhs_reg = self.expression(node.expr)?;
+        let lhs_reg = self.expression(&node.expr)?;
 
         // block the use of the lhs temporarily
         self.use_reg(lhs_reg, Size::from(lhs_type));
@@ -1107,7 +1110,7 @@ impl Compiler {
     }
 }
 
-impl Default for Compiler {
+impl<'src> Default for Compiler<'src> {
     fn default() -> Self {
         Self::new()
     }

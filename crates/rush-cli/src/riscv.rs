@@ -7,7 +7,7 @@ use crate::cli::BuildArgs;
 
 pub fn compile(ast: AnalyzedProgram, args: BuildArgs) {
     let mut compiler = Compiler::new();
-    let asm = compiler.compile(ast);
+    let asm = compiler.compile(&ast);
 
     // get output path
     let output = args.output_file.unwrap_or_else(|| {

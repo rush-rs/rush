@@ -16,6 +16,6 @@ pub fn compile<'src>(
     path: &'src str,
 ) -> Result<(String, Vec<Diagnostic<'src>>), Vec<Diagnostic<'src>>> {
     let (tree, diagnostics) = rush_analyzer::analyze(text, path)?;
-    let asm = Compiler::new().compile(tree);
+    let asm = Compiler::new().compile(&tree);
     Ok((asm, diagnostics))
 }

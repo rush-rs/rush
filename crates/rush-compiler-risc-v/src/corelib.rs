@@ -4,7 +4,7 @@ use crate::{
     register::{FloatRegister, IntRegister},
 };
 
-impl Compiler {
+impl<'src> Compiler<'src> {
     /// Helper function for the `**` and `**=` operators.
     /// Because the RISC-V ISA does not support the pow instruction, the corelib is used.
     /// This function calls the `__rush_internal_pow_int` function in the rush corelib.

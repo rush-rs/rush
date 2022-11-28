@@ -52,7 +52,7 @@ impl From<Type> for Size {
     }
 }
 
-impl Compiler {
+impl<'src> Compiler<'src> {
     // TODO: write documentation for this function
     pub(crate) fn align(ptr: &mut i64, size: i64) {
         if *ptr % size != 0 {
@@ -146,7 +146,7 @@ impl Compiler {
     }
 
     /// Returns a mutable reference to the current scope.
-    pub(crate) fn scope_mut(&mut self) -> &mut HashMap<String, Variable> {
+    pub(crate) fn scope_mut(&mut self) -> &mut HashMap<&'src str, Variable> {
         self.scopes.last_mut().expect("always called from a scope")
     }
 
