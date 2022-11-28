@@ -1,5 +1,3 @@
-#![allow(dead_code)] // TODO: remove this attribute
-
 use std::{
     cmp::Ordering,
     fmt::{self, Display, Formatter},
@@ -13,22 +11,6 @@ use crate::register::{FloatRegister, IntRegister};
 pub enum Value {
     Int(IntValue),
     Float(FloatValue),
-}
-
-impl Value {
-    pub fn unwrap_int(self) -> IntValue {
-        match self {
-            Self::Int(int) => int,
-            _ => panic!("called `unwrap_int` on non-int variant"),
-        }
-    }
-
-    pub fn unwrap_float(self) -> FloatValue {
-        match self {
-            Self::Float(float) => float,
-            _ => panic!("called `unwrap_float` on non-float variant"),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,11 +51,6 @@ pub enum Size {
 impl Size {
     pub fn byte_count(&self) -> i64 {
         *self as i64
-    }
-
-    // TODO: remove bit_count method?
-    pub fn bit_count(&self) -> i64 {
-        self.byte_count() * 8
     }
 }
 

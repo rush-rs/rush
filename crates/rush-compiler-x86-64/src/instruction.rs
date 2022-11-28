@@ -1,5 +1,3 @@
-#![allow(dead_code)] // TODO: remove this attribute
-
 use std::fmt::{self, Display, Formatter};
 
 use crate::{
@@ -8,6 +6,7 @@ use crate::{
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)] // TODO: remove this attribute
 pub enum Instruction {
     /// Wraps an instruction with an additional comment
     Commented(Box<Instruction>, String),

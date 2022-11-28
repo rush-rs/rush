@@ -465,7 +465,6 @@ impl<'src> Compiler<'src> {
             match self.expression(expr) {
                 Some(Value::Int(IntValue::Register(reg))) => {
                     // we expect the result to already be in %rax
-                    // TODO: is that correct?
                     debug_assert_eq!(reg.in_qword_size(), IntRegister::Rax);
                     debug_assert_eq!(self.used_registers.len(), 1);
                     debug_assert_eq!(self.used_registers[0].in_qword_size(), IntRegister::Rax);
@@ -480,7 +479,6 @@ impl<'src> Compiler<'src> {
 
                 Some(Value::Float(FloatValue::Register(reg))) => {
                     // we expect the result to already be in %xmm0
-                    // TODO: is that correct?
                     debug_assert_eq!(reg, FloatRegister::Xmm0);
                     debug_assert_eq!(self.used_float_registers, [FloatRegister::Xmm0]);
                 }
