@@ -1494,12 +1494,18 @@ impl<'src> Compiler<'src> {
             }
             (Some(Value::Int(val)), Type::Bool | Type::Char, Type::Int) => match val {
                 IntValue::Ptr(ptr) => {
-                    let reg = self.get_free_register(Size::Byte);
+                    let reg = self.get_free_register(Size::Qword);
                     self.function_body
-                        .push(Instruction::Mov(reg.into(), ptr.into()));
+                        .push(Instruction::Mov(reg.in_size(ptr.size).into(), ptr.into()));
+                    self.function_body
+                        .push(Instruction::And(reg.into(), 0xff.into()));
+                    Some(Value::Int(reg.into()))
+                }
+                IntValue::Register(reg) => {
+                    self.function_body
+                        .push(Instruction::And(reg.in_qword_size().into(), 0xff.into()));
                     Some(Value::Int(reg.in_qword_size().into()))
                 }
-                IntValue::Register(reg) => Some(Value::Int(reg.in_qword_size().into())),
                 IntValue::Immediate(value) => Some(Value::Int((value as i64).into())),
             },
             (Some(Value::Int(val)), Type::Bool, Type::Char) => Some(Value::Int(val)),
