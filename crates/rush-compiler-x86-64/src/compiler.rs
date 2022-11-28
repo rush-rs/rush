@@ -1078,24 +1078,20 @@ impl<'src> Compiler<'src> {
                     }
                     (left, right @ FloatValue::Register(_)) => {
                         // move left side into free register
-                        let reg = self.get_free_float_register();
+                        let reg = self.get_tmp_float_register();
                         self.function_body
                             .push(Instruction::Movsd(reg.into(), left));
 
-                        // free both registers
-                        self.used_float_registers.pop();
+                        // free the right register
                         self.used_float_registers.pop();
 
                         (reg, right)
                     }
                     (left, right) => {
                         // move left side into free register
-                        let reg = self.get_free_float_register();
+                        let reg = self.get_tmp_float_register();
                         self.function_body
                             .push(Instruction::Movsd(reg.into(), left));
-
-                        // free the register
-                        self.used_float_registers.pop();
 
                         (reg, right)
                     }
@@ -1122,28 +1118,22 @@ impl<'src> Compiler<'src> {
                 // consider unordered results for equality checks
                 if node.op == InfixOp::Eq {
                     // save parity
-                    let parity_reg = self.get_free_register(Size::Byte);
+                    let parity_reg = self.get_tmp_register(Size::Byte);
                     self.function_body
                         .push(Instruction::SetCond(Condition::NotParity, parity_reg));
 
                     // both results must be true (result must not be unordered)
                     self.function_body
                         .push(Instruction::And(reg.into(), parity_reg.into()));
-
-                    // free the parity reg
-                    self.used_registers.pop();
                 } else if node.op == InfixOp::Neq {
                     // save parity
-                    let parity_reg = self.get_free_register(Size::Byte);
+                    let parity_reg = self.get_tmp_register(Size::Byte);
                     self.function_body
                         .push(Instruction::SetCond(Condition::Parity, parity_reg));
 
                     // either result can be true (result can be unordered)
                     self.function_body
                         .push(Instruction::Or(reg.into(), parity_reg.into()));
-
-                    // free the parity reg
-                    self.used_registers.pop();
                 }
 
                 Some(Value::Int(IntValue::Register(reg)))
@@ -1304,7 +1294,7 @@ impl<'src> Compiler<'src> {
                             memory_offset += 8;
                         }
                         IntValue::Ptr(ptr) => {
-                            let reg = self.get_free_register(ptr.size);
+                            let reg = self.get_tmp_register(ptr.size);
                             self.function_body
                                 .push(Instruction::Mov(reg.into(), ptr.into()));
                             self.function_body.push(Instruction::Mov(
@@ -1312,8 +1302,6 @@ impl<'src> Compiler<'src> {
                                     .into(),
                                 reg.into(),
                             ));
-                            let _popped_reg = self.used_registers.pop();
-                            debug_assert_eq!(Some(reg), _popped_reg);
                             memory_offset += 8;
                         }
                     }
@@ -1344,7 +1332,7 @@ impl<'src> Compiler<'src> {
                                 self.function_body
                                     .push(Instruction::Movsd(reg.into(), ptr.into()));
                             } else {
-                                let reg = self.get_free_float_register();
+                                let reg = self.get_tmp_float_register();
                                 self.function_body
                                     .push(Instruction::Movsd(reg.into(), ptr.into()));
                                 self.function_body.push(Instruction::Movsd(
@@ -1356,8 +1344,6 @@ impl<'src> Compiler<'src> {
                                     .into(),
                                     reg.into(),
                                 ));
-                                let _popped_reg = self.used_float_registers.pop();
-                                debug_assert_eq!(Some(reg), _popped_reg);
                                 memory_offset += 8;
                             }
                         }
@@ -1453,12 +1439,11 @@ impl<'src> Compiler<'src> {
             (Some(Value::Int(val)), Type::Int | Type::Char | Type::Bool, Type::Float) => {
                 match val {
                     IntValue::Register(reg) => {
-                        let float_reg = self.get_free_float_register();
+                        let float_reg = self.get_tmp_float_register();
                         self.function_body.push(Instruction::Cvtsi2sd(
                             float_reg.into(),
                             reg.in_qword_size().into(),
                         ));
-                        self.used_registers.pop();
                         Some(Value::Float(float_reg.into()))
                     }
                     IntValue::Ptr(ptr) if ptr.size == Size::Qword => {
@@ -1468,7 +1453,7 @@ impl<'src> Compiler<'src> {
                         Some(Value::Float(reg.into()))
                     }
                     IntValue::Ptr(ptr) => {
-                        let reg = self.get_free_register(ptr.size);
+                        let reg = self.get_tmp_register(ptr.size);
                         self.function_body
                             .push(Instruction::Mov(reg.into(), ptr.into()));
 
@@ -1477,7 +1462,6 @@ impl<'src> Compiler<'src> {
                             float_reg.into(),
                             reg.in_dword_size().into(),
                         ));
-                        self.used_registers.pop();
                         Some(Value::Float(float_reg.into()))
                     }
                     IntValue::Immediate(num) => Some(Value::Float(FloatValue::Ptr(Pointer::new(
@@ -1556,12 +1540,11 @@ impl<'src> Compiler<'src> {
                 let reg = self.get_free_register(Size::Byte);
                 self.function_body
                     .push(Instruction::SetCond(Condition::NotEqual, reg));
-                let parity_reg = self.get_free_register(Size::Byte);
+                let parity_reg = self.get_tmp_register(Size::Byte);
                 self.function_body
                     .push(Instruction::SetCond(Condition::Parity, parity_reg));
                 self.function_body
                     .push(Instruction::Or(reg.into(), parity_reg.into()));
-                self.used_registers.pop();
 
                 Some(Value::Int(IntValue::Register(reg)))
             }
