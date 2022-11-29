@@ -29,6 +29,13 @@ impl Value {
         }
     }
 
+    pub(crate) fn into_char(self) -> u8 {
+        match self {
+            Value::Char(value) => value,
+            _ => unreachable!("no illegal calls exist"),
+        }
+    }
+
     pub(crate) fn into_float(self) -> f64 {
         match self {
             Value::Float(value) => value,
@@ -48,79 +55,53 @@ impl Value {
         match self {
             Value::Int(val) => Value::Int(!val),
             Value::Bool(value) => Value::Bool(!value),
-            Value::Char(_value) => todo!(), // TODO: is this correct?
             _ => unreachable!("never called this way"),
         }
     }
 
-    pub(crate) fn add(&self, rhs: Value) -> Result<Value, RuntimeError> {
+    pub(crate) fn add(&self, rhs: Value) -> Value {
         match self {
-            Value::Int(value) => match value.checked_add(rhs.into_int()) {
-                Some(res) => Ok(Value::Int(res)),
-                None => Err(RuntimeError::new(
-                    RuntimeErrorKind::Arithmetic,
-                    format!("{self} + {rhs} is illegal"),
-                )),
-            },
-            Value::Float(value) => Ok(Value::Float(value + rhs.into_float())),
+            Value::Int(value) => Value::Int(value.wrapping_add(rhs.into_int())),
+            Value::Char(value) => Value::Char((value + rhs.into_char()) & 0x7f),
+            Value::Float(value) => Value::Float(value + rhs.into_float()),
             _ => unreachable!("other types do not support this operation"),
         }
     }
 
-    pub(crate) fn sub(&self, rhs: Value) -> Result<Value, RuntimeError> {
+    pub(crate) fn sub(&self, rhs: Value) -> Value {
         match self {
-            Value::Int(value) => match value.checked_sub(rhs.into_int()) {
-                Some(res) => Ok(Value::Int(res)),
-                None => Err(RuntimeError::new(
-                    RuntimeErrorKind::Arithmetic,
-                    format!("{self} - {rhs} is illegal"),
-                )),
-            },
-            Value::Float(value) => Ok(Value::Float(value - rhs.into_float())),
+            Value::Int(value) => Value::Int(value.wrapping_sub(rhs.into_int())),
+            Value::Char(value) => Value::Char((value - rhs.into_char()) & 0x7f),
+            Value::Float(value) => Value::Float(value - rhs.into_float()),
             _ => unreachable!("other types do not support this operation"),
         }
     }
 
-    pub(crate) fn mul(&self, rhs: Value) -> Result<Value, RuntimeError> {
+    pub(crate) fn mul(&self, rhs: Value) -> Value {
         match self {
-            Value::Int(value) => match value.checked_mul(rhs.into_int()) {
-                Some(res) => Ok(Value::Int(res)),
-                None => Err(RuntimeError::new(
-                    RuntimeErrorKind::Arithmetic,
-                    format!("{self} * {rhs} is illegal"),
-                )),
-            },
-            Value::Float(value) => Ok(Value::Float(value * rhs.into_float())),
+            Value::Int(value) => Value::Int(value.wrapping_mul(rhs.into_int())),
+            Value::Float(value) => Value::Float(value * rhs.into_float()),
             _ => unreachable!("other types do not support this operation"),
         }
     }
 
-    pub(crate) fn pow(&self, rhs: Value) -> Result<Value, RuntimeError> {
+    pub(crate) fn pow(&self, rhs: Value) -> Value {
         match self {
-            Value::Int(_) if rhs.into_int() > u32::MAX as i64 => Err(RuntimeError::new(
-                RuntimeErrorKind::Arithmetic,
-                format!("exponent larger than {}", u32::MAX),
-            )),
-            Value::Int(value) => match value.checked_pow(rhs.into_int() as u32) {
-                Some(res) => Ok(Value::Int(res)),
-                None => Err(RuntimeError::new(
-                    RuntimeErrorKind::Arithmetic,
-                    format!("{self} ** {rhs} is illegal"),
-                )),
-            },
+            Value::Int(0) => Value::Int(0),
+            Value::Int(value) => {
+                Value::Int(value.wrapping_pow(rhs.into_int().try_into().unwrap_or(u32::MAX)))
+            }
             _ => unreachable!("other types do not support this operation"),
         }
     }
 
     pub(crate) fn div(&self, rhs: Value) -> Result<Value, RuntimeError> {
         match self {
-            Value::Int(value) => match value.checked_div(rhs.into_int()) {
-                Some(res) => Ok(Value::Int(res)),
-                None => Err(RuntimeError::new(
-                    RuntimeErrorKind::Arithmetic,
-                    format!("{self} / {rhs} is illegal"),
-                )),
-            },
+            Value::Int(_) if rhs.into_int() == 0 => Err(RuntimeError::new(
+                RuntimeErrorKind::Arithmetic,
+                format!("{self} / {rhs} is illegal"),
+            )),
+            Value::Int(value) => Ok(Value::Int(value.wrapping_div(rhs.into_int()))),
             Value::Float(value) => Ok(Value::Float(value / rhs.into_float())),
             _ => unreachable!("other types do not support this operation"),
         }
@@ -128,13 +109,11 @@ impl Value {
 
     pub(crate) fn rem(&self, rhs: Value) -> Result<Value, RuntimeError> {
         match self {
-            Value::Int(value) => match value.checked_rem(rhs.into_int()) {
-                Some(res) => Ok(Value::Int(res)),
-                None => Err(RuntimeError::new(
-                    RuntimeErrorKind::Arithmetic,
-                    format!("{self} % {rhs} is illegal"),
-                )),
-            },
+            Value::Int(_) if rhs.into_int() == 0 => Err(RuntimeError::new(
+                RuntimeErrorKind::Arithmetic,
+                format!("{self} % {rhs} is illegal"),
+            )),
+            Value::Int(value) => Ok(Value::Int(value.wrapping_rem(rhs.into_int()))),
             _ => unreachable!("other types do not support this operation"),
         }
     }
@@ -151,6 +130,7 @@ impl Value {
         let res = match (self, rhs) {
             (Value::Int(lhs), Value::Int(rhs)) => *lhs < rhs,
             (Value::Float(lhs), Value::Float(rhs)) => *lhs < rhs,
+            (Value::Char(lhs), Value::Char(rhs)) => *lhs < rhs,
             _ => unreachable!("other types cannot be compared"),
         };
         Value::Bool(res)
@@ -160,6 +140,7 @@ impl Value {
         let res = match (self, rhs) {
             (Value::Int(lhs), Value::Int(rhs)) => *lhs <= rhs,
             (Value::Float(lhs), Value::Float(rhs)) => *lhs <= rhs,
+            (Value::Char(lhs), Value::Char(rhs)) => *lhs <= rhs,
             _ => unreachable!("other types cannot be compared"),
         };
         Value::Bool(res)
@@ -169,6 +150,7 @@ impl Value {
         let res = match (self, rhs) {
             (Value::Int(lhs), Value::Int(rhs)) => *lhs > rhs,
             (Value::Float(lhs), Value::Float(rhs)) => *lhs > rhs,
+            (Value::Char(lhs), Value::Char(rhs)) => *lhs > rhs,
             _ => unreachable!("other types cannot be compared"),
         };
         Value::Bool(res)
@@ -178,6 +160,7 @@ impl Value {
         let res = match (self, rhs) {
             (Value::Int(lhs), Value::Int(rhs)) => *lhs >= rhs,
             (Value::Float(lhs), Value::Float(rhs)) => *lhs >= rhs,
+            (Value::Char(lhs), Value::Char(rhs)) => *lhs >= rhs,
             _ => unreachable!("other types cannot be compared"),
         };
         Value::Bool(res)
@@ -187,38 +170,26 @@ impl Value {
         let Value::Int(lhs) = self else {
             unreachable!("other types cannot be shifted");
         };
-        if rhs.into_int() > u32::MAX as i64 {
+        if !(0..=63).contains(&rhs.into_int()) {
             return Err(RuntimeError::new(
                 RuntimeErrorKind::Arithmetic,
-                format!("rhs larger than {}", u32::MAX),
+                "rhs is not in range `0..=63`".to_string(),
             ));
         }
-        match lhs.checked_shl(rhs.into_int() as u32) {
-            Some(res) => Ok(Value::Int(res)),
-            None => Err(RuntimeError::new(
-                RuntimeErrorKind::Arithmetic,
-                format!("{self} << {rhs} is illegal"),
-            )),
-        }
+        Ok(Value::Int(lhs << rhs.into_int() as u32))
     }
 
     pub(crate) fn shr(&self, rhs: Value) -> Result<Value, RuntimeError> {
         let Value::Int(lhs) = self else {
             unreachable!("other types cannot be shifted");
         };
-        if rhs.into_int() > u32::MAX as i64 {
+        if !(0..=63).contains(&rhs.into_int()) {
             return Err(RuntimeError::new(
                 RuntimeErrorKind::Arithmetic,
-                format!("rhs larger than {}", u32::MAX),
+                "rhs is not in range `0..=63`".to_string(),
             ));
         }
-        match lhs.checked_shr(rhs.into_int() as u32) {
-            Some(res) => Ok(Value::Int(res)),
-            None => Err(RuntimeError::new(
-                RuntimeErrorKind::Arithmetic,
-                format!("{self} >> {rhs} is illegal"),
-            )),
-        }
+        Ok(Value::Int(lhs >> rhs.into_int() as u32))
     }
 
     pub(crate) fn bit_or(&self, rhs: Value) -> Value {

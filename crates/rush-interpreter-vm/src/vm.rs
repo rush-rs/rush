@@ -238,22 +238,22 @@ impl Vm {
             Instruction::Add => {
                 let rhs = self.pop();
                 let lhs = self.pop();
-                self.push(lhs.add(rhs)?)?;
+                self.push(lhs.add(rhs))?;
             }
             Instruction::Sub => {
                 let rhs = self.pop();
                 let lhs = self.pop();
-                self.push(lhs.sub(rhs)?)?;
+                self.push(lhs.sub(rhs))?;
             }
             Instruction::Mul => {
                 let rhs = self.pop();
                 let lhs = self.pop();
-                self.push(lhs.mul(rhs)?)?;
+                self.push(lhs.mul(rhs))?;
             }
             Instruction::Pow => {
                 let rhs = self.pop();
                 let lhs = self.pop();
-                self.push(lhs.pow(rhs)?)?;
+                self.push(lhs.pow(rhs))?;
             }
             Instruction::Div => {
                 let rhs = self.pop();
