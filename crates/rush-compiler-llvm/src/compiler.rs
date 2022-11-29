@@ -383,7 +383,6 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                 for (idx, (alloc_ident, alloc_type, alloc_ptr)) in
                     curr_loop.allocations.iter_mut().enumerate()
                 {
-                    // todo: remove this String allocation?
                     if *alloc_ident == name && *alloc_type == type_ {
                         ptr = Some(*alloc_ptr);
                         // remove this allocation from the vec
@@ -861,7 +860,7 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                 .as_basic_value_enum()
             }
             Type::Unknown | Type::Unit | Type::Never => {
-                todo!("these types cannot be used in an infix expression")
+                unreachable!("these types cannot be used in an infix expression")
             }
         }
     }

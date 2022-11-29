@@ -56,6 +56,10 @@ pub enum Backend {
     RiscV,
     /// X86_64 compiler: no dependencies
     X86_64,
+    /// Tree-walking interpreter: no dependencies
+    TreeWalking,
+    /// VM interpreter: no dependencies
+    Vm,
 }
 
 impl Display for Backend {
@@ -68,6 +72,8 @@ impl Display for Backend {
                 Backend::Wasm => "wasm",
                 Backend::RiscV => "risc-v",
                 Backend::X86_64 => "x86_64",
+                Backend::TreeWalking => "tree-walking",
+                Backend::Vm => "vm",
             }
         )
     }

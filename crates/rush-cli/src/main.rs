@@ -24,6 +24,11 @@ fn main() {
                 Backend::Wasm => todo!(),
                 Backend::RiscV => riscv::compile(ast, args),
                 Backend::X86_64 => todo!(),
+                Backend::TreeWalking => {
+                    eprintln!("cannot compile using an interpreted backend");
+                    process::exit(1)
+                }
+                Backend::Vm => println!("{}", rush_interpreter_vm::compile(&ast)),
             }
         }
         Cli::Run(args) => {
@@ -39,9 +44,20 @@ fn main() {
                 Backend::Llvm => llvm::run(ast, args),
                 Backend::Wasm => todo!(),
                 Backend::RiscV | Backend::X86_64 => {
-                    eprintln!("cannot run rush using the backend: `{}`", args.backend);
+                    eprintln!("cannot run rush using this backend: `{}`", args.backend);
                     process::exit(1);
                 }
+                Backend::TreeWalking => todo!(),
+                Backend::Vm => match rush_interpreter_vm::run(&ast) {
+                    Ok(code) => {
+                        println!("VM exited with code {code}");
+                        process::exit(code as i32)
+                    }
+                    Err(err) => {
+                        println!("\x1b[1;31mVM crashed\x1b[1;0m: {err}");
+                        process::exit(1)
+                    }
+                },
             }
         }
         Cli::Check { file } => {

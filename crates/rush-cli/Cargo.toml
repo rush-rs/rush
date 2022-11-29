@@ -15,3 +15,4 @@ rush-analyzer = { version = "0.1.0", path = "../rush-analyzer" }
 rush-compiler-llvm = { version = "0.1.0", path = "../rush-compiler-llvm" }
 rush-compiler-wasm = { version = "0.1.0", path = "../rush-compiler-wasm" }
 rush-compiler-risc-v = { version = "0.1.0", path = "../rush-compiler-risc-v" }
+rush-interpreter-vm = { version = "0.1.0", path = "../rush-interpreter-vm" }
