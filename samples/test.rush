@@ -1,0 +1,136 @@
+fn call() -> int { add(get(), get()) }
+fn add(a: int, b: int) -> int { a + b }
+fn get() -> int { 1 }
+
+fn add4(a: int, b: int, c: int, d: int) -> int { a + b + c + d }
+
+fn sized_args(_a: int, _b: bool, _c: bool, d: int) -> int { d }
+
+let global_a = 1 + 2;
+let mut global_b = 'b';
+let _global_c = 3;
+
+fn main() {
+    let a = 1;
+    1;
+    3.0;
+    'a';
+    let _x = (1 << 31) - 1;
+    let yes = !false;
+    let no = !yes;
+    let hundred = 100;
+    let nine = 9f;
+    let base = 2;
+    global_b = (global_b as int - global_a) as char;
+    exit(
+        1 + 2 + a + call() - float(3.5) as int
+        + params(1, 2.0, '\x03', true, 5, 6, 7, 8, 9, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0)
+        + sized_args(42, yes, no, sized_args(30, no, yes, 6))
+        + add4(0, 0, 10 / 3, 10 % 3)
+        + (3 << a)
+        + (6 >> a)
+        + -hundred + (-nine) as int
+        + global_b as int
+        + base**3
+        + comparisons() + float_comparisons()
+        + casts()
+        + !hundred
+        - fib(10)
+    ); // = 50
+}
+
+fn fib(n: int) -> int {
+    if n < 2 {
+        n
+    } else {
+        fib(n - 2) + fib(n - 1)
+    }
+}
+
+fn comparisons() -> int {
+    let a = 3;
+    let x = 5;
+
+    let b = a > 1;
+    let c = a == 3;
+    let d = 4 != a;
+    let e = a < x;
+
+    (b & c & d & e) as int
+}
+
+fn float_comparisons() -> int {
+    let a = 3.0;
+    let x = 5.5;
+
+    let b = a > 1.2;
+    let c = a == 3.0;
+    let d = 4.2 != a;
+    let e = a < x;
+
+    (b & c & d & e) as int
+}
+
+fn casts() -> int {
+    let a = 300;
+
+    let b = a as char; // = '\x7F'
+    let c = b as bool; // = true
+    let d = c as float; // = 1.0
+    let e = d as int; // = 1
+    let f = e as bool; // = true
+    let g = f as char; // = '\x01'
+    let h = g as float; // = 1.0
+    let i = h as char; // = '\x01'
+    let j = i as int; // = 1
+    let k = j as float; // = 1.0
+    let l = k as bool; // = true
+    let m = l as int; // = 1
+
+    m
+}
+
+fn float(a: float) -> float {
+    a * 2.0 - 4.0
+}
+
+fn _ops(b: int) -> int {
+    3 + b;
+    4 - b;
+    5 * b;
+    6 | b;
+    7 ^ b;
+    8 & b
+}
+
+fn _vars() -> char {
+    let _c = true;
+    let d = 'a';
+    let _a = 1;
+    let _b = 2f;
+    d
+}
+
+fn params(
+    a: int, // %rdi
+    b: float, // %xmm0
+    c: char, // %sil
+    d: bool, // %dl
+    e: int, // %rcx
+    f: int, // %r8
+    g: int, // %r9
+    h: int, // [%rbp+16]
+    i: int, // [%rbp+24]
+    j: float, // %xmm1
+    k: float, // %xmm2
+    l: float, // %xmm3
+    m: float, // %xmm4
+    n: float, // %xmm5
+    o: float, // %xmm6
+    p: float, // %xmm7
+    q: float, // [%rbp+32]
+    r: float, // [%rbp+40]
+    s: float, // [%rbp+48]
+) -> int {
+    a + b as int + c as int + d as int + e + f + g + h + i + (j + k + l + m + n + o + p + q + r + s) as int
+}
