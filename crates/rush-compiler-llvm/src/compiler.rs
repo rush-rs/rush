@@ -18,20 +18,20 @@ use inkwell::{
 };
 use rush_analyzer::{ast::*, AssignOp, InfixOp, PrefixOp, Type};
 
-pub struct Compiler<'ctx> {
+pub struct Compiler<'ctx, 'src> {
     // inkwell components
     pub(crate) context: &'ctx Context,
     pub(crate) module: Module<'ctx>,
     pub(crate) builder: Builder<'ctx>,
     // contains information about the current function
-    pub(crate) curr_fn: Option<Function<'ctx>>,
+    pub(crate) curr_fn: Option<Function<'ctx, 'src>>,
     // contains necessary metadata about current loops
     // the last element is the most inner loop
     pub(crate) loops: Vec<Loop<'ctx>>,
     // the scope stack (first is the root / function scope, last is the current scope)
-    pub(crate) scopes: Vec<HashMap<String, Variable<'ctx>>>,
+    pub(crate) scopes: Vec<HashMap<&'src str, Variable<'ctx>>>,
     // global variables
-    pub(crate) globals: HashMap<String, PointerValue<'ctx>>,
+    pub(crate) globals: HashMap<&'src str, PointerValue<'ctx>>,
     // a set of all builtin functions already declared (`imported`) so far
     pub(crate) declared_builtins: HashSet<&'ctx str>,
     // specifies the target machine
@@ -49,9 +49,9 @@ pub(crate) struct Loop<'ctx> {
     allocations: Vec<(String, Type, PointerValue<'ctx>)>,
 }
 
-pub(crate) struct Function<'ctx> {
+pub(crate) struct Function<'ctx, 'src> {
     // specifies the name of the function
-    name: String,
+    name: &'src str,
     // holds the LLVM function value
     llvm_value: FunctionValue<'ctx>,
 }
@@ -64,7 +64,7 @@ pub(crate) enum Variable<'ctx> {
     Const(BasicValueEnum<'ctx>),
 }
 
-impl<'ctx> Compiler<'ctx> {
+impl<'ctx, 'src> Compiler<'ctx, 'src> {
     /// Creates and returns a new [`Compiler`].
     /// Requires a new [`Context`] to be used by the compiler.
     /// The LLVM backend can be specified using a [`TargetTriple`].
@@ -73,7 +73,7 @@ impl<'ctx> Compiler<'ctx> {
         context: &'ctx Context,
         target_triple: TargetTriple,
         optimization: OptimizationLevel,
-    ) -> Compiler<'ctx> {
+    ) -> Compiler<'ctx, 'src> {
         let module = context.create_module("main");
         // setup target machine triple
         module.set_triple(&target_triple);
@@ -93,14 +93,14 @@ impl<'ctx> Compiler<'ctx> {
 
     // Returns a mutable reference to the current scope
     /// Panics if there are no scopes.
-    fn scope_mut(&mut self) -> &mut HashMap<String, Variable<'ctx>> {
+    fn scope_mut(&mut self) -> &mut HashMap<&'src str, Variable<'ctx>> {
         let len = self.scopes.len();
         &mut self.scopes[len - 1]
     }
 
     /// Helper function for accessing the current function
     /// Can panic when called from outside of functions
-    fn curr_fn(&self) -> &Function<'ctx> {
+    fn curr_fn(&self) -> &Function<'ctx, 'src> {
         self.curr_fn
             .as_ref()
             .expect("this is only called from functions")
@@ -111,12 +111,12 @@ impl<'ctx> Compiler<'ctx> {
     /// The `main_fn` param specifies whether the entry is the main function or `_start`.
     pub fn compile(
         &mut self,
-        program: AnalyzedProgram,
+        program: &'src AnalyzedProgram,
         main_fn: bool,
     ) -> Result<(MemoryBuffer, String)> {
         // declare all global variables
-        for global in program.globals {
-            self.declare_global(global.name.to_string(), &global.expr);
+        for global in &program.globals {
+            self.declare_global(global.name, &global.expr);
         }
 
         // add all function signatures beforehand
@@ -175,7 +175,7 @@ impl<'ctx> Compiler<'ctx> {
         link_time_optimizations.run_on(&self.module);
     }
 
-    fn compile_main_fn(&mut self, node: &AnalyzedBlock, main_fn: bool) {
+    fn compile_main_fn(&mut self, node: &'src AnalyzedBlock, main_fn: bool) {
         // main fn takes no arguments but returns an i8 (exit-code)
         let fn_type = self.context.i32_type().fn_type(&[], false);
         let main_fn = self.module.add_function(
@@ -190,7 +190,7 @@ impl<'ctx> Compiler<'ctx> {
 
         // set the current function to `main`
         self.curr_fn = Some(Function {
-            name: "main".to_string(),
+            name: "main",
             llvm_value: main_fn,
         });
 
@@ -208,9 +208,9 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     /// Defines a new global variable with the given name and initializes it using the expression
-    fn declare_global(&mut self, ident: String, expression: &AnalyzedExpression) {
+    fn declare_global(&mut self, ident: &'src str, expression: &'src AnalyzedExpression) {
         let init_value = self.compile_expression(expression);
-        let global = self.module.add_global(init_value.get_type(), None, &ident);
+        let global = self.module.add_global(init_value.get_type(), None, ident);
         global.set_initializer(&init_value);
         // store the global variable in the globals vec
         self.globals.insert(ident, global.as_pointer_value());
@@ -252,7 +252,7 @@ impl<'ctx> Compiler<'ctx> {
 
     /// Defines a new function in the module and compiles it's body.
     /// Also allocates space for any function arguments later passed to the function.
-    fn compile_fn_definition(&mut self, node: &AnalyzedFunctionDefinition) {
+    fn compile_fn_definition(&mut self, node: &'src AnalyzedFunctionDefinition) {
         let function = self
             .module
             .get_function(node.name)
@@ -264,7 +264,7 @@ impl<'ctx> Compiler<'ctx> {
 
         // set the current function environment
         self.curr_fn = Some(Function {
-            name: node.name.to_string(),
+            name: node.name,
             llvm_value: function,
         });
 
@@ -297,8 +297,7 @@ impl<'ctx> Compiler<'ctx> {
                     // store the param value in the pointer
                     self.builder.build_store(ptr, value);
                     // insert the pointer / parameter into the current scope
-                    self.scope_mut()
-                        .insert(param.name.to_string(), Variable::Mut(ptr));
+                    self.scope_mut().insert(param.name, Variable::Mut(ptr));
                 }
                 false => {
                     // get the param's value from the function
@@ -306,8 +305,7 @@ impl<'ctx> Compiler<'ctx> {
                         .get_nth_param(i as u32)
                         .expect("this parameter exists");
                     // insert the pointer / parameter into the current scope
-                    self.scope_mut()
-                        .insert(param.name.to_string(), Variable::Const(value));
+                    self.scope_mut().insert(param.name, Variable::Const(value));
                 }
             }
         }
@@ -322,7 +320,7 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     /// Compiles a block and returns its result value
-    fn compile_block(&mut self, node: &AnalyzedBlock) -> BasicValueEnum<'ctx> {
+    fn compile_block(&mut self, node: &'src AnalyzedBlock) -> BasicValueEnum<'ctx> {
         for stmt in &node.stmts {
             self.compile_statement(stmt);
         }
@@ -333,7 +331,7 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     /// Compiles a [`AnalyzedStatement`] without returning a value (statement: `()`).
-    fn compile_statement(&mut self, node: &AnalyzedStatement) {
+    fn compile_statement(&mut self, node: &'src AnalyzedStatement) {
         match node {
             AnalyzedStatement::Let(node) => self.compile_let_statement(node),
             AnalyzedStatement::Return(node) => self.compile_return_statement(node),
@@ -351,7 +349,7 @@ impl<'ctx> Compiler<'ctx> {
     /// Compiles a [`AnalyzedLetStmt`].
     /// Allocates a pointer for the value and stores the rhs value in it.
     /// Also inserts the pointer into the functions's [`HashMap`] for later use.
-    fn compile_let_statement(&mut self, node: &AnalyzedLetStmt) {
+    fn compile_let_statement(&mut self, node: &'src AnalyzedLetStmt) {
         let rhs = self.compile_expression(&node.expr);
 
         // if the variable is mutable, no pointer allocations are required
@@ -364,12 +362,10 @@ impl<'ctx> Compiler<'ctx> {
                 self.builder.build_store(ptr, rhs);
 
                 // insert the pointer into the current scope (for later reference)
-                self.scope_mut()
-                    .insert(node.name.to_string(), Variable::Mut(ptr));
+                self.scope_mut().insert(node.name, Variable::Mut(ptr));
             }
             false => {
-                self.scope_mut()
-                    .insert(node.name.to_string(), Variable::Const(rhs));
+                self.scope_mut().insert(node.name, Variable::Const(rhs));
             }
         };
     }
@@ -406,7 +402,7 @@ impl<'ctx> Compiler<'ctx> {
 
     /// Compiles a return statement with an optional expression as it's value.
     /// If there is no optional expression, `()` / void is used as the return type.
-    fn compile_return_statement(&mut self, node: &AnalyzedReturnStmt) {
+    fn compile_return_statement(&mut self, node: &'src AnalyzedReturnStmt) {
         match node {
             Some(expr) => {
                 let value = self.compile_expression(expr);
@@ -421,13 +417,12 @@ impl<'ctx> Compiler<'ctx> {
     /// Used in loop statements in order to perform allocations upfront.
     fn do_loop_allocations(
         &mut self,
-        src: &[(&str, Type)],
+        src: &[(&'src str, Type)],
     ) -> Vec<(String, Type, PointerValue<'ctx>)> {
         src.iter()
             .map(|(ident, type_)| {
                 let ptr = self.builder.build_alloca(self.to_llvm_type(*type_), ident);
-                self.scope_mut()
-                    .insert(ident.to_string(), Variable::Mut(ptr));
+                self.scope_mut().insert(ident, Variable::Mut(ptr));
                 (ident.to_string(), *type_, ptr)
             })
             .collect()
@@ -436,7 +431,7 @@ impl<'ctx> Compiler<'ctx> {
     /// Compiles an [`AnalyzedLoopStmt`].
     /// Generates a start basic block and a after basic block.
     /// When break / continue is used in the loop, it jumps to the start or end blocks.
-    fn compile_loop_statement(&mut self, node: &AnalyzedLoopStmt) {
+    fn compile_loop_statement(&mut self, node: &'src AnalyzedLoopStmt) {
         // create the loop_head block
         let loop_head = self
             .context
@@ -480,7 +475,7 @@ impl<'ctx> Compiler<'ctx> {
 
     /// Compiles an [`AnalyzedWhileStmt`].
     /// Checks the provided condition before attempting a new iteration.
-    fn compile_while_statement(&mut self, node: &AnalyzedWhileStmt) {
+    fn compile_while_statement(&mut self, node: &'src AnalyzedWhileStmt) {
         // create the `while_head` block
         let while_head = self
             .context
@@ -538,7 +533,7 @@ impl<'ctx> Compiler<'ctx> {
     /// The init expression is compiled at the beginning.
     /// Each iteration will only take place if the condition expression evaluates to `true`.
     /// At the beginning of each iteration, the update expression is invoked.
-    fn compile_for_statement(&mut self, node: &AnalyzedForStmt) {
+    fn compile_for_statement(&mut self, node: &'src AnalyzedForStmt) {
         // create the `for_head` block
         let for_head = self
             .context
@@ -584,8 +579,7 @@ impl<'ctx> Compiler<'ctx> {
         });
 
         // add the pointer to the loop's scope
-        self.scope_mut()
-            .insert(node.ident.to_string(), Variable::Mut(ptr));
+        self.scope_mut().insert(node.ident, Variable::Mut(ptr));
 
         // enter the loop from outside
         self.builder.build_unconditional_branch(for_head);
@@ -648,7 +642,7 @@ impl<'ctx> Compiler<'ctx> {
     /// Compiles an [`AnalyzedExpression`].
     /// Creates constant values for simple atoms, such as int, float, char, and bool.
     /// Otherwise, the function invokes other expressions.
-    fn compile_expression(&mut self, node: &AnalyzedExpression) -> BasicValueEnum<'ctx> {
+    fn compile_expression(&mut self, node: &'src AnalyzedExpression) -> BasicValueEnum<'ctx> {
         match node {
             AnalyzedExpression::Int(value) => self
                 .context
@@ -712,7 +706,7 @@ impl<'ctx> Compiler<'ctx> {
 
     /// Compiles an [`AnalyzedCallExpr`] and returns the result of the call.
     /// If a builtin is called, it is declared just-in-time to avoid redundant declarations.
-    fn compile_call_expression(&mut self, node: &AnalyzedCallExpr) -> BasicValueEnum<'ctx> {
+    fn compile_call_expression(&mut self, node: &'src AnalyzedCallExpr) -> BasicValueEnum<'ctx> {
         // handle any builtin functions
         let func = match node.func {
             "exit" => {
@@ -875,7 +869,7 @@ impl<'ctx> Compiler<'ctx> {
     /// Compiles an [`AnalyzedInfixExpr`].
     /// Handles the `bool || bool` and `bool && bool` edge cases directly.
     /// Invokes the `infix_helper` function for any other types or operations.
-    fn compile_infix_expression(&mut self, node: &AnalyzedInfixExpr) -> BasicValueEnum<'ctx> {
+    fn compile_infix_expression(&mut self, node: &'src AnalyzedInfixExpr) -> BasicValueEnum<'ctx> {
         match (node.lhs.result_type(), node.op) {
             // uses an if-else in order to skip evaluation of the rhs if the lhs is `true`
             (Type::Bool, InfixOp::Or) => {
@@ -976,7 +970,10 @@ impl<'ctx> Compiler<'ctx> {
         }
     }
 
-    fn compile_prefix_expression(&mut self, node: &AnalyzedPrefixExpr) -> BasicValueEnum<'ctx> {
+    fn compile_prefix_expression(
+        &mut self,
+        node: &'src AnalyzedPrefixExpr,
+    ) -> BasicValueEnum<'ctx> {
         let base = self.compile_expression(&node.expr);
 
         match (node.expr.result_type(), node.op) {
@@ -1002,7 +999,7 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     /// Compiles an [`AnalyzedCastExpr`], such as `42 as char` and returns the resulting value.
-    fn compile_cast_expression(&mut self, node: &AnalyzedCastExpr) -> BasicValueEnum<'ctx> {
+    fn compile_cast_expression(&mut self, node: &'src AnalyzedCastExpr) -> BasicValueEnum<'ctx> {
         let lhs = self.compile_expression(&node.expr);
 
         match (node.expr.result_type(), node.type_) {
@@ -1092,7 +1089,7 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     /// Compiles an [`AnalyzedAssignExpr`] by performing its operation and assignment.
-    fn compile_assign_expression(&mut self, node: &AnalyzedAssignExpr) {
+    fn compile_assign_expression(&mut self, node: &'src AnalyzedAssignExpr) {
         // get the pointer of the assignee
         let ptr = match self.resolve_name(node.assignee) {
             Variable::Mut(ptr) => ptr,
@@ -1120,7 +1117,7 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     /// Compiles an [`AnalyzedIfExpr`] by inserting a branch construct.
-    fn compile_if_expression(&mut self, node: &AnalyzedIfExpr) -> BasicValueEnum<'ctx> {
+    fn compile_if_expression(&mut self, node: &'src AnalyzedIfExpr) -> BasicValueEnum<'ctx> {
         // compile the if condition
         let cond = self.compile_expression(&node.cond);
 
@@ -1198,7 +1195,7 @@ impl<'ctx> Compiler<'ctx> {
     /// Automatically pushes and pops the branch's scopes
     fn compile_branch(
         &mut self,
-        node: &AnalyzedBlock,
+        node: &'src AnalyzedBlock,
         end_block: BasicBlock<'ctx>,
     ) -> (
         BasicTypeEnum<'ctx>,
@@ -1246,7 +1243,7 @@ impl<'ctx> Compiler<'ctx> {
     /// the insertion is omitted in order to prevent an LLVM error
     fn build_return(&mut self, return_value: Option<BasicValueEnum<'ctx>>) {
         if !self.current_instruction_is_block_terminator() {
-            match (return_value, self.curr_fn().name.as_str()) {
+            match (return_value, self.curr_fn().name) {
                 (_, "main") => {
                     let success = self.context.i32_type().const_zero();
                     self.builder.build_return(Some(&success))

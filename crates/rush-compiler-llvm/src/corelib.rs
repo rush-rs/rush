@@ -6,7 +6,7 @@ use inkwell::{
 
 use crate::Compiler;
 
-impl<'ctx> Compiler<'ctx> {
+impl<'ctx, 'src> Compiler<'ctx, 'src> {
     /// Helper function for the `**` and `**=` operators.
     /// Because LLVM does not support the pow instruction, the corelib is used.
     /// This function will declare the `pow` function if not already done previously.

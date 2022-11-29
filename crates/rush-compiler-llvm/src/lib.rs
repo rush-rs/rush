@@ -20,5 +20,5 @@ pub fn compile(
 ) -> Result<(MemoryBuffer, String)> {
     let context = Context::create();
     let mut compiler = Compiler::new(&context, target, optimization);
-    compiler.compile(ast, main_fn)
+    compiler.compile(&ast, main_fn)
 }
