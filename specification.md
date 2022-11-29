@@ -54,23 +54,23 @@ with the specified exit-code.
 
 ## Prefix Operators
 
-| Operator | Operand Type          | Produces (Type) |
-| -------- | --------------------- | --------------- |
-| -        | `int`                 | `int`           |
-| !        | `bool`, `int`, `char` | same as operand |
+| Operator | Operand Type  | Produces (Type) |
+| -------- | ------------- | --------------- |
+| -        | `int`         | `int`           |
+| !        | `bool`, `int` | same as operand |
 
 ## Infix Operators
 
 ### Arithmetic Operators
 
-| Operator | Operand Types  | Produces (Type)  |
-| -------- | -------------- | ---------------- |
-| +        | `int`, `float` | same as operands |
-| -        | `int`, `float` | same as operands |
-| *        | `int`, `float` | same as operands |
-| /        | `int`, `float` | same as operands |
-| %        | `int`          | `int`            |
-| **       | `int`          | `int`            |
+| Operator | Operand Types          | Produces (Type)  |
+| -------- | ---------------------- | ---------------- |
+| +        | `int`, `char`, `float` | same as operands |
+| -        | `int`, `char`, `float` | same as operands |
+| *        | `int`, `float`         | same as operands |
+| /        | `int`, `float`         | same as operands |
+| %        | `int`                  | `int`            |
+| **       | `int`                  | `int`            |
 
 > **Note:** Division by zero using `/` or `%` is undefined behavior and may vary
 > per backend.
@@ -94,10 +94,10 @@ with the specified exit-code.
 | -------- | ------------------------------ | --------------- |
 | &&       | `bool`                         | `bool`          |
 | \|\|     | `bool`                         | `bool`          |
-| <        | `int`, `float`                 | `bool`          |
-| <=       | `int`, `float`                 | `bool`          |
-| >        | `int`, `float`                 | `bool`          |
-| >=       | `int`, `float`                 | `bool`          |
+| <        | `int`, `char`, `float`         | `bool`          |
+| <=       | `int`, `char`, `float`         | `bool`          |
+| >        | `int`, `char`, `float`         | `bool`          |
+| >=       | `int`, `char`, `float`         | `bool`          |
 | ==       | `int`, `float`, `bool`, `char` | `bool`          |
 | !=       | `int`, `float`, `bool`, `char` | `bool`          |
 
