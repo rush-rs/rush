@@ -980,6 +980,10 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                 .builder
                 .build_int_neg(base.into_int_value(), "neg")
                 .as_basic_value_enum(),
+            (Type::Int, PrefixOp::Not) => self
+                .builder
+                .build_not(base.into_int_value(), "not")
+                .as_basic_value_enum(),
             (Type::Float, PrefixOp::Neg) => self
                 .builder
                 .build_float_neg(base.into_float_value(), "neg")
