@@ -1,7 +1,4 @@
-# The rush Programming Language
-
-A simple programming language displaying different ways of program execution and
-compilation.
+# Semantic Language Specification
 
 For an overview about rush's syntax, please consult the
 [grammar](./grammar.ebnf).
