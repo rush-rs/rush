@@ -1,16 +1,16 @@
 # The rush Programming Language
 
-A simple programming language for researching different ways of program
-execution and compilation.
+A simple programming language displaying different ways of program execution and
+compilation.
 
 For an overview about rush's syntax, please consult the
 [grammar](./grammar.ebnf).
 
 ## Semantics
 
-Each rush program consists of an arbitrary amount of functions and globals. In
-order to create a valid program, the [`main`](#the-main-function) function needs
-to be declared.
+Each rush program consists of an arbitrary amount of functions and global
+variables. In order to create a valid program, the [`main`](#the-main-function)
+function needs to be declared.
 
 ### Functions
 
@@ -42,8 +42,8 @@ type value.
 fn exit(code: i32) -> !
 ```
 
-The `exit` function calls the operating system to quit program execution with
-the specified exit-code.
+The `exit` function calls the operating system, demanding to quit the program
+with the specified exit-code.
 
 ## Types
 
@@ -55,7 +55,14 @@ the specified exit-code.
 | `bool`      | true          | 1 bit  | `true` and `false`             |
 | `()` (unit) | no value      | 1 bit  | no values                      |
 
-## Operators
+## Prefix Operators
+
+| Operator | Operand Type          | Produces (Type) |
+| -------- | --------------------- | --------------- |
+| -        | `int`                 | `int`           |
+| !        | `bool`, `int`, `char` | same as operand |
+
+## Infix Operators
 
 ### Arithmetic Operators
 
@@ -67,6 +74,9 @@ the specified exit-code.
 | /        | `int`, `float` | same as operands |
 | %        | `int`          | `int`            |
 | **       | `int`          | `int`            |
+
+> **Note:** Division by zero using `/` or `%` is undefined behavior and may vary
+> per backend.
 
 ### Bitwise Operators
 
@@ -94,6 +104,9 @@ the specified exit-code.
 | ==       | `int`, `float`, `bool`, `char` | `bool`          |
 | !=       | `int`, `float`, `bool`, `char` | `bool`          |
 
+> **Note:** All logical infix operators require values of equal types on their
+> left- and right-hand sides.
+
 ## Type Cast
 
 The rush language supports conversion between types. The basic syntax looks like
@@ -102,17 +115,6 @@ this:
 ```rs
 value as type
 ```
-
-### A Note on Casting to Char
-
-When casting `int` or `float` values to char, any source value $lt 0$ is
-transformed into a `char` with the value $0$. Furthermore, if the source value
-is $\gt127$, the resulting char will have the value $127$. These limitations are
-due to chars only containing valid `ASCII` characters which lie in the range $0
-\le x \le 127$.
-
-**Note:** casting to char may involve invoking corelib functions, which may be
-expensive.
 
 ### Valid Casts
 
@@ -134,3 +136,11 @@ expensive.
 | `char`  | `int`   |                                            |
 | `char`  | `float` |                                            |
 | `char`  | `bool`  | `res` = `int(char)` != 0                   |
+
+### A Note on Casting to Char
+
+When casting `int` or `float` values to char, any source value $lt 0$ is
+transformed into a `char` with the value $0$. Furthermore, if the source value
+is $\gt127$, the resulting char will have the value $127$. These limitations are
+due to chars only containing valid `ASCII` characters which lie in the range $0
+\le x \le 127$.
