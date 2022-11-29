@@ -3,7 +3,7 @@ use std::{collections::HashMap, vec};
 use rush_analyzer::{ast::*, AssignOp};
 
 use crate::{
-    instruction::{Instruction, Type as InstructionType},
+    instruction::{Instruction, Program, Type as InstructionType},
     value::Value,
 };
 
@@ -107,7 +107,7 @@ impl<'src> Compiler<'src> {
         }
     }
 
-    pub(crate) fn compile(mut self, ast: &'src AnalyzedProgram) -> Vec<Vec<Instruction>> {
+    pub(crate) fn compile(mut self, ast: &'src AnalyzedProgram) -> Program {
         // add function signatures for later use
         for (idx, func) in ast.functions.iter().filter(|f| f.used).enumerate() {
             self.fn_names.insert(func.name, idx + 2);
@@ -130,7 +130,7 @@ impl<'src> Compiler<'src> {
             self.fn_declaration(func);
         }
 
-        self.functions
+        Program(self.functions)
     }
 
     fn declare_global(&mut self, node: &'src AnalyzedLetStmt<'src>) {
@@ -232,6 +232,17 @@ impl<'src> Compiler<'src> {
         self.curr_fn.let_cnt += 1;
     }
 
+    /// Fills in any blank-value `break` statement instructions.
+    fn fill_blank_jmps(&mut self, offset: usize) {
+        for idx in &self.curr_loop.break_jmp_indices {
+            match &mut self.functions[self.fp][*idx] {
+                Instruction::Jmp(o) => *o = offset,
+                Instruction::JmpCond(o) => *o = offset,
+                _ => unreachable!("other instructions do not jump"),
+            }
+        }
+    }
+
     fn loop_stmt(&mut self, node: &'src AnalyzedLoopStmt) {
         // save location of the loop head (for continue stmts)
         let loop_head_pos = self.functions[self.fp].len();
@@ -249,6 +260,10 @@ impl<'src> Compiler<'src> {
     }
 
     fn while_stmt(&mut self, node: &'src AnalyzedWhileStmt) {
+        // save location of the loop head (for continue stmts)
+        let loop_head_pos = self.functions[self.fp].len();
+        self.curr_loop = Loop::new(loop_head_pos);
+
         // compile the while condition
         self.expression(&node.cond);
 
@@ -257,10 +272,6 @@ impl<'src> Compiler<'src> {
             .break_jmp_indices
             .push(self.functions[self.fp].len());
         self.insert(Instruction::JmpCond(usize::MAX));
-
-        // save location of the loop head (for continue stmts)
-        let loop_head_pos = self.functions[self.fp].len();
-        self.curr_loop = Loop::new(loop_head_pos);
 
         // compile the loop body
         self.block(&node.block);
@@ -271,17 +282,6 @@ impl<'src> Compiler<'src> {
 
         // correct placeholder break values
         self.fill_blank_jmps(self.functions[self.fp].len());
-    }
-
-    /// Fills in any blank-value `break` statement instructions.
-    fn fill_blank_jmps(&mut self, offset: usize) {
-        for idx in &self.curr_loop.break_jmp_indices {
-            match &mut self.functions[self.fp][*idx] {
-                Instruction::Jmp(o) => *o = offset,
-                Instruction::JmpCond(o) => *o = offset,
-                _ => unreachable!("other instructions do not jump"),
-            }
-        }
     }
 
     fn for_stmt(&mut self, node: &'src AnalyzedForStmt) {

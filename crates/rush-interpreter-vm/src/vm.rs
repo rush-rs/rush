@@ -32,6 +32,12 @@ pub struct RuntimeError {
     pub msg: String,
 }
 
+impl Display for RuntimeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.kind, self.msg)
+    }
+}
+
 impl RuntimeError {
     pub fn new(kind: RuntimeErrorKind, msg: String) -> Self {
         Self { kind, msg }

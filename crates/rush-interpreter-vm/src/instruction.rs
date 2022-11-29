@@ -2,6 +2,33 @@ use std::fmt::Display;
 
 use rush_analyzer::{AssignOp, InfixOp, PrefixOp, Type as AnalyzerType};
 
+pub struct Program(pub Vec<Vec<Instruction>>);
+
+impl Display for Program {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let out = self
+            .0
+            .iter()
+            .enumerate()
+            .map(|(idx, f)| {
+                let label = match idx {
+                    0 => "prelude".to_string(),
+                    1 => "main".to_string(),
+                    i => i.to_string(),
+                };
+                format!(
+                    "{label}: {}\n",
+                    f.iter()
+                        .enumerate()
+                        .map(|(idx, i)| format!("\n [{idx:02}]    {i}"))
+                        .collect::<String>()
+                )
+            })
+            .collect::<String>();
+        write!(f, "{out}")
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum Type {
     Int,
