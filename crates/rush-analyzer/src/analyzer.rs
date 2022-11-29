@@ -1169,27 +1169,27 @@ impl<'src> Analyzer<'src> {
         let expr = self.expression(node.expr);
 
         let result_type = match node.op {
-            PrefixOp::Not => {
-                match expr.result_type() {
-                    Type::Bool => Type::Bool,
-                    Type::Int => Type::Int,
-                    Type::Char => Type::Char,
-                    Type::Unknown => Type::Unknown,
-                    Type::Never => {
-                        self.warn_unreachable(node.span, expr_span, true);
-                        Type::Never
-                    }
-                    _ => {
-                        self.error(
-                            ErrorKind::Type,
-                            format!("prefix operator `!` does not allow values of type `bool`, got `{}`", expr.result_type()),
-                            vec![],
-                            node.span,
-                        );
-                        Type::Unknown
-                    }
+            PrefixOp::Not => match expr.result_type() {
+                Type::Bool => Type::Bool,
+                Type::Int => Type::Int,
+                Type::Unknown => Type::Unknown,
+                Type::Never => {
+                    self.warn_unreachable(node.span, expr_span, true);
+                    Type::Never
                 }
-            }
+                _ => {
+                    self.error(
+                        ErrorKind::Type,
+                        format!(
+                            "prefix operator `!` does not allow values of type `{}`",
+                            expr.result_type()
+                        ),
+                        vec![],
+                        node.span,
+                    );
+                    Type::Unknown
+                }
+            },
             PrefixOp::Neg => match expr.result_type() {
                 Type::Bool | Type::Char | Type::Unit => {
                     self.error(
@@ -1219,9 +1219,6 @@ impl<'src> Analyzer<'src> {
             (AnalyzedExpression::Bool(bool), PrefixOp::Not) => {
                 return AnalyzedExpression::Bool(!bool)
             }
-            (AnalyzedExpression::Char(num), PrefixOp::Not) => {
-                return AnalyzedExpression::Char(!num & 0x7F)
-            }
             _ => {}
         }
 
@@ -1245,11 +1242,14 @@ impl<'src> Analyzer<'src> {
         let mut override_result_type = None;
         let mut inherits_never_type = true;
         match node.op {
-            InfixOp::Plus | InfixOp::Minus | InfixOp::Mul | InfixOp::Div => {
+            InfixOp::Plus | InfixOp::Minus => {
+                allowed_types = &[Type::Int, Type::Char, Type::Float];
+            }
+            InfixOp::Mul | InfixOp::Div => {
                 allowed_types = &[Type::Int, Type::Float];
             }
             InfixOp::Lt | InfixOp::Gt | InfixOp::Lte | InfixOp::Gte => {
-                allowed_types = &[Type::Int, Type::Float];
+                allowed_types = &[Type::Int, Type::Char, Type::Float];
                 override_result_type = Some(Type::Bool);
             }
             InfixOp::Rem | InfixOp::Shl | InfixOp::Shr | InfixOp::Pow => {
@@ -1317,6 +1317,7 @@ impl<'src> Analyzer<'src> {
         };
 
         // evaluate constant expressions
+        // TODO: const char eval
         match (&lhs, &rhs) {
             (AnalyzedExpression::Int(left), AnalyzedExpression::Int(right)) => match node.op {
                 InfixOp::Plus => return AnalyzedExpression::Int(left.wrapping_add(*right)),
@@ -1340,7 +1341,7 @@ impl<'src> Analyzer<'src> {
                     return AnalyzedExpression::Int(if *right < 0 {
                         0
                     } else {
-                        left.wrapping_pow(*right as u32)
+                        left.wrapping_pow((*right).try_into().unwrap_or(u32::MAX))
                     })
                 }
                 InfixOp::Eq => return AnalyzedExpression::Bool(left == right),
