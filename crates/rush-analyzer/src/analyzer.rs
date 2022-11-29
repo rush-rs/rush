@@ -1340,7 +1340,7 @@ impl<'src> Analyzer<'src> {
                     return AnalyzedExpression::Int(if *right < 0 {
                         0
                     } else {
-                        left.pow(*right as u32)
+                        left.wrapping_pow(*right as u32)
                     })
                 }
                 InfixOp::Eq => return AnalyzedExpression::Bool(left == right),
