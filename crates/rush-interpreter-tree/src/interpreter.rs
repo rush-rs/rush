@@ -1,4 +1,4 @@
-use std::{cell::Cell, collections::HashMap, process, rc::Rc};
+use std::{borrow::Cow, cell::Cell, collections::HashMap, process, rc::Rc};
 
 use rush_analyzer::{ast::*, AssignOp, InfixOp, PrefixOp, Type};
 
@@ -19,7 +19,7 @@ impl<'src> Interpreter<'src> {
         Self::default()
     }
 
-    pub fn run(mut self, tree: AnalyzedProgram<'src>) {
+    pub fn run(mut self, tree: AnalyzedProgram<'src>) -> Result<(), Cow<'static, str>> {
         for func in tree.functions.into_iter().filter(|f| f.used) {
             self.functions.insert(func.name, func.into());
         }
@@ -52,7 +52,10 @@ impl<'src> Interpreter<'src> {
         );
 
         // ignore interruptions (e.g. break, return)
-        let _ = self.call_func("main", vec![]);
+        match self.call_func("main", vec![]) {
+            Err(InterruptKind::Error(msg)) => Err(msg),
+            Ok(_) | Err(_) => Ok(()),
+        }
     }
 
     //////////////////////////////////
@@ -68,7 +71,7 @@ impl<'src> Interpreter<'src> {
 
     //////////////////////////////////
 
-    fn call_func(&mut self, func_name: &'src str, args: Vec<Value>) -> Value {
+    fn call_func(&mut self, func_name: &'src str, args: Vec<Value>) -> ExprResult {
         if func_name == "exit" {
             process::exit(args[0].unwrap_int() as i32);
         }
@@ -83,10 +86,10 @@ impl<'src> Interpreter<'src> {
         self.scopes.push(scope);
         let res = match self.visit_block(&func.block, false) {
             Ok(val) => val,
-            Err(interrupt) => interrupt.into_value(),
+            Err(interrupt) => interrupt.into_value()?,
         };
         self.scopes.pop();
-        res
+        Ok(res)
     }
 
     fn visit_block(&mut self, node: &AnalyzedBlock<'src>, new_scope: bool) -> ExprResult {
@@ -246,8 +249,8 @@ impl<'src> Interpreter<'src> {
             InfixOp::Plus => Ok(lhs + rhs),
             InfixOp::Minus => Ok(lhs - rhs),
             InfixOp::Mul => Ok(lhs * rhs),
-            InfixOp::Div => Ok(lhs / rhs),
-            InfixOp::Rem => Ok(lhs % rhs),
+            InfixOp::Div => Ok((lhs / rhs)?),
+            InfixOp::Rem => Ok((lhs % rhs)?),
             InfixOp::Pow => Ok(lhs.pow(rhs)),
             InfixOp::Eq => Ok((lhs == rhs).into()),
             InfixOp::Neq => Ok((lhs != rhs).into()),
@@ -255,8 +258,8 @@ impl<'src> Interpreter<'src> {
             InfixOp::Gt => Ok((lhs > rhs).into()),
             InfixOp::Lte => Ok((lhs <= rhs).into()),
             InfixOp::Gte => Ok((lhs >= rhs).into()),
-            InfixOp::Shl => Ok(lhs << rhs),
-            InfixOp::Shr => Ok(lhs >> rhs),
+            InfixOp::Shl => Ok((lhs << rhs)?),
+            InfixOp::Shr => Ok((lhs >> rhs)?),
             InfixOp::BitOr => Ok(lhs | rhs),
             InfixOp::BitAnd => Ok(lhs & rhs),
             InfixOp::BitXor => Ok(lhs ^ rhs),
@@ -272,11 +275,11 @@ impl<'src> Interpreter<'src> {
             AssignOp::Plus => rhs + var.get(),
             AssignOp::Minus => rhs - var.get(),
             AssignOp::Mul => rhs * var.get(),
-            AssignOp::Div => rhs / var.get(),
-            AssignOp::Rem => rhs % var.get(),
+            AssignOp::Div => (rhs / var.get())?,
+            AssignOp::Rem => (rhs % var.get())?,
             AssignOp::Pow => rhs.pow(var.get()),
-            AssignOp::Shl => rhs << var.get(),
-            AssignOp::Shr => rhs >> var.get(),
+            AssignOp::Shl => (rhs << var.get())?,
+            AssignOp::Shr => (rhs >> var.get())?,
             AssignOp::BitOr => rhs | var.get(),
             AssignOp::BitAnd => rhs & var.get(),
             AssignOp::BitXor => rhs ^ var.get(),
@@ -292,7 +295,7 @@ impl<'src> Interpreter<'src> {
             .iter()
             .map(|expr| self.visit_expression(expr))
             .collect::<Result<_, _>>()?;
-        Ok(self.call_func(node.func, args))
+        self.call_func(node.func, args)
     }
 
     fn visit_cast_expr(&mut self, node: &AnalyzedCastExpr<'src>) -> ExprResult {

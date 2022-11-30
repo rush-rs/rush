@@ -68,25 +68,25 @@ impl Mul for Value {
 }
 
 impl Div for Value {
-    type Output = Self;
+    type Output = Result<Self, &'static str>;
 
     fn div(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
-            (_, Value::Int(0)) => panic!("division by zero"), // TODO: don't panic
-            (Value::Int(left), Value::Int(right)) => left.wrapping_div(right).into(),
-            (Value::Float(left), Value::Float(right)) => (left / right).into(),
+            (_, Value::Int(0)) => Err("division by zero"),
+            (Value::Int(left), Value::Int(right)) => Ok(left.wrapping_div(right).into()),
+            (Value::Float(left), Value::Float(right)) => Ok((left / right).into()),
             _ => unreachable!("the analyzer guarantees one of the above to match"),
         }
     }
 }
 
 impl Rem for Value {
-    type Output = Self;
+    type Output = Result<Self, &'static str>;
 
     fn rem(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
-            (_, Value::Int(0)) => panic!("division by zero"), // TODO: don't panic
-            (Value::Int(left), Value::Int(right)) => left.wrapping_rem(right).into(),
+            (_, Value::Int(0)) => Err("division by zero"),
+            (Value::Int(left), Value::Int(right)) => Ok(left.wrapping_rem(right).into()),
             _ => unreachable!("the analyzer guarantees one of the above to match"),
         }
     }
@@ -116,30 +116,28 @@ impl PartialOrd for Value {
 }
 
 impl Shl for Value {
-    type Output = Self;
+    type Output = Result<Self, String>;
 
     fn shl(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
-            (Value::Int(_), Value::Int(right)) if !(0..=63).contains(&right) => {
-                // TODO: don't panic
-                panic!("undefined shl")
-            }
-            (Value::Int(left), Value::Int(right)) => left.shl(right).into(),
+            (Value::Int(_), Value::Int(right)) if !(0..=63).contains(&right) => Err(format!(
+                "tried to shift left by {right}, which is outside `0..=63`"
+            )),
+            (Value::Int(left), Value::Int(right)) => Ok(left.shl(right).into()),
             _ => unreachable!("the analyzer guarantees one of the above to match"),
         }
     }
 }
 
 impl Shr for Value {
-    type Output = Self;
+    type Output = Result<Self, String>;
 
     fn shr(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
-            (Value::Int(_), Value::Int(right)) if !(0..=63).contains(&right) => {
-                // TODO: don't panic
-                panic!("undefined shr")
-            }
-            (Value::Int(left), Value::Int(right)) => left.shr(right).into(),
+            (Value::Int(_), Value::Int(right)) if !(0..=63).contains(&right) => Err(format!(
+                "tried to shift right by {right}, which is outside `0..=63`"
+            )),
+            (Value::Int(left), Value::Int(right)) => Ok(left.shr(right).into()),
             _ => unreachable!("the analyzer guarantees one of the above to match"),
         }
     }

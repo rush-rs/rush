@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Value {
     Int(i64),
@@ -12,14 +14,25 @@ pub enum InterruptKind {
     Return(Value),
     Break,
     Continue,
+    Error(Cow<'static, str>),
 }
 
 impl InterruptKind {
-    pub fn into_value(self) -> Value {
+    pub fn into_value(self) -> Result<Value, InterruptKind> {
         match self {
-            Self::Return(val) => val,
-            _ => Value::Unit,
+            Self::Return(val) => Ok(val),
+            err @ Self::Error(_) => Err(err),
+            _ => Ok(Value::Unit),
         }
+    }
+}
+
+impl<S> From<S> for InterruptKind
+where
+    S: Into<Cow<'static, str>>,
+{
+    fn from(msg: S) -> Self {
+        Self::Error(msg.into())
     }
 }
 
