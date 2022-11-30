@@ -951,11 +951,15 @@ impl<'src> Compiler<'src> {
                 // mark the rhs register as used
                 self.use_reg(rhs_reg, Size::from(rhs_type));
 
-                let res = self.infix_helper(lhs_reg, rhs_reg, node.op, lhs_type);
-
                 // release the usage block of the operands
                 self.release_reg(lhs_reg);
                 self.release_reg(rhs_reg);
+
+                let res = self.infix_helper(lhs_reg, rhs_reg, node.op, lhs_type);
+
+                // TODO: if this is broken, release the operands here
+                // self.release_reg(lhs_reg);
+                // self.release_reg(rhs_reg);
 
                 Some(res)
             }

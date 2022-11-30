@@ -86,7 +86,9 @@ impl<'src> Compiler<'src> {
         self.insert(Instruction::Ret);
     }
 
-    // TODO: document + refactor this function
+    /// Compiles an [`AnalyzedCallExpr`].
+    /// Prior to calling the target function, all currently used registers are saved on the stack.
+    /// After the call has been performed, all previously saved registers are restored from memory.
     pub(crate) fn call_expr(&mut self, node: &'src AnalyzedCallExpr) -> Option<Register> {
         // before the function is called, all currently used registers are saved
         let mut regs_on_stack = vec![];
@@ -168,10 +170,11 @@ impl<'src> Compiler<'src> {
                             // TODO: try to remove this move
                             // if the reg from the expr is not the expected one, move it
                             if curr_reg.to_reg() != res_reg {
-                                self.insert_w_comment(
+                                unreachable!("this edge case should never happen");
+                                /* self.insert_w_comment(
                                     Instruction::Mov(curr_reg, res_reg.into()),
                                     format!("{res_reg} not expected {curr_reg}"),
-                                )
+                                ) */
                             }
                         }
                         None => {
@@ -200,11 +203,13 @@ impl<'src> Compiler<'src> {
                             self.use_reg(curr_reg.to_reg(), Size::Dword);
 
                             // if the reg from the expr is not the expected one, move it
+                            // TODO: remove this
                             if curr_reg.to_reg() != res_reg {
-                                self.insert_w_comment(
+                                unreachable!("this edge case should never happen");
+                                /* self.insert_w_comment(
                                     Instruction::Fmv(curr_reg, res_reg.into()),
                                     format!("{res_reg} not expected {curr_reg}"),
-                                )
+                                ) */
                             }
                         }
                         None => {
