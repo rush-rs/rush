@@ -154,7 +154,11 @@ impl<'src> Compiler<'src> {
                 Type::Unit | Type::Never => continue,
                 Type::Int | Type::Bool | Type::Char => {
                     let type_ = arg.result_type();
-                    let res_reg = self.expression(arg).expect("filtered out above");
+
+                    let res_reg = match self.expression(arg) {
+                        Some(reg) => reg,
+                        None => continue,
+                    };
 
                     match IntRegister::nth_param(int_cnt) {
                         Some(curr_reg) => {

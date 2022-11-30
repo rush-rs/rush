@@ -1,0 +1,17 @@
+let mut count = 0;
+
+let true_ = true;
+let false_ = false;
+
+fn main() {
+        count += (true_ || false_ || increments_count()) as int; // += 1
+        count += (false_ | false_) as int; // += 0
+        count += (true_ | true_) as int; // += 1
+        count += (false_ | increments_count() | false_ | true_) as int; // += 2
+        exit(count); // 4
+}
+
+fn increments_count() -> bool {
+    count += 1;
+    false
+}

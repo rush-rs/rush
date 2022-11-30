@@ -591,11 +591,14 @@ impl<'src> Compiler<'src> {
         let type_ = node.expr.result_type();
 
         // filter out any unit / never types
-        if matches!(type_, Type::Unit | Type::Never) {
-            // unit / never type: insert a dummy variable into the HashMap
-            self.scope_mut().insert(node.name, Variable::unit());
-            return;
-        }
+        let rhs_reg = match self.expression(&node.expr) {
+            Some(reg) => reg,
+            None => {
+                // unit / never type: insert a dummy variable into the HashMap
+                self.scope_mut().insert(node.name, Variable::unit());
+                return;
+            }
+        };
 
         // alignment and offset calculation
         let size = Size::from(type_).byte_count();
@@ -603,7 +606,6 @@ impl<'src> Compiler<'src> {
         self.curr_fn_mut().stack_allocs += size as i64;
         let offset = -self.curr_fn().stack_allocs as i64 - 16;
 
-        let rhs_reg = self.expression(&node.expr).expect("unit filtered above");
         let comment = format!("let {} = {rhs_reg}", node.name,);
         match rhs_reg {
             Register::Int(reg) => match type_ {
@@ -744,15 +746,15 @@ impl<'src> Compiler<'src> {
                 None => return,
             },
             _ => {
+                // compile the rhs
+                let Some(rhs) = self.expression(&node.expr) else {return };
+                self.use_reg(rhs, Size::from(rhs_type));
+
                 // load value from the lhs
                 let lhs = self
                     .load_value_from_variable(assignee.clone())
                     .expect("filtered above");
                 self.use_reg(lhs, Size::from(assignee.type_));
-
-                // compile the rhs
-                let Some(rhs) = self.expression(&node.expr) else {return };
-                self.use_reg(rhs, Size::from(rhs_type));
 
                 // perform pre-assign operation using the infix helper
                 let res = self.infix_helper(lhs, rhs, InfixOp::from(node.op), assignee.type_);
@@ -859,24 +861,105 @@ impl<'src> Compiler<'src> {
     /// Compiles an [`AnalyzedInfixExpr`].
     /// After compiling the lhs and rhs, the `infix_helper` is invoked.
     fn infix_expr(&mut self, node: &'src AnalyzedInfixExpr) -> Option<Register> {
-        let lhs_type = node.lhs.result_type();
+        match (node.lhs.result_type(), node.op) {
+            (Type::Bool, InfixOp::Or) => {
+                // compile the lhs (initial expression)
+                let lhs_cond = self.expression(&node.lhs)?;
 
-        let lhs_reg = self.expression(&node.lhs)?;
-        // mark the lhs register as used
-        self.use_reg(lhs_reg, Size::from(lhs_type));
+                let merge_block = self.append_block("merge");
 
-        let rhs_type = node.rhs.result_type();
-        let rhs_reg = self.expression(&node.rhs)?;
-        // mark the rhs register as used
-        self.use_reg(rhs_reg, Size::from(rhs_type));
+                // jump to the merge block if the lhs is true
+                self.insert_w_comment(
+                    Instruction::BrCond(
+                        Condition::Ne,
+                        lhs_cond.into(),
+                        IntRegister::Zero,
+                        merge_block.clone(),
+                    ),
+                    "||".to_string(),
+                );
 
-        let res = self.infix_helper(lhs_reg, rhs_reg, node.op, lhs_type);
+                // compile the rhs
+                let rhs = self.expression(&node.rhs);
 
-        // release the usage block of the operands
-        self.release_reg(lhs_reg);
-        self.release_reg(rhs_reg);
+                // if the rhs does not match the lhs, move the rhs into the lhs
+                // TODO: is this nessecary?
+                match (lhs_cond, rhs) {
+                    (Register::Int(lhs), Some(Register::Int(rhs))) if lhs == rhs => {}
+                    (Register::Int(lhs), Some(Register::Int(rhs))) => {
+                        self.insert(Instruction::Mov(lhs, rhs))
+                    }
+                    (Register::Float(lhs), Some(Register::Float(rhs))) if lhs == rhs => {}
+                    (Register::Float(lhs), Some(Register::Float(rhs))) => {
+                        self.insert(Instruction::Fmv(lhs, rhs))
+                    }
+                    (_, None) => {}
+                    _ => unreachable!("lhs and rhs are always the same type"),
+                }
 
-        Some(res)
+                self.insert_at(&merge_block);
+
+                Some(lhs_cond)
+            }
+            (Type::Bool, InfixOp::And) => {
+                // compile the lhs (initial expression)
+                let lhs_cond = self.expression(&node.lhs)?;
+
+                let merge_block = self.append_block("merge");
+
+                // jump to the merge block directly
+                self.insert_w_comment(
+                    Instruction::BrCond(
+                        Condition::Eq,
+                        lhs_cond.into(),
+                        IntRegister::Zero,
+                        merge_block.clone(),
+                    ),
+                    "&&".to_string(),
+                );
+
+                // compile the rhs
+                let rhs = self.expression(&node.rhs);
+
+                // if the rhs does not match the lhs, move the rhs into the lhs
+                // TODO: is this nessecary?
+                match (lhs_cond, rhs) {
+                    (Register::Int(lhs), Some(Register::Int(rhs))) if lhs == rhs => {}
+                    (Register::Int(lhs), Some(Register::Int(rhs))) => {
+                        self.insert(Instruction::Mov(lhs, rhs))
+                    }
+                    (Register::Float(lhs), Some(Register::Float(rhs))) if lhs == rhs => {}
+                    (Register::Float(lhs), Some(Register::Float(rhs))) => {
+                        self.insert(Instruction::Fmv(lhs, rhs))
+                    }
+                    _ => unreachable!("lhs and rhs are always the same type"),
+                }
+
+                self.insert_at(&merge_block);
+
+                Some(lhs_cond)
+            }
+            _ => {
+                let lhs_type = node.lhs.result_type();
+
+                let lhs_reg = self.expression(&node.lhs)?;
+                // mark the lhs register as used
+                self.use_reg(lhs_reg, Size::from(lhs_type));
+
+                let rhs_type = node.rhs.result_type();
+                let rhs_reg = self.expression(&node.rhs)?;
+                // mark the rhs register as used
+                self.use_reg(rhs_reg, Size::from(rhs_type));
+
+                let res = self.infix_helper(lhs_reg, rhs_reg, node.op, lhs_type);
+
+                // release the usage block of the operands
+                self.release_reg(lhs_reg);
+                self.release_reg(rhs_reg);
+
+                Some(res)
+            }
+        }
     }
 
     /// Helper function which handles infix expressions.
