@@ -1,0 +1,8 @@
+fn main() {
+    let true_ = true;
+    let false_ = false;
+    let mut count = 0;
+    count += (true_ && (false_ || false_)) as int; // += 1
+    exit(count);
+}
+
