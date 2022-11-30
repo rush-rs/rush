@@ -883,7 +883,7 @@ impl<'src> Compiler<'src> {
                 let rhs = self.expression(&node.rhs);
 
                 // if the rhs does not match the lhs, move the rhs into the lhs
-                // TODO: is this nessecary?
+                // TODO: is this necessary?
                 match (lhs_cond, rhs) {
                     (Register::Int(lhs), Some(Register::Int(rhs))) if lhs == rhs => {}
                     (Register::Int(lhs), Some(Register::Int(rhs))) => {
@@ -922,7 +922,7 @@ impl<'src> Compiler<'src> {
                 let rhs = self.expression(&node.rhs);
 
                 // if the rhs does not match the lhs, move the rhs into the lhs
-                // TODO: is this nessecary?
+                // TODO: is this necessary?
                 match (lhs_cond, rhs) {
                     (Register::Int(lhs), Some(Register::Int(rhs))) if lhs == rhs => {}
                     (Register::Int(lhs), Some(Register::Int(rhs))) => {
@@ -970,11 +970,11 @@ impl<'src> Compiler<'src> {
         let dest_regf = self.alloc_freg();
 
         match (type_, op) {
-            (Type::Int, InfixOp::Plus) => {
+            (Type::Int | Type::Char, InfixOp::Plus) => {
                 self.insert(Instruction::Add(dest_regi, lhs.into(), rhs.into()));
                 dest_regi.into()
             }
-            (Type::Int, InfixOp::Minus) => {
+            (Type::Int | Type::Char, InfixOp::Minus) => {
                 self.insert(Instruction::Sub(dest_regi, lhs.into(), rhs.into()));
                 dest_regi.into()
             }
