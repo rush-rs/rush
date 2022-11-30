@@ -560,6 +560,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rush-interpreter-tree"
+version = "0.1.0"
+dependencies = [
+ "rush-analyzer",
+]
+
+[[package]]
 name = "rush-interpreter-vm"
 version = "0.1.0"
 dependencies = [
