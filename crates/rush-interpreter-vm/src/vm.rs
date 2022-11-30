@@ -117,7 +117,7 @@ impl Vm {
             let instruction = &program[self.call_frame().fp][self.call_frame().ip];
 
             println!(
-                "[{:02}/{:02}] {:10} | {:20} | {}",
+                "[{:02}/{:02}] {:12} | {:20} | {}",
                 self.call_frame().fp,
                 self.call_frame().ip,
                 instruction.to_string(),
@@ -172,7 +172,7 @@ impl Vm {
                 self.call_frame_mut().ip = *idx;
                 return Ok(None);
             }
-            Instruction::JmpCond(idx) => {
+            Instruction::JmpFalse(idx) => {
                 // if the value on the stack is `false`, perform the jump
                 if !self.pop().into_bool() {
                     self.call_frame_mut().ip = *idx;

@@ -8,7 +8,11 @@ fn main() {
         count += (false_ | false_) as int; // += 0
         count += (true_ | true_) as int; // += 1
         count += (false_ | increments_count() | false_ | true_) as int; // += 2
-        exit(count); // 4
+        count += (false_ && false_) as int; // += 0
+        count += (false_ && true_ && false_) as int; // += 0
+        count += (true_ && true_ && true_) as int; // += 1
+        count += (true_ && true_ && (false_ || true_ || increments_count())) as int; // += 1
+        exit(count); // 6
 }
 
 fn increments_count() -> bool {

@@ -1,6 +1,6 @@
 use std::{collections::HashMap, vec};
 
-use rush_analyzer::{ast::*, AssignOp};
+use rush_analyzer::{ast::*, AssignOp, InfixOp};
 
 use crate::{
     instruction::{Instruction, Program, Type as InstructionType},
@@ -237,7 +237,7 @@ impl<'src> Compiler<'src> {
         for idx in &self.curr_loop.break_jmp_indices {
             match &mut self.functions[self.fp][*idx] {
                 Instruction::Jmp(o) => *o = offset,
-                Instruction::JmpCond(o) => *o = offset,
+                Instruction::JmpFalse(o) => *o = offset,
                 _ => unreachable!("other instructions do not jump"),
             }
         }
@@ -271,7 +271,7 @@ impl<'src> Compiler<'src> {
         self.curr_loop
             .break_jmp_indices
             .push(self.functions[self.fp].len());
-        self.insert(Instruction::JmpCond(usize::MAX));
+        self.insert(Instruction::JmpFalse(usize::MAX));
 
         // compile the loop body
         self.block(&node.block);
@@ -303,7 +303,7 @@ impl<'src> Compiler<'src> {
         self.curr_loop
             .break_jmp_indices
             .push(self.functions[self.fp].len());
-        self.insert(Instruction::JmpCond(usize::MAX));
+        self.insert(Instruction::JmpFalse(usize::MAX));
 
         // compile the loop body
         for stmt in &node.block.stmts {
@@ -360,7 +360,7 @@ impl<'src> Compiler<'src> {
         // insert the jump (skip the then block)
         self.functions[self.fp].insert(
             after_condition + 1,
-            Instruction::JmpCond(after_then_idx + 3),
+            Instruction::JmpFalse(after_then_idx + 3),
         );
 
         if let Some(else_block) = &node.else_block {
@@ -376,16 +376,37 @@ impl<'src> Compiler<'src> {
     }
 
     fn infix_expr(&mut self, node: &'src AnalyzedInfixExpr) {
-        self.expression(&node.lhs);
-        self.expression(&node.rhs);
-        self.insert(Instruction::from(node.op));
+        match node.op {
+            InfixOp::Or => {
+                self.expression(&node.lhs);
+                let merge_jmp_idx = self.functions[self.fp].len();
+                self.insert(Instruction::JmpFalse(usize::MAX));
+                self.expression(&node.rhs);
+                self.functions[self.fp][merge_jmp_idx] =
+                    Instruction::JmpFalse(self.functions[self.fp].len() - 1);
+            }
+            InfixOp::And => {
+                self.expression(&node.lhs);
+                self.insert(Instruction::Not);
+                let merge_jmp_idx = self.functions[self.fp].len();
+                self.insert(Instruction::JmpFalse(usize::MAX));
+                self.expression(&node.rhs);
+                self.functions[self.fp][merge_jmp_idx] =
+                    Instruction::JmpFalse(self.functions[self.fp].len() - 1);
+            }
+            op => {
+                self.expression(&node.lhs);
+                self.expression(&node.rhs);
+                self.insert(Instruction::from(op));
+            }
+        }
     }
 
     fn assign_expr(&mut self, node: &'src AnalyzedAssignExpr) {
         if node.op != AssignOp::Basic {
             // load the assignee value
-            self.load_var(node.assignee);
             self.expression(&node.expr);
+            self.load_var(node.assignee);
             self.insert(Instruction::from(node.op))
         } else {
             self.expression(&node.expr);

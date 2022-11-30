@@ -80,7 +80,7 @@ pub enum Instruction {
     /// Jumps to the specified index.
     Jmp(usize),
     /// Jumps to the specified index if the value on the stack is `false`.
-    JmpCond(usize),
+    JmpFalse(usize),
     /// Pops the top element off the stack and binds it to the specified number.
     SetVar(usize),
     /// Retrieves the variable with the specified index and places it on top of the stack.
@@ -178,7 +178,7 @@ impl Display for Instruction {
             Instruction::Push(val) => write!(f, "push {val}"),
             Instruction::Pop => write!(f, "pop"),
             Instruction::Jmp(idx) => write!(f, "jmp {idx}"),
-            Instruction::JmpCond(idx) => write!(f, "jmpcond {idx}"),
+            Instruction::JmpFalse(idx) => write!(f, "jmpfalse {idx}"),
             Instruction::SetVar(idx) => write!(f, "setvar {idx}"),
             Instruction::GetVar(idx) => write!(f, "getvar {idx}"),
             Instruction::SetGlob(idx) => write!(f, "setglob {idx}"),
