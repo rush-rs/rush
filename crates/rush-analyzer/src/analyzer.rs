@@ -1317,8 +1317,18 @@ impl<'src> Analyzer<'src> {
         };
 
         // evaluate constant expressions
-        // TODO: const char eval
         match (&lhs, &rhs) {
+            (AnalyzedExpression::Char(left), AnalyzedExpression::Char(right)) => match node.op {
+                InfixOp::Plus => return AnalyzedExpression::Char(left.wrapping_add(*right)),
+                InfixOp::Minus => return AnalyzedExpression::Char(left.wrapping_sub(*right)),
+                InfixOp::Eq => return AnalyzedExpression::Bool(left == right),
+                InfixOp::Neq => return AnalyzedExpression::Bool(left != right),
+                InfixOp::Lt => return AnalyzedExpression::Bool(left < right),
+                InfixOp::Lte => return AnalyzedExpression::Bool(left <= right),
+                InfixOp::Gt => return AnalyzedExpression::Bool(left > right),
+                InfixOp::Gte => return AnalyzedExpression::Bool(left >= right),
+                _ => {}
+            },
             (AnalyzedExpression::Int(left), AnalyzedExpression::Int(right)) => match node.op {
                 InfixOp::Plus => return AnalyzedExpression::Int(left.wrapping_add(*right)),
                 InfixOp::Minus => return AnalyzedExpression::Int(left.wrapping_sub(*right)),
@@ -1396,15 +1406,6 @@ impl<'src> Analyzer<'src> {
                 InfixOp::BitXor => return AnalyzedExpression::Bool(left ^ right),
                 InfixOp::And => return AnalyzedExpression::Bool(*left && *right),
                 InfixOp::Or => return AnalyzedExpression::Bool(*left || *right),
-                _ => {}
-            },
-            (AnalyzedExpression::Char(left), AnalyzedExpression::Char(right)) => match node.op {
-                InfixOp::Eq => return AnalyzedExpression::Bool(left == right),
-                InfixOp::Neq => return AnalyzedExpression::Bool(left != right),
-                InfixOp::Lt => return AnalyzedExpression::Bool(left < right),
-                InfixOp::Gt => return AnalyzedExpression::Bool(left > right),
-                InfixOp::Lte => return AnalyzedExpression::Bool(left <= right),
-                InfixOp::Gte => return AnalyzedExpression::Bool(left >= right),
                 _ => {}
             },
             _ => {}
