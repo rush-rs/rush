@@ -997,24 +997,20 @@ impl<'src> Compiler<'src> {
                 self.insert(Instruction::Neg(dest_reg, lhs_reg.into()));
                 Some(dest_reg.to_reg())
             }
-            (Type::Int, PrefixOp::Not) => {
-                let dest_reg = self.alloc_ireg();
-                self.insert(Instruction::Not(dest_reg, lhs_reg.into()));
+            (Type::Float, PrefixOp::Neg) => {
+                let dest_reg = self.alloc_freg();
+                self.insert(Instruction::FNeg(dest_reg, lhs_reg.into()));
                 Some(dest_reg.to_reg())
             }
-            (Type::Char, PrefixOp::Not) => {
+            (Type::Int, PrefixOp::Not) => {
                 let dest_reg = self.alloc_ireg();
                 self.insert(Instruction::Not(dest_reg, lhs_reg.into()));
                 Some(dest_reg.to_reg())
             }
             (Type::Bool, PrefixOp::Not) => {
                 let dest_reg = self.alloc_ireg();
+                // TODO: use not?
                 self.insert(Instruction::Seqz(dest_reg, lhs_reg.into()));
-                Some(dest_reg.to_reg())
-            }
-            (Type::Float, PrefixOp::Neg) => {
-                let dest_reg = self.alloc_freg();
-                self.insert(Instruction::FNeg(dest_reg, lhs_reg.into()));
                 Some(dest_reg.to_reg())
             }
             _ => unreachable!("other combinations cannot occur in prefix expressions"),

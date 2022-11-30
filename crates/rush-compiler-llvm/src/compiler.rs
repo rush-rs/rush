@@ -789,7 +789,9 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                 }
                 .as_basic_value_enum()
             }
-            Type::Int => {
+            // even if some combinations are invalid, this is OK because the analyzer prevents
+            // illegal cases.
+            Type::Int | Type::Char | Type::Bool => {
                 let lhs = lhs.into_int_value();
                 let rhs = rhs.into_int_value();
                 match op {
@@ -820,42 +822,6 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                             .build_int_compare(op, lhs, rhs, label)
                             .as_basic_value_enum();
                     }
-                }
-                .as_basic_value_enum()
-            }
-            Type::Char => {
-                let lhs = lhs.into_int_value();
-                let rhs = rhs.into_int_value();
-                match op {
-                    InfixOp::Eq => {
-                        self.builder
-                            .build_int_compare(IntPredicate::EQ, lhs, rhs, "c_eq")
-                    }
-                    InfixOp::Neq => {
-                        self.builder
-                            .build_int_compare(IntPredicate::EQ, lhs, rhs, "c_eq")
-                    }
-                    _ => unreachable!("other operators cannot be used on char"),
-                }
-                .as_basic_value_enum()
-            }
-            Type::Bool => {
-                let lhs = lhs.into_int_value();
-                let rhs = rhs.into_int_value();
-                match op {
-                    // InfixOp::Or | InfixOp::And => handled in `compile_infix_expression`
-                    InfixOp::Eq => {
-                        self.builder
-                            .build_int_compare(IntPredicate::EQ, lhs, rhs, "b_eq")
-                    }
-                    InfixOp::Neq => {
-                        self.builder
-                            .build_int_compare(IntPredicate::NE, lhs, rhs, "b_neq")
-                    }
-                    InfixOp::BitOr => self.builder.build_or(lhs, rhs, "b_or"),
-                    InfixOp::BitAnd => self.builder.build_and(lhs, rhs, "b_and"),
-                    InfixOp::BitXor => self.builder.build_xor(lhs, rhs, "b_xor"),
-                    _ => unreachable!("other operators cannot be used on bool"),
                 }
                 .as_basic_value_enum()
             }
