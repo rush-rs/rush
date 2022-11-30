@@ -9,15 +9,15 @@ use rush_analyzer::Diagnostic;
 pub use value::*;
 
 /// Interprets rush source code by walking the analyzed tree.
-/// The `Ok(_)` variant returns non-error diagnostics.
+/// The `Ok(_)` variant returns the exit code and non-error diagnostics.
 /// The `Err(_)` variant returns a `Vec<Diagnostic>` which contains at least one error.
 pub fn run<'src>(
     text: &'src str,
     path: &'src str,
-) -> Result<Vec<Diagnostic<'src>>, RunError<'src>> {
+) -> Result<(i64, Vec<Diagnostic<'src>>), RunError<'src>> {
     let (tree, diagnostics) = rush_analyzer::analyze(text, path)?;
-    Interpreter::new().run(tree)?;
-    Ok(diagnostics)
+    let code = Interpreter::new().run(tree)?;
+    Ok((code, diagnostics))
 }
 
 pub enum RunError<'src> {

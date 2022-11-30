@@ -15,13 +15,14 @@ pub enum InterruptKind {
     Break,
     Continue,
     Error(Cow<'static, str>),
+    Exit(i64),
 }
 
 impl InterruptKind {
     pub fn into_value(self) -> Result<Value, InterruptKind> {
         match self {
             Self::Return(val) => Ok(val),
-            err @ Self::Error(_) => Err(err),
+            err @ (Self::Error(_) | Self::Exit(_)) => Err(err),
             _ => Ok(Value::Unit),
         }
     }
