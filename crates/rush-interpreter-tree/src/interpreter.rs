@@ -1,4 +1,4 @@
-use std::{borrow::Cow, cell::Cell, collections::HashMap, process, rc::Rc};
+use std::{borrow::Cow, cell::Cell, collections::HashMap, rc::Rc};
 
 use rush_analyzer::{ast::*, AssignOp, InfixOp, PrefixOp, Type};
 
@@ -19,7 +19,7 @@ impl<'src> Interpreter<'src> {
         Self::default()
     }
 
-    pub fn run(mut self, tree: AnalyzedProgram<'src>) -> Result<(), Cow<'static, str>> {
+    pub fn run(mut self, tree: AnalyzedProgram<'src>) -> Result<i64, Cow<'static, str>> {
         for func in tree.functions.into_iter().filter(|f| f.used) {
             self.functions.insert(func.name, func.into());
         }
@@ -54,7 +54,8 @@ impl<'src> Interpreter<'src> {
         // ignore interruptions (e.g. break, return)
         match self.call_func("main", vec![]) {
             Err(InterruptKind::Error(msg)) => Err(msg),
-            Ok(_) | Err(_) => Ok(()),
+            Err(InterruptKind::Exit(code)) => Ok(code),
+            Ok(_) | Err(_) => Ok(0),
         }
     }
 
@@ -73,7 +74,7 @@ impl<'src> Interpreter<'src> {
 
     fn call_func(&mut self, func_name: &'src str, args: Vec<Value>) -> ExprResult {
         if func_name == "exit" {
-            process::exit(args[0].unwrap_int() as i32);
+            return Err(InterruptKind::Exit(args[0].unwrap_int()));
         }
 
         let func = Rc::clone(&self.functions[func_name]);
