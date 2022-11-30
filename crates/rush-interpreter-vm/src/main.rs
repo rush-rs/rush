@@ -25,6 +25,6 @@ fn main() {
         eprintln!("\x1b[1;31mVM crashed\x1b[1;0m: {} -> {}", err.kind, err.msg);
         process::exit(1);
     });
-    println!("VM exited with code: {code}");
+    println!("Program exited with code {code}");
     process::exit(code as i32);
 }

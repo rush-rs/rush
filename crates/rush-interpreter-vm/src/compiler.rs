@@ -1,6 +1,6 @@
 use std::{collections::HashMap, vec};
 
-use rush_analyzer::{ast::*, AssignOp, InfixOp};
+use rush_analyzer::{ast::*, AssignOp, InfixOp, Type};
 
 use crate::{
     instruction::{Instruction, Program, Type as InstructionType},
@@ -148,6 +148,7 @@ impl<'src> Compiler<'src> {
         self.curr_fn = Function::default();
         self.scopes.push(Scope::default());
 
+        // TODO: filter out unit / never
         for (idx, param) in node.params.iter().enumerate().rev() {
             self.scope_mut().vars.insert(param.name, idx);
             self.insert(Instruction::SetVar(idx));
@@ -173,9 +174,7 @@ impl<'src> Compiler<'src> {
         }
         match &node.expr {
             Some(expr) => self.expression(expr),
-            None => {
-                self.insert(Instruction::Push(Value::Unit));
-            }
+            None => {}
         }
     }
 
@@ -189,9 +188,7 @@ impl<'src> Compiler<'src> {
         }
         match &node.expr {
             Some(expr) => self.expression(expr),
-            None => {
-                self.insert(Instruction::Push(Value::Unit));
-            }
+            None => {}
         }
         self.scopes.pop();
     }
@@ -218,8 +215,9 @@ impl<'src> Compiler<'src> {
             AnalyzedStatement::Continue => self.insert(Instruction::Jmp(self.curr_loop.head)),
             AnalyzedStatement::Expr(node) => {
                 self.expression(node);
-                // TODO: remove unit values
-                self.insert(Instruction::Pop)
+                if !matches!(node.result_type(), Type::Unit | Type::Never) {
+                    self.insert(Instruction::Pop)
+                }
             }
         }
     }
@@ -250,7 +248,11 @@ impl<'src> Compiler<'src> {
 
         // compile the loop body
         self.block(&node.block);
-        self.insert(Instruction::Pop);
+        if node.block.expr.as_ref().map_or(false, |e| {
+            !matches!(e.result_type(), Type::Unit | Type::Never)
+        }) {
+            self.insert(Instruction::Pop);
+        }
 
         // jump back to the top
         self.insert(Instruction::Jmp(loop_head_pos));
@@ -275,7 +277,11 @@ impl<'src> Compiler<'src> {
 
         // compile the loop body
         self.block(&node.block);
-        self.insert(Instruction::Pop);
+        if node.block.expr.as_ref().map_or(false, |e| {
+            !matches!(e.result_type(), Type::Unit | Type::Never)
+        }) {
+            self.insert(Instruction::Pop);
+        }
 
         // jump back to the top
         self.insert(Instruction::Jmp(loop_head_pos));
@@ -312,14 +318,20 @@ impl<'src> Compiler<'src> {
         match &node.block.expr {
             Some(expr) => {
                 self.expression(expr);
-                self.insert(Instruction::Pop)
+                if !matches!(expr.result_type(), Type::Unit | Type::Never) {
+                    self.insert(Instruction::Pop)
+                }
             }
             None => {}
         }
 
         // compile the update expression
         self.expression(&node.update);
-        self.insert(Instruction::Pop);
+        if node.block.expr.as_ref().map_or(false, |e| {
+            !matches!(e.result_type(), Type::Unit | Type::Never)
+        }) {
+            self.insert(Instruction::Pop);
+        }
 
         // jump back to the top
         self.insert(Instruction::Jmp(loop_head_pos));
@@ -423,13 +435,14 @@ impl<'src> Compiler<'src> {
                 self.insert(Instruction::SetGlob(*idx));
             }
         };
-
-        // result value of assignments is `()`
-        self.insert(Instruction::Push(Value::Unit))
     }
 
     fn call_expr(&mut self, node: &'src AnalyzedCallExpr) {
-        for arg in node.args.iter() {
+        for arg in node
+            .args
+            .iter()
+            .filter(|a| !matches!(a.result_type(), Type::Unit | Type::Never))
+        {
             self.expression(arg);
         }
 

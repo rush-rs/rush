@@ -144,7 +144,6 @@ impl Vm {
                 return Ok(code);
             };
         }
-        assert_eq!(self.stack.last(), Some(&Value::Unit));
         Ok(0)
     }
 

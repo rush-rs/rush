@@ -11,7 +11,6 @@ pub enum Value {
     Bool(bool),
     Char(u8),
     Float(f64),
-    Unit,
 }
 
 impl Value {
@@ -295,7 +294,6 @@ impl Display for Value {
                 "{val}{zero}",
                 zero = if val.fract() == 0.0 { ".0" } else { "" }
             ),
-            Value::Unit => write!(f, "()"),
         }
     }
 }
