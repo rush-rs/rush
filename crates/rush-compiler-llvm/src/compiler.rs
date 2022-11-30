@@ -133,7 +133,6 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         self.compile_main_fn(&program.main_fn, main_fn);
 
         // verify the LLVM module when using debug
-        #[cfg(debug_assertions)]
         self.module.verify().unwrap();
 
         // run optimizations on the IR
@@ -831,6 +830,18 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         }
     }
 
+    fn infix_logical_branch(
+        &mut self,
+        node: &'src AnalyzedExpression,
+        merge_block: BasicBlock<'ctx>,
+    ) -> (BasicValueEnum<'ctx>, BasicBlock<'ctx>) {
+        let rhs_value = self.compile_expression(node);
+
+        let branch_block = self.curr_block();
+        self.builder.build_unconditional_branch(merge_block);
+        (rhs_value, branch_block)
+    }
+
     /// Compiles an [`AnalyzedInfixExpr`].
     /// Handles the `bool || bool` and `bool && bool` edge cases directly.
     /// Invokes the `infix_helper` function for any other types or operations.
@@ -865,19 +876,16 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
 
                 // if the value is false, execute the rhs and return its value
                 self.builder.position_at_end(lhs_false_block);
-                let rhs_value = self.compile_expression(&node.rhs);
-                self.builder.build_unconditional_branch(merge_block);
+                //let rhs_value = self.compile_expression(&node.rhs);
+                let (rhs_value, rhs_block) = self.infix_logical_branch(&node.rhs, merge_block);
 
                 // insert a phi node to pick the correct value
                 self.builder.position_at_end(merge_block);
+
                 let phi = self
                     .builder
                     .build_phi(self.context.bool_type(), "logical_or_res");
-                phi.add_incoming(&[
-                    (&lhs_true_value, lhs_true_block),
-                    (&rhs_value, lhs_false_block),
-                ]);
-
+                phi.add_incoming(&[(&lhs_true_value, lhs_true_block), (&rhs_value, rhs_block)]);
                 // return the value of the phi
                 phi.as_basic_value()
             }
@@ -905,8 +913,7 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
 
                 // if the lhs is true, execute the rhs and return its value
                 self.builder.position_at_end(lhs_true_block);
-                let rhs_value = self.compile_expression(&node.rhs);
-                self.builder.build_unconditional_branch(merge_block);
+                let (rhs_value, rhs_block) = self.infix_logical_branch(&node.rhs, merge_block);
 
                 // if the lhs value is false, stop here and return valse
                 self.builder.position_at_end(lhs_false_block);
@@ -915,13 +922,11 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
 
                 // insert a phi node to pick the correct value
                 self.builder.position_at_end(merge_block);
+
                 let phi = self
                     .builder
                     .build_phi(self.context.bool_type(), "logical_and_res");
-                phi.add_incoming(&[
-                    (&rhs_value, lhs_true_block),
-                    (&false_value, lhs_false_block),
-                ]);
+                phi.add_incoming(&[(&rhs_value, rhs_block), (&false_value, lhs_false_block)]);
 
                 // return the value of the phi
                 phi.as_basic_value()
@@ -1131,7 +1136,7 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                 (None, Some((else_value, _))) => else_value,
                 (None, None) => {
                     // in this case, the block is unreachable due to a previous return
-                    // the compiler still needs a value so a `undef` value is returned
+                    // the compiler still needs a value so a `unit` value is returned
                     self.builder.build_unreachable();
                     self.unit_value()
                 }
@@ -1179,7 +1184,7 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         // pop the branch scope
         self.scopes.pop();
 
-        // if the block was terminated using a `return`, do not return the branch block
+        // if the block was terminated prior, do not return the branch block
         if self.current_instruction_is_block_terminator() {
             (branch_value.get_type(), None)
         } else {
