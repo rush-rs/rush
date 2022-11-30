@@ -1,6 +1,6 @@
 fn main() {
     let sqrt = sqrt(15);
-    let success = sqrt > 3.8; // should be true
+    let success = sqrt > 3.8 && sqrt < 3.9; // should be true
     exit(success as int);
 }
 

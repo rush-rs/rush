@@ -93,10 +93,12 @@ impl<'src> Compiler<'src> {
         // before the function is called, all currently used registers are saved
         let mut regs_on_stack = vec![];
 
-        // TODO: differentiate between caller-saved and non caller-saved
         for (reg, size) in self.used_registers.clone() {
             let offset = self.spill_reg(reg, size);
-            regs_on_stack.push((reg, offset, size));
+
+            if reg.is_caller_saved() {
+                regs_on_stack.push((reg, offset, size));
+            }
         }
 
         // save the previous state of the used registers
@@ -167,7 +169,7 @@ impl<'src> Compiler<'src> {
                             param_regs.push(curr_reg.to_reg());
                             self.use_reg(curr_reg.to_reg(), Size::from(type_));
 
-                            // TODO: try to remove this move
+                            // TODO: if this is broken, uncomment following code
                             // if the reg from the expr is not the expected one, move it
                             if curr_reg.to_reg() != res_reg {
                                 unreachable!("this edge case should never happen");
@@ -203,7 +205,7 @@ impl<'src> Compiler<'src> {
                             self.use_reg(curr_reg.to_reg(), Size::Dword);
 
                             // if the reg from the expr is not the expected one, move it
-                            // TODO: remove this
+                            // TODO: if this is broken, uncomment following code
                             if curr_reg.to_reg() != res_reg {
                                 unreachable!("this edge case should never happen");
                                 /* self.insert_w_comment(

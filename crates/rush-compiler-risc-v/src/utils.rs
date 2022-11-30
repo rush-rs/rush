@@ -67,7 +67,8 @@ impl<'src> Compiler<'src> {
         -self.curr_fn().stack_allocs as i64 - 16
     }
 
-    // TODO: write documentation
+    /// Saves a register to memory and returns its fp-offset.
+    /// Used before function calls in order to save currently used registers to memory.
     pub(crate) fn spill_reg(&mut self, reg: Register, size: Size) -> i64 {
         let offset = self.get_offset(size);
         let comment = format!("{} byte spill: {reg}", size.byte_count());

@@ -882,9 +882,14 @@ impl<'src> Compiler<'src> {
                 // compile the rhs
                 let rhs = self.expression(&node.rhs);
 
+                #[cfg(debug_assertions)]
+                if let Some(rhs) = rhs {
+                    assert_eq!(lhs_cond, rhs);
+                }
+
                 // if the rhs does not match the lhs, move the rhs into the lhs
-                // TODO: is this necessary?
-                match (lhs_cond, rhs) {
+                // TODO: if this is broken, uncomment this code
+                /* match (lhs_cond, rhs) {
                     (Register::Int(lhs), Some(Register::Int(rhs))) if lhs == rhs => {}
                     (Register::Int(lhs), Some(Register::Int(rhs))) => {
                         self.insert(Instruction::Mov(lhs, rhs))
@@ -895,7 +900,7 @@ impl<'src> Compiler<'src> {
                     }
                     (_, None) => {}
                     _ => unreachable!("lhs and rhs are always the same type"),
-                }
+                } */
 
                 self.insert_at(&merge_block);
 
@@ -921,9 +926,14 @@ impl<'src> Compiler<'src> {
                 // compile the rhs
                 let rhs = self.expression(&node.rhs);
 
+                #[cfg(debug_assertions)]
+                if let Some(rhs) = rhs {
+                    assert_eq!(lhs_cond, rhs);
+                }
+
+                // TODO: if this is broken, uncomment this code
                 // if the rhs does not match the lhs, move the rhs into the lhs
-                // TODO: is this necessary?
-                match (lhs_cond, rhs) {
+                /* match (lhs_cond, rhs) {
                     (Register::Int(lhs), Some(Register::Int(rhs))) if lhs == rhs => {}
                     (Register::Int(lhs), Some(Register::Int(rhs))) => {
                         self.insert(Instruction::Mov(lhs, rhs))
@@ -933,7 +943,7 @@ impl<'src> Compiler<'src> {
                         self.insert(Instruction::Fmv(lhs, rhs))
                     }
                     _ => unreachable!("lhs and rhs are always the same type"),
-                }
+                } */
 
                 self.insert_at(&merge_block);
 
@@ -1096,7 +1106,6 @@ impl<'src> Compiler<'src> {
             }
             (Type::Bool, PrefixOp::Not) => {
                 let dest_reg = self.alloc_ireg();
-                // TODO: use not?
                 self.insert(Instruction::Seqz(dest_reg, lhs_reg.into()));
                 Some(dest_reg.to_reg())
             }
