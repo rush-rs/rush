@@ -36,7 +36,7 @@ type value.
 ##### Exit
 
 ```rs
-fn exit(code: i32) -> !
+fn exit(code: i32) -> !;
 ```
 
 The `exit` function calls the operating system, demanding to quit the program
@@ -109,6 +109,7 @@ with the specified exit-code.
 The rush language supports conversion between types. The basic syntax looks like
 this:
 
+<!-- dprint-ignore -->
 ```rs
 value as type
 ```
