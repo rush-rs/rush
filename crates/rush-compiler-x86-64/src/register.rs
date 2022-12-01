@@ -5,6 +5,28 @@ use std::{
 
 use crate::value::Size;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Register {
+    Int(IntRegister),
+    Float(FloatRegister),
+}
+
+impl Register {
+    pub fn expect_int(self, msg: impl Display) -> IntRegister {
+        match self {
+            Self::Int(reg) => reg,
+            _ => panic!("called `expect_int` on float variant: {msg}"),
+        }
+    }
+
+    pub fn expect_float(self, msg: impl Display) -> FloatRegister {
+        match self {
+            Self::Float(reg) => reg,
+            _ => panic!("called `expect_float` on int variant: {msg}"),
+        }
+    }
+}
+
 pub const INT_PARAM_REGISTERS: &[IntRegister] = &[
     IntRegister::Rdi,
     IntRegister::Rsi,

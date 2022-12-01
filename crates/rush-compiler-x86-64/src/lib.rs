@@ -1,5 +1,6 @@
 mod call;
 mod compiler;
+mod condition;
 mod infix;
 mod instruction;
 mod register;

@@ -1,6 +1,7 @@
 use std::fmt::{self, Display, Formatter};
 
 use crate::{
+    condition::Condition,
     register::{FloatRegister, IntRegister},
     value::{FloatValue, IntValue},
 };
@@ -95,25 +96,6 @@ pub enum Section {
     ReadOnlyData,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Condition {
-    Above,
-    AboveOrEqual,
-    Below,
-    BelowOrEqual,
-
-    Equal,
-    NotEqual,
-
-    Greater,
-    GreaterOrEqual,
-    Less,
-    LessOrEqual,
-
-    Parity,
-    NotParity,
-}
-
 /////////////////////////////////////////////////
 
 impl Display for Instruction {
@@ -203,34 +185,12 @@ impl Display for Section {
     }
 }
 
-impl Display for Condition {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Condition::Above => "a",
-                Condition::AboveOrEqual => "ae",
-                Condition::Below => "b",
-                Condition::BelowOrEqual => "be",
-                Condition::Equal => "e",
-                Condition::NotEqual => "ne",
-                Condition::Greater => "g",
-                Condition::GreaterOrEqual => "ge",
-                Condition::Less => "l",
-                Condition::LessOrEqual => "le",
-                Condition::Parity => "p",
-                Condition::NotParity => "np",
-            }
-        )
-    }
-}
-
 /////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {
     use crate::{
+        condition::Condition,
         register::FloatRegister,
         value::{Offset, Pointer, Size},
     };

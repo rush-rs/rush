@@ -5,7 +5,7 @@ use std::{
 
 use rush_analyzer::Type;
 
-use crate::register::{FloatRegister, IntRegister};
+use crate::register::{FloatRegister, IntRegister, Register};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Value {
@@ -14,10 +14,10 @@ pub enum Value {
 }
 
 impl Value {
-    pub fn unwrap_int(self) -> IntValue {
+    pub fn expect_int(self, msg: impl Display) -> IntValue {
         match self {
             Self::Int(int) => int,
-            _ => panic!("called `unwrap_int` on non-int variant"),
+            _ => panic!("called `expect_int` on non-int variant: {msg}"),
         }
     }
 }
@@ -168,6 +168,15 @@ impl Display for Offset {
 }
 
 /////////////////////////////////////////////////
+
+impl From<Register> for Value {
+    fn from(reg: Register) -> Self {
+        match reg {
+            Register::Int(reg) => Self::Int(IntValue::Register(reg)),
+            Register::Float(reg) => Self::Float(FloatValue::Register(reg)),
+        }
+    }
+}
 
 impl From<FloatRegister> for FloatValue {
     fn from(reg: FloatRegister) -> Self {

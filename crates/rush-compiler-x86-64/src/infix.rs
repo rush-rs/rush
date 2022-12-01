@@ -1,7 +1,8 @@
 use rush_analyzer::InfixOp;
 
 use crate::{
-    instruction::{Condition, Instruction},
+    condition::Condition,
+    instruction::Instruction,
     register::IntRegister,
     value::{FloatValue, IntValue, Size, Value},
     Compiler,
@@ -239,15 +240,8 @@ impl<'src> Compiler<'src> {
 
                 // set the result
                 self.function_body.push(Instruction::SetCond(
-                    match op {
-                        InfixOp::Eq => Condition::Equal,
-                        InfixOp::Neq => Condition::NotEqual,
-                        InfixOp::Lt => Condition::Less,
-                        InfixOp::Gt => Condition::Greater,
-                        InfixOp::Lte => Condition::LessOrEqual,
-                        InfixOp::Gte => Condition::GreaterOrEqual,
-                        _ => unreachable!("this block is only run with above ops"),
-                    },
+                    Condition::try_from_op(op, true)
+                        .expect("this block is only run with above ops"),
                     reg,
                 ));
 
@@ -345,15 +339,8 @@ impl<'src> Compiler<'src> {
                 // set the result
                 let reg = self.get_free_register(Size::Byte);
                 self.function_body.push(Instruction::SetCond(
-                    match op {
-                        InfixOp::Eq => Condition::Equal,
-                        InfixOp::Neq => Condition::NotEqual,
-                        InfixOp::Lt => Condition::Below,
-                        InfixOp::Gt => Condition::Above,
-                        InfixOp::Lte => Condition::BelowOrEqual,
-                        InfixOp::Gte => Condition::AboveOrEqual,
-                        _ => unreachable!("this block is only run with above ops"),
-                    },
+                    Condition::try_from_op(op, false)
+                        .expect("this block is only run with above ops"),
                     reg,
                 ));
 

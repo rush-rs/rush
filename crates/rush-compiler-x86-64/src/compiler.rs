@@ -3,8 +3,9 @@ use std::{collections::HashMap, hash::Hash};
 use rush_analyzer::{ast::*, AssignOp, InfixOp, PrefixOp, Type};
 
 use crate::{
-    instruction::{Condition, Instruction, Section},
-    register::{FloatRegister, IntRegister, FLOAT_PARAM_REGISTERS, INT_PARAM_REGISTERS},
+    condition::Condition,
+    instruction::{Instruction, Section},
+    register::{FloatRegister, IntRegister, Register, FLOAT_PARAM_REGISTERS, INT_PARAM_REGISTERS},
     value::{FloatValue, IntValue, Offset, Pointer, Size, Value},
 };
 
@@ -25,6 +26,7 @@ pub struct Compiler<'src> {
     pub(crate) stack_pointer: i64,
     pub(crate) frame_size: i64,
     pub(crate) requires_frame: bool,
+    pub(crate) block_count: usize,
 
     pub(crate) exports: Vec<Instruction>,
     pub(crate) text_section: Vec<Instruction>,
@@ -68,6 +70,7 @@ impl<'src> Compiler<'src> {
         Self {
             // start with empty global scope
             scopes: vec![HashMap::new()],
+            block_count: usize::MAX,
             ..Default::default()
         }
     }
@@ -177,6 +180,11 @@ impl<'src> Compiler<'src> {
                 name
             }
         }
+    }
+
+    pub(crate) fn new_block(&mut self) -> String {
+        self.block_count = self.block_count.wrapping_add(1);
+        format!(".block_{}", self.block_count)
     }
 
     pub(crate) fn curr_scope(&mut self) -> &mut HashMap<&'src str, Option<Variable>> {
@@ -619,7 +627,7 @@ impl<'src> Compiler<'src> {
     pub(crate) fn expression(&mut self, node: AnalyzedExpression<'src>) -> Option<Value> {
         match node {
             AnalyzedExpression::Block(node) => self.block_expr(*node),
-            AnalyzedExpression::If(_node) => todo!(),
+            AnalyzedExpression::If(node) => self.if_expr(*node),
             AnalyzedExpression::Int(num) => match num > i32::MAX as i64 || num < i32::MIN as i64 {
                 true => {
                     let symbol = Self::add_constant(
@@ -669,6 +677,173 @@ impl<'src> Compiler<'src> {
         let res = node.expr.and_then(|expr| self.expression(expr));
         self.pop_scope();
         res
+    }
+
+    fn if_expr(&mut self, node: AnalyzedIfExpr<'src>) -> Option<Value> {
+        let else_block_symbol = node.else_block.as_ref().map(|_| self.new_block());
+        let after_if_symbol = self.new_block();
+        let else_block_symbol = else_block_symbol.unwrap_or_else(|| after_if_symbol.clone());
+
+        match Condition::try_from_expr(node.cond) {
+            Ok((cond, lhs, rhs)) => {
+                let lhs = self.expression(lhs)?;
+                let rhs = self.expression(rhs)?;
+                match (lhs, rhs) {
+                    (Value::Int(lhs), Value::Int(rhs)) => {
+                        if let IntValue::Register(_) = lhs {
+                            self.used_registers.pop();
+                        }
+                        if let IntValue::Register(_) = rhs {
+                            self.used_registers.pop();
+                        }
+
+                        let lhs = match (lhs, &rhs) {
+                            (lhs @ IntValue::Ptr(_), IntValue::Ptr(_))
+                            | (lhs @ IntValue::Immediate(_), _) => {
+                                let reg = self.get_tmp_register(if let IntValue::Ptr(ptr) = &lhs {
+                                    ptr.size
+                                } else {
+                                    Size::Qword
+                                });
+                                self.function_body.push(Instruction::Mov(reg.into(), lhs));
+                                reg.into()
+                            }
+                            (lhs, _) => lhs,
+                        };
+
+                        self.function_body.push(Instruction::Cmp(lhs, rhs));
+                    }
+                    (Value::Float(lhs), Value::Float(rhs)) => {
+                        if let FloatValue::Register(_) = lhs {
+                            self.used_float_registers.pop();
+                        }
+                        if let FloatValue::Register(_) = rhs {
+                            self.used_float_registers.pop();
+                        }
+
+                        let lhs = match lhs {
+                            FloatValue::Ptr(ptr) => {
+                                let reg = self.get_tmp_float_register();
+                                self.function_body
+                                    .push(Instruction::Movsd(reg.into(), ptr.into()));
+                                reg
+                            }
+                            FloatValue::Register(reg) => reg,
+                        };
+                        self.function_body.push(Instruction::Ucomisd(lhs, rhs));
+
+                        if cond == Condition::Equal {
+                            // if floats should be equal but result is unordered, jump to
+                            // else block
+                            self.function_body.push(Instruction::JCond(
+                                Condition::Parity,
+                                else_block_symbol.clone(),
+                            ));
+                        } else if cond == Condition::NotEqual {
+                            // if floats should not be equal and result is not unordered, jump to
+                            // else block
+                            self.function_body.push(Instruction::JCond(
+                                Condition::NotParity,
+                                else_block_symbol.clone(),
+                            ));
+                        }
+                    }
+                    _ => unreachable!("the analyzer guarantees equal types on both sides"),
+                }
+
+                self.function_body.push(Instruction::JCond(
+                    cond.negated(),
+                    else_block_symbol.clone(),
+                ))
+            }
+            Err(expr) => {
+                let bool = self
+                    .expression(expr)?
+                    .expect_int("the analyzer guarantees boolean conditions");
+
+                match bool {
+                    IntValue::Immediate(0) => {
+                        self.function_body
+                            .push(Instruction::Jmp(else_block_symbol.clone()));
+                    }
+                    IntValue::Immediate(_) => {}
+                    val => {
+                        self.function_body.push(Instruction::Cmp(val, 0.into()));
+                        self.function_body.push(Instruction::JCond(
+                            Condition::Equal,
+                            else_block_symbol.clone(),
+                        ));
+                    }
+                }
+            }
+        }
+
+        let result_reg = match self.block_expr(node.then_block)? {
+            Value::Int(val) => match val {
+                IntValue::Register(reg) => Register::Int(reg),
+                _ => {
+                    let reg = self.get_free_register(match &val {
+                        IntValue::Ptr(ptr) => ptr.size,
+                        _ => Size::Qword,
+                    });
+                    self.function_body.push(Instruction::Mov(reg.into(), val));
+                    Register::Int(reg)
+                }
+            },
+            Value::Float(val) => match val {
+                FloatValue::Register(reg) => Register::Float(reg),
+                FloatValue::Ptr(_) => {
+                    let reg = self.get_free_float_register();
+                    self.function_body.push(Instruction::Movsd(reg.into(), val));
+                    Register::Float(reg)
+                }
+            },
+        };
+        if let Some(block) = node.else_block {
+            match result_reg {
+                Register::Int(_) => {
+                    self.used_registers.pop();
+                }
+                Register::Float(_) => {
+                    self.used_float_registers.pop();
+                }
+            }
+
+            self.function_body
+                .push(Instruction::Jmp(after_if_symbol.clone()));
+            self.function_body
+                .push(Instruction::Symbol(else_block_symbol));
+
+            match self.block_expr(block) {
+                Some(Value::Int(val)) => match val {
+                    IntValue::Register(reg) => debug_assert_eq!(result_reg, Register::Int(reg)),
+                    _ => {
+                        let result_reg = result_reg
+                            .expect_int("the analyzer guarantees equal types in both blocks");
+                        self.used_registers.push(result_reg);
+                        self.function_body
+                            .push(Instruction::Mov(result_reg.into(), val))
+                    }
+                },
+                Some(Value::Float(val)) => match val {
+                    FloatValue::Register(reg) => debug_assert_eq!(result_reg, Register::Float(reg)),
+                    FloatValue::Ptr(_) => {
+                        let result_reg = result_reg
+                            .expect_float("the analyzer guarantees equal types in both blocks");
+                        // restore temporarily freed register
+                        self.used_float_registers.push(result_reg);
+
+                        self.function_body
+                            .push(Instruction::Movsd(result_reg.into(), val))
+                    }
+                },
+                None => {}
+            }
+        }
+        self.function_body
+            .push(Instruction::Symbol(after_if_symbol));
+
+        Some(result_reg.into())
     }
 
     fn ident_expr(&mut self, node: AnalyzedIdentExpr<'src>) -> Option<Value> {
@@ -804,8 +979,10 @@ impl<'src> Compiler<'src> {
                     node.expr,
                 ],
             )?;
-            self.function_body
-                .push(Instruction::Mov(var.ptr.into(), new_val.unwrap_int()));
+            self.function_body.push(Instruction::Mov(
+                var.ptr.into(),
+                new_val.expect_int("the analyzer guarantees int types for pow operations"),
+            ));
             return None;
         }
 
