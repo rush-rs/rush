@@ -13,6 +13,15 @@ pub enum Value {
     Float(FloatValue),
 }
 
+impl Value {
+    pub fn unwrap_int(self) -> IntValue {
+        match self {
+            Self::Int(int) => int,
+            _ => panic!("called `unwrap_int` on non-int variant"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FloatValue {
     Register(FloatRegister),
