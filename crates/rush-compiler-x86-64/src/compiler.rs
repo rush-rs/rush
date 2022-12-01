@@ -790,8 +790,8 @@ impl<'src> Compiler<'src> {
             }
         }
 
-        let result_reg = match self.block_expr(node.then_block)? {
-            Value::Int(val) => match val {
+        let result_reg = match self.block_expr(node.then_block) {
+            Some(Value::Int(val)) => match val {
                 IntValue::Register(reg) => Register::Int(reg),
                 _ => {
                     let reg = self.get_free_register(match &val {
@@ -802,7 +802,7 @@ impl<'src> Compiler<'src> {
                     Register::Int(reg)
                 }
             },
-            Value::Float(val) => match val {
+            Some(Value::Float(val)) => match val {
                 FloatValue::Register(reg) => Register::Float(reg),
                 FloatValue::Ptr(_) => {
                     let reg = self.get_free_float_register();
@@ -810,6 +810,11 @@ impl<'src> Compiler<'src> {
                     Register::Float(reg)
                 }
             },
+            None => {
+                self.function_body
+                    .push(Instruction::Symbol(after_if_symbol));
+                return None;
+            }
         };
         if let Some(block) = node.else_block {
             match result_reg {
