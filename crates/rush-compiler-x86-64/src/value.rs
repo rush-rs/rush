@@ -13,6 +13,15 @@ pub enum Value {
     Float(FloatValue),
 }
 
+impl Value {
+    pub fn unwrap_int(self) -> IntValue {
+        match self {
+            Self::Int(int) => int,
+            _ => panic!("called `unwrap_int` on non-int variant"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FloatValue {
     Register(FloatRegister),
@@ -51,6 +60,16 @@ pub enum Size {
 impl Size {
     pub fn byte_count(&self) -> i64 {
         *self as i64
+    }
+
+    pub fn mask(&self) -> i64 {
+        match self {
+            Size::Byte => 0xff,
+            Size::Word => 0xffff,
+            Size::Dword => 0xffff_ffff,
+            Size::Qword => -1,
+            Size::Oword => panic!("oword mask too large for 64 bits"),
+        }
     }
 }
 

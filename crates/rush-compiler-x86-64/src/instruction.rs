@@ -37,7 +37,6 @@ pub enum Instruction {
     //////// Integers ////////
     //////////////////////////
     Mov(IntValue, IntValue),
-    Cmov(Condition, IntValue, IntValue),
 
     Add(IntValue, IntValue),
     Sub(IntValue, IntValue),
@@ -152,10 +151,6 @@ impl Display for Instruction {
             Instruction::SetCond(cond, reg) => write!(f, "    set{:8} {reg}", cond.to_string()),
             Instruction::Mov(dest, src) if dest == src => return Ok(()),
             Instruction::Mov(dest, src) => write!(f, "    {:11} {dest}, {src}", "mov"),
-            Instruction::Cmov(_, dest, src) if dest == src => return Ok(()),
-            Instruction::Cmov(cond, dest, src) => {
-                write!(f, "    cmov{:7} {dest}, {src}", cond.to_string())
-            }
             Instruction::Add(dest, src) => write!(f, "    {:11} {dest}, {src}", "add"),
             Instruction::Sub(dest, src) => write!(f, "    {:11} {dest}, {src}", "sub"),
             Instruction::Imul(dest, src) => write!(f, "    {:11} {dest}, {src}", "imul"),

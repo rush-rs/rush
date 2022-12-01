@@ -236,12 +236,6 @@ impl IntRegister {
             Self::Rcx => Self::R8,
             Self::R8 => Self::R9,
             Self::R9 => Self::R10,
-            Self::R10 => Self::R11,
-            Self::R11 => Self::R12,
-            Self::R12 => Self::R13,
-            Self::R13 => Self::R14,
-            Self::R14 => Self::R15,
-            Self::R15 => Self::Rbx,
             reg => panic!("no registers left after `{reg}`"),
         }
     }

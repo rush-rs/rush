@@ -35,7 +35,12 @@ fn main() {
         + comparisons() + float_comparisons()
         + casts()
         + !hundred
-    ); // = 105
+        - assignments()
+        + {
+            let a = 'a';
+            a
+        } as int
+    ); // = 186
 }
 
 fn comparisons() -> int {
@@ -79,6 +84,30 @@ fn casts() -> int {
     let m = l as int; // = 1
 
     m
+}
+
+fn unit() {}
+
+fn assignments() -> int {
+    let mut _x = unit();
+    _x = unit();
+
+    let mut a = 300;
+
+    a += 10; // = 310
+    a -= 5; // = 305
+    a *= 2; // = 610
+    a /= 3; // = 203
+    a %= 10; // = 3
+    a <<= 2; // = 12
+    a >>= 1; // = 6
+    a |= 3; // = 7
+    a &= 13; // = 5
+    a ^= 7; // = 2
+    a **= 3; // = 8
+    a += a; // = 16
+
+    a
 }
 
 fn float(a: float) -> float {
