@@ -53,13 +53,17 @@ impl From<Type> for Size {
 }
 
 impl<'tree> Compiler<'tree> {
-    // TODO: write documentation for this function
+    // Aligns the specified pointer according to the specified size.
+    // If the pointer is not a multiple of the specified size,
+    // padding is added so that the pointer will be aligned.
     pub(crate) fn align(ptr: &mut i64, size: i64) {
         if *ptr % size != 0 {
             *ptr += size - *ptr % size;
         }
     }
 
+    /// Helper function for allocation stack memory.
+    /// Increments the current stack allocations and returns a new (aligned) index to be used.
     pub(crate) fn get_offset(&mut self, size: Size) -> i64 {
         let size = size.byte_count();
         Self::align(&mut self.curr_fn_mut().stack_allocs, size);
@@ -91,6 +95,9 @@ impl<'tree> Compiler<'tree> {
         offset
     }
 
+    /// Helper function which is invoked after a function call.
+    /// Iterates through the given registers in order to load their original value from the stack.
+    /// Returns a possible register which contains the function's return value.
     pub(crate) fn restore_regs_after_call(
         &mut self,
         mut call_return_reg: Option<Register>,

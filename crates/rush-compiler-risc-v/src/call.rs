@@ -61,8 +61,8 @@ impl<'tree> Compiler<'tree> {
         ]
     }
 
-    /// Inserts the instructions for a function epilogue
-    /// at the end of the epilogue label of the current function .
+    /// Inserts the instructions for a function epilogue.
+    /// Places the instructions at the end of the epilogue label of the current function.
     pub(crate) fn epilogue(&mut self) {
         let epilogue_label = self.curr_fn().epilogue_label.clone();
         self.insert_at(&epilogue_label);
