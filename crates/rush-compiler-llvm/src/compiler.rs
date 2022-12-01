@@ -790,7 +790,7 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
             }
             // even if some combinations are invalid, this is OK because the analyzer prevents
             // illegal cases.
-            Type::Int | Type::Char | Type::Bool => {
+            Type::Int | Type::Bool => {
                 let lhs = lhs.into_int_value();
                 let rhs = rhs.into_int_value();
                 match op {
@@ -805,6 +805,45 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                     InfixOp::BitOr => self.builder.build_or(lhs, rhs, "i_bor"),
                     InfixOp::BitAnd => self.builder.build_and(lhs, rhs, "i_band"),
                     InfixOp::BitXor => self.builder.build_xor(lhs, rhs, "i_bxor"),
+                    // comparison operators (result in bool)
+                    op => {
+                        let (op, label) = match op {
+                            InfixOp::Eq => (IntPredicate::EQ, "i_eq"),
+                            InfixOp::Neq => (IntPredicate::NE, "i_neq"),
+                            InfixOp::Gt => (IntPredicate::SGT, "i_gt"),
+                            InfixOp::Gte => (IntPredicate::SGE, "i_gte"),
+                            InfixOp::Lt => (IntPredicate::SLT, "i_lt"),
+                            InfixOp::Lte => (IntPredicate::SLE, "i_lte"),
+                            _ => unreachable!("other operators cannot be used on int: {op:?}"),
+                        };
+                        return self
+                            .builder
+                            .build_int_compare(op, lhs, rhs, label)
+                            .as_basic_value_enum();
+                    }
+                }
+                .as_basic_value_enum()
+            }
+            Type::Char => {
+                let lhs = lhs.into_int_value();
+                let rhs = rhs.into_int_value();
+                match op {
+                    InfixOp::Plus => {
+                        let res = self.builder.build_int_add(lhs, rhs, "i_sum");
+                        self.builder.build_and(
+                            res,
+                            self.context.i8_type().const_int(127, false),
+                            "c_mask",
+                        )
+                    }
+                    InfixOp::Minus => {
+                        let res = self.builder.build_int_sub(lhs, rhs, "i_sum");
+                        self.builder.build_and(
+                            res,
+                            self.context.i8_type().const_int(127, false),
+                            "c_mask",
+                        )
+                    }
                     // comparison operators (result in bool)
                     op => {
                         let (op, label) = match op {

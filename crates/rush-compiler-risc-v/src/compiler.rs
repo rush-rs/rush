@@ -984,12 +984,36 @@ impl<'src> Compiler<'src> {
         let dest_regf = self.alloc_freg();
 
         match (type_, op) {
-            (Type::Int | Type::Char, InfixOp::Plus) => {
+            (Type::Int, InfixOp::Plus) => {
                 self.insert(Instruction::Add(dest_regi, lhs.into(), rhs.into()));
                 dest_regi.into()
             }
-            (Type::Int | Type::Char, InfixOp::Minus) => {
+            (Type::Int, InfixOp::Minus) => {
                 self.insert(Instruction::Sub(dest_regi, lhs.into(), rhs.into()));
+                dest_regi.into()
+            }
+            (Type::Char, InfixOp::Plus) => {
+                self.insert(Instruction::Add(dest_regi, lhs.into(), rhs.into()));
+
+                self.use_reg(dest_regi.into(), Size::Byte);
+                let mask = self.alloc_ireg();
+                self.insert(Instruction::Li(mask, 0x7f));
+                self.release_reg(dest_regi.into());
+
+                self.insert(Instruction::And(dest_regi, dest_regi, mask));
+
+                dest_regi.into()
+            }
+            (Type::Char, InfixOp::Minus) => {
+                self.insert(Instruction::Sub(dest_regi, lhs.into(), rhs.into()));
+
+                self.use_reg(dest_regi.into(), Size::Byte);
+                let mask = self.alloc_ireg();
+                self.insert(Instruction::Li(mask, 0x7f));
+                self.release_reg(dest_regi.into());
+
+                self.insert(Instruction::And(dest_regi, dest_regi, mask));
+
                 dest_regi.into()
             }
             (Type::Int, InfixOp::Mul) => {

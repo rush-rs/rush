@@ -1319,8 +1319,10 @@ impl<'src> Analyzer<'src> {
         // evaluate constant expressions
         match (&lhs, &rhs) {
             (AnalyzedExpression::Char(left), AnalyzedExpression::Char(right)) => match node.op {
-                InfixOp::Plus => return AnalyzedExpression::Char(left.wrapping_add(*right)),
-                InfixOp::Minus => return AnalyzedExpression::Char(left.wrapping_sub(*right)),
+                InfixOp::Plus => return AnalyzedExpression::Char(left.wrapping_add(*right) & 0x7f),
+                InfixOp::Minus => {
+                    return AnalyzedExpression::Char(left.wrapping_sub(*right) & 0x7f)
+                }
                 InfixOp::Eq => return AnalyzedExpression::Bool(left == right),
                 InfixOp::Neq => return AnalyzedExpression::Bool(left != right),
                 InfixOp::Lt => return AnalyzedExpression::Bool(left < right),
