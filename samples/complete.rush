@@ -1,0 +1,44 @@
+// This file should test all features of the rush programming language.
+
+// expected exit-code: 8
+fn main() {
+        let int_ = 1;
+        let float_ = 2.0;
+        let char_ = 'a'; // 97
+        let bool_ = true;
+        let unit = produces_unit();
+
+        let mut res = sum_different_types(int_, float_, char_, bool_, unit); // 101
+
+        // assignments
+        res += prefix_expr();
+        res -= 52; // 50
+        res *= 2; // 100
+        res /= 10; // 10
+        res %= 3; // 1
+        res <<= 2; // 4
+        res >>= 1; // 2
+        res **= 3; // 8
+
+        exit(res)
+}
+
+fn produces_unit() {}
+fn takes_unit(unit: ()) -> int { unit; 0 }
+
+fn sum_different_types(
+    int_: int,
+    float_: float,
+    char_: char,
+    bool_: bool,
+    unit: (),
+) -> int {
+    int_ + float_ as int + char_ as int + bool_ as int + takes_unit(unit)
+}
+
+fn prefix_expr() -> int {
+    let one = -1;
+    let three = 3;
+    let minus_2 = !1;
+    one + three + false as int + !false as int + minus_2 // 1;
+}
