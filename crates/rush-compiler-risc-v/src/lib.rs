@@ -11,10 +11,10 @@ mod utils;
 /// Compiles rush source code to a RISC-V assembly.
 /// The `Ok(_)` variant also returns non-error diagnostics.
 /// The `Err(_)` variant returns a `Vec<Diagnostic>` which contains at least one error.
-pub fn compile<'src>(
-    text: &'src str,
-    path: &'src str,
-) -> Result<(String, Vec<Diagnostic<'src>>), Vec<Diagnostic<'src>>> {
+pub fn compile<'tree>(
+    text: &'tree str,
+    path: &'tree str,
+) -> Result<(String, Vec<Diagnostic<'tree>>), Vec<Diagnostic<'tree>>> {
     let (tree, diagnostics) = rush_analyzer::analyze(text, path)?;
     let asm = Compiler::new().compile(&tree);
     Ok((asm, diagnostics))

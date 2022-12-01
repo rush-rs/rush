@@ -13,7 +13,7 @@ use crate::{
 /// An offset of 16 accounts for `fp` and `ra`.
 const BASE_STACK_ALLOCATIONS: i64 = 16;
 
-impl<'src> Compiler<'src> {
+impl<'tree> Compiler<'tree> {
     /// Returns the instructions of a function prologue.
     /// Automatically sets up any stack allocations and saves `ra` and `fp`.
     /// Must be invoked after the fn body since the stack frame size must be known at this point.
@@ -89,7 +89,7 @@ impl<'src> Compiler<'src> {
     /// Compiles an [`AnalyzedCallExpr`].
     /// Prior to calling the target function, all currently used registers are saved on the stack.
     /// After the call has been performed, all previously saved registers are restored from memory.
-    pub(crate) fn call_expr(&mut self, node: &'src AnalyzedCallExpr) -> Option<Register> {
+    pub(crate) fn call_expr(&mut self, node: &'tree AnalyzedCallExpr) -> Option<Register> {
         // before the function is called, all currently used registers are saved
         let mut regs_on_stack = vec![];
 
@@ -172,7 +172,7 @@ impl<'src> Compiler<'src> {
                             // TODO: if this is broken, uncomment following code
                             // if the reg from the expr is not the expected one, move it
                             if curr_reg.to_reg() != res_reg {
-                                unreachable!("this edge case should never happen");
+                                unreachable!("experimental edge case happened");
                                 /* self.insert_w_comment(
                                     Instruction::Mov(curr_reg, res_reg.into()),
                                     format!("{res_reg} not expected {curr_reg}"),
@@ -207,7 +207,7 @@ impl<'src> Compiler<'src> {
                             // if the reg from the expr is not the expected one, move it
                             // TODO: if this is broken, uncomment following code
                             if curr_reg.to_reg() != res_reg {
-                                unreachable!("this edge case should never happen");
+                                unreachable!("experimental edge case happened");
                                 /* self.insert_w_comment(
                                     Instruction::Fmv(curr_reg, res_reg.into()),
                                     format!("{res_reg} not expected {curr_reg}"),

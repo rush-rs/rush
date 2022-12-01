@@ -8,7 +8,7 @@ use crate::{
     utils::{DataObj, DataObjType, Function, Loop, Size, Variable, VariableValue},
 };
 
-pub struct Compiler<'src> {
+pub struct Compiler<'tree> {
     /// Specifies all exported labels of the program.
     pub(crate) exports: Vec<String>,
 
@@ -28,15 +28,15 @@ pub struct Compiler<'src> {
     pub(crate) curr_loop: Option<Loop>,
 
     /// The first element is the root scope, the last element is the current scope.
-    pub(crate) scopes: Vec<HashMap<&'src str, Variable>>,
+    pub(crate) scopes: Vec<HashMap<&'tree str, Variable>>,
     /// Holds the global variables of the program.
-    pub(crate) globals: HashMap<&'src str, Variable>,
+    pub(crate) globals: HashMap<&'tree str, Variable>,
 
     /// Specifies all registers which are currently in use and may not be overwritten.
     pub(crate) used_registers: Vec<(Register, Size)>,
 }
 
-impl<'src> Compiler<'src> {
+impl<'tree> Compiler<'tree> {
     /// Creates and returns a new [`Compiler`].
     pub fn new() -> Self {
         Self {
@@ -54,7 +54,7 @@ impl<'src> Compiler<'src> {
     }
 
     /// Compiles the source AST into a RISC-V targeted Assembly program.
-    pub fn compile(&mut self, ast: &'src AnalyzedProgram) -> String {
+    pub fn compile(&mut self, ast: &'tree AnalyzedProgram) -> String {
         self.declare_main_fn(&ast.main_fn, &ast.globals);
 
         for func in ast.functions.iter().filter(|f| f.used) {
@@ -110,7 +110,11 @@ impl<'src> Compiler<'src> {
     }
 
     /// Compiles the `main` function and the global variables of the program.
-    fn declare_main_fn(&mut self, node: &'src AnalyzedBlock, globals: &'src Vec<AnalyzedLetStmt>) {
+    fn declare_main_fn(
+        &mut self,
+        node: &'tree AnalyzedBlock,
+        globals: &'tree Vec<AnalyzedLetStmt>,
+    ) {
         // create `_start` label
         let start_label = self.append_block("_start");
         let fn_block = self.append_block("main..main");
@@ -153,7 +157,12 @@ impl<'src> Compiler<'src> {
     /// Declares a new global variable.
     /// The initializer is put inside the current basic block.
     /// If the variable is non-mutable, it is put under the `.rodata` section
-    fn declare_global(&mut self, label: &'src str, mutable: bool, value: &'src AnalyzedExpression) {
+    fn declare_global(
+        &mut self,
+        label: &'tree str,
+        mutable: bool,
+        value: &'tree AnalyzedExpression,
+    ) {
         let type_ = value.result_type();
         let data = match (type_, value) {
             (Type::Int, AnalyzedExpression::Int(val)) => DataObjType::Dword(*val),
@@ -192,7 +201,7 @@ impl<'src> Compiler<'src> {
     }
 
     /// Compiles an [`AnalyzedFunctionDefinition`] declaration.
-    fn function_declaration(&mut self, node: &'src AnalyzedFunctionDefinition) {
+    fn function_declaration(&mut self, node: &'tree AnalyzedFunctionDefinition) {
         // append block for the function
         let fn_block = format!("main..{}", node.name);
         self.append_block(&fn_block);
@@ -341,7 +350,7 @@ impl<'src> Compiler<'src> {
     }
 
     /// Compiles the body of a function.
-    fn function_body(&mut self, node: &'src AnalyzedBlock, epilogue_label: String) {
+    fn function_body(&mut self, node: &'tree AnalyzedBlock, epilogue_label: String) {
         // add debugging comment
         #[cfg(debug_assertions)]
         self.insert(Instruction::Comment("begin body".to_string()));
@@ -377,7 +386,7 @@ impl<'src> Compiler<'src> {
 
     /// Compiles an [`AnalyzedBlock`].
     /// Automatically pushes a new scope for the block.
-    fn block(&mut self, node: &'src AnalyzedBlock) -> Option<Register> {
+    fn block(&mut self, node: &'tree AnalyzedBlock) -> Option<Register> {
         // push a new scope
         self.push_scope();
 
@@ -386,10 +395,7 @@ impl<'src> Compiler<'src> {
         }
 
         // return expression register if there is an expr
-        let res = match &node.expr {
-            Some(expr) => self.expression(expr),
-            None => None,
-        };
+        let res = node.expr.as_ref().and_then(|e| self.expression(e));
 
         // pop the scope again
         self.pop_scope();
@@ -399,7 +405,7 @@ impl<'src> Compiler<'src> {
 
     /// Copiles an [`AnalyzedStatement`].
     /// Invokes the corresponding function for most of the statement options.
-    fn statement(&mut self, node: &'src AnalyzedStatement) {
+    fn statement(&mut self, node: &'tree AnalyzedStatement) {
         match node {
             AnalyzedStatement::Let(node) => self.let_statement(node),
             AnalyzedStatement::Return(node) => self.return_stmt(node),
@@ -425,7 +431,7 @@ impl<'src> Compiler<'src> {
     /// Compiles an [`AnalyzedReturnStmt`].
     /// If the node contains an optional expr, it is compiled and its result is moved into the
     /// correct return-value register (corresponding to the result type of the expr).
-    fn return_stmt(&mut self, node: &'src AnalyzedReturnStmt) {
+    fn return_stmt(&mut self, node: &'tree AnalyzedReturnStmt) {
         // if there is an expression, compile it
         if let Some(expr) = node {
             match self.expression(expr) {
@@ -443,7 +449,7 @@ impl<'src> Compiler<'src> {
     /// Compiles an [`AnalyzedLoopStmt`].
     /// After each iteration, there is an unconditional jump back to the loop head (i.e. `continue`).
     /// In this looping construct, manual control flow like `break` is mandatory.
-    fn loop_stmt(&mut self, node: &'src AnalyzedLoopStmt) {
+    fn loop_stmt(&mut self, node: &'tree AnalyzedLoopStmt) {
         let loop_head = self.append_block("loop_head");
         let after_loop = self.gen_label("after_loop");
         self.curr_loop = Some(Loop {
@@ -462,7 +468,7 @@ impl<'src> Compiler<'src> {
     /// Compiles an [`AnalyzedWhileStmt`].
     /// Before each iteration, the loop condition is evaluated and compared against `false`.
     /// If the result is `false`, there is a jump to the basic block after the loop (i.e. `break`).
-    fn while_stmt(&mut self, node: &'src AnalyzedWhileStmt) {
+    fn while_stmt(&mut self, node: &'tree AnalyzedWhileStmt) {
         let while_head = self.append_block("while_head");
         let after_loop = self.gen_label("after_while");
         self.insert_at(&while_head);
@@ -504,7 +510,7 @@ impl<'src> Compiler<'src> {
     /// Before each iteration, the loop condition is verified to be `true`.
     /// Otherwise, there will be a `break` out of the looping construct.
     /// At the end of each iteration, the update expression is invoked, its value is omitted.
-    fn for_stmt(&mut self, node: &'src AnalyzedForStmt) {
+    fn for_stmt(&mut self, node: &'tree AnalyzedForStmt) {
         let for_head = self.append_block("for_head");
         let after_loop = self.append_block("after_for");
 
@@ -587,7 +593,7 @@ impl<'src> Compiler<'src> {
     /// Compiles an [`AnalyzedLetStmt`]
     /// Allocates a new variable on the stack.
     /// Also increments the `stack_allocs` value of the current function
-    fn let_statement(&mut self, node: &'src AnalyzedLetStmt) {
+    fn let_statement(&mut self, node: &'tree AnalyzedLetStmt) {
         let type_ = node.expr.result_type();
 
         // filter out any unit / never types
@@ -634,7 +640,7 @@ impl<'src> Compiler<'src> {
     }
 
     /// Compiles an [`AnalyzedExpression`].
-    pub(crate) fn expression(&mut self, node: &'src AnalyzedExpression) -> Option<Register> {
+    pub(crate) fn expression(&mut self, node: &'tree AnalyzedExpression) -> Option<Register> {
         match node {
             AnalyzedExpression::Int(value) => {
                 let dest_reg = self.alloc_ireg();
@@ -734,7 +740,7 @@ impl<'src> Compiler<'src> {
     /// For the latter, the assignee's current value is loaded into a temporary register.
     /// Following that, the operation is performed by `self.infix_helper`.
     /// Lastly, a correct store instruction is used to assign the resulting value to the assignee.
-    fn assign_expr(&mut self, node: &'src AnalyzedAssignExpr) {
+    fn assign_expr(&mut self, node: &'tree AnalyzedAssignExpr) {
         let rhs_type = node.expr.result_type();
 
         let assignee = self.resolve_name(node.assignee).clone();
@@ -806,7 +812,7 @@ impl<'src> Compiler<'src> {
     /// The result of the expression is saved in a single register (reflecting the result type).
     /// Control flow is accomplished through the use of branches.
     /// The condition is verified using a normal conditional branch, comparing it to `true`.
-    fn if_expr(&mut self, node: &'src AnalyzedIfExpr) -> Option<Register> {
+    fn if_expr(&mut self, node: &'tree AnalyzedIfExpr) -> Option<Register> {
         // (bool) result of the condition
         let cond_reg = self
             .expression(&node.cond)
@@ -878,7 +884,7 @@ impl<'src> Compiler<'src> {
 
     /// Compiles an [`AnalyzedInfixExpr`].
     /// After compiling the lhs and rhs, the `infix_helper` is invoked.
-    fn infix_expr(&mut self, node: &'src AnalyzedInfixExpr) -> Option<Register> {
+    fn infix_expr(&mut self, node: &'tree AnalyzedInfixExpr) -> Option<Register> {
         match (node.lhs.result_type(), node.op) {
             (Type::Bool, InfixOp::Or) => {
                 // compile the lhs (initial expression)
@@ -905,20 +911,7 @@ impl<'src> Compiler<'src> {
                     assert_eq!(lhs_cond, rhs);
                 }
 
-                // if the rhs does not match the lhs, move the rhs into the lhs
-                // TODO: if this is broken, uncomment this code
-                /* match (lhs_cond, rhs) {
-                    (Register::Int(lhs), Some(Register::Int(rhs))) if lhs == rhs => {}
-                    (Register::Int(lhs), Some(Register::Int(rhs))) => {
-                        self.insert(Instruction::Mov(lhs, rhs))
-                    }
-                    (Register::Float(lhs), Some(Register::Float(rhs))) if lhs == rhs => {}
-                    (Register::Float(lhs), Some(Register::Float(rhs))) => {
-                        self.insert(Instruction::Fmv(lhs, rhs))
-                    }
-                    (_, None) => {}
-                    _ => unreachable!("lhs and rhs are always the same type"),
-                } */
+                self.insert(Instruction::Jmp(merge_block.clone()));
 
                 self.insert_at(&merge_block);
 
@@ -979,13 +972,13 @@ impl<'src> Compiler<'src> {
                 // mark the rhs register as used
                 self.use_reg(rhs_reg, Size::from(rhs_type));
 
-                let res = self.infix_helper(lhs_reg, rhs_reg, node.op, lhs_type);
-
                 // release the usage block of the operands
                 self.release_reg(lhs_reg);
                 self.release_reg(rhs_reg);
 
-                // TODO: if this is broken, release the operands here
+                let res = self.infix_helper(lhs_reg, rhs_reg, node.op, lhs_type);
+
+                // TODO: if the above is broken, release the operands here
                 // self.release_reg(lhs_reg);
                 // self.release_reg(rhs_reg);
 
@@ -1126,7 +1119,7 @@ impl<'src> Compiler<'src> {
     }
 
     /// Compiles an [`AnalyzedPrefixExpr`].
-    fn prefix_expr(&mut self, node: &'src AnalyzedPrefixExpr) -> Option<Register> {
+    fn prefix_expr(&mut self, node: &'tree AnalyzedPrefixExpr) -> Option<Register> {
         let lhs_type = node.expr.result_type();
         let lhs_reg = self.expression(&node.expr)?;
 
@@ -1157,7 +1150,7 @@ impl<'src> Compiler<'src> {
 
     /// Compiles an [`AnalyzedCastExpr`].
     /// When casting to `char` values, cast functions from the `corelib` are invoked.
-    fn cast_expr(&mut self, node: &'src AnalyzedCastExpr) -> Option<Register> {
+    fn cast_expr(&mut self, node: &'tree AnalyzedCastExpr) -> Option<Register> {
         let lhs_type = node.expr.result_type();
         let lhs_reg = self.expression(&node.expr)?;
 
@@ -1244,7 +1237,7 @@ impl<'src> Compiler<'src> {
     }
 }
 
-impl<'src> Default for Compiler<'src> {
+impl<'tree> Default for Compiler<'tree> {
     fn default() -> Self {
         Self::new()
     }
