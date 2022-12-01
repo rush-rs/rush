@@ -792,38 +792,35 @@ impl<'src> Compiler<'src> {
 
         let result_reg = match self.block_expr(node.then_block) {
             Some(Value::Int(val)) => match val {
-                IntValue::Register(reg) => Register::Int(reg),
+                IntValue::Register(reg) => Some(Register::Int(reg)),
                 _ => {
                     let reg = self.get_free_register(match &val {
                         IntValue::Ptr(ptr) => ptr.size,
                         _ => Size::Qword,
                     });
                     self.function_body.push(Instruction::Mov(reg.into(), val));
-                    Register::Int(reg)
+                    Some(Register::Int(reg))
                 }
             },
             Some(Value::Float(val)) => match val {
-                FloatValue::Register(reg) => Register::Float(reg),
+                FloatValue::Register(reg) => Some(Register::Float(reg)),
                 FloatValue::Ptr(_) => {
                     let reg = self.get_free_float_register();
                     self.function_body.push(Instruction::Movsd(reg.into(), val));
-                    Register::Float(reg)
+                    Some(Register::Float(reg))
                 }
             },
-            None => {
-                self.function_body
-                    .push(Instruction::Symbol(after_if_symbol));
-                return None;
-            }
+            None => None,
         };
         if let Some(block) = node.else_block {
             match result_reg {
-                Register::Int(_) => {
+                Some(Register::Int(_)) => {
                     self.used_registers.pop();
                 }
-                Register::Float(_) => {
+                Some(Register::Float(_)) => {
                     self.used_float_registers.pop();
                 }
+                None => {}
             }
 
             self.function_body
@@ -832,35 +829,47 @@ impl<'src> Compiler<'src> {
                 .push(Instruction::Symbol(else_block_symbol));
 
             match self.block_expr(block) {
-                Some(Value::Int(val)) => match val {
-                    IntValue::Register(reg) => debug_assert_eq!(result_reg, Register::Int(reg)),
-                    _ => {
-                        let result_reg = result_reg
-                            .expect_int("the analyzer guarantees equal types in both blocks");
-                        self.used_registers.push(result_reg);
-                        self.function_body
-                            .push(Instruction::Mov(result_reg.into(), val))
-                    }
-                },
-                Some(Value::Float(val)) => match val {
-                    FloatValue::Register(reg) => debug_assert_eq!(result_reg, Register::Float(reg)),
-                    FloatValue::Ptr(_) => {
-                        let result_reg = result_reg
-                            .expect_float("the analyzer guarantees equal types in both blocks");
-                        // restore temporarily freed register
-                        self.used_float_registers.push(result_reg);
+                Some(Value::Int(val)) => {
+                    match val {
+                        IntValue::Register(reg) => {
+                            debug_assert_eq!(result_reg, Some(Register::Int(reg)))
+                        }
+                        _ => {
+                            let result_reg = result_reg
+                                .expect("the else-block has a result, so the then-block must have one too")
+                                .expect_int("the analyzer guarantees equal types in both blocks");
+                            // restore temporarily freed register
+                            self.used_registers.push(result_reg);
 
-                        self.function_body
-                            .push(Instruction::Movsd(result_reg.into(), val))
+                            self.function_body
+                                .push(Instruction::Mov(result_reg.into(), val))
+                        }
                     }
-                },
+                }
+                Some(Value::Float(val)) => {
+                    match val {
+                        FloatValue::Register(reg) => {
+                            debug_assert_eq!(result_reg, Some(Register::Float(reg)))
+                        }
+                        FloatValue::Ptr(_) => {
+                            let result_reg = result_reg
+                                .expect("the else-block has a result, so the then-block must have one too")
+                                .expect_float("the analyzer guarantees equal types in both blocks");
+                            // restore temporarily freed register
+                            self.used_float_registers.push(result_reg);
+
+                            self.function_body
+                                .push(Instruction::Movsd(result_reg.into(), val))
+                        }
+                    }
+                }
                 None => {}
             }
         }
         self.function_body
             .push(Instruction::Symbol(after_if_symbol));
 
-        Some(result_reg.into())
+        result_reg.map(|reg| reg.into())
     }
 
     fn ident_expr(&mut self, node: AnalyzedIdentExpr<'src>) -> Option<Value> {
