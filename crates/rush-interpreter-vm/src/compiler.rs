@@ -148,10 +148,15 @@ impl<'src> Compiler<'src> {
         self.curr_fn = Function::default();
         self.scopes.push(Scope::default());
 
-        // TODO: filter out unit / never
-        for (idx, param) in node.params.iter().enumerate().rev() {
-            self.scope_mut().vars.insert(param.name, idx);
-            self.insert(Instruction::SetVar(idx));
+        for param in node
+            .params
+            .iter()
+            .rev()
+            .filter(|p| !matches!(p.type_, Type::Unit | Type::Never))
+        {
+            let cnt = self.curr_fn.let_cnt;
+            self.scope_mut().vars.insert(param.name, cnt);
+            self.insert(Instruction::SetVar(self.curr_fn.let_cnt));
             self.curr_fn.let_cnt += 1;
         }
 
