@@ -547,34 +547,21 @@ impl<'src> Compiler<'src> {
         match node {
             AnalyzedStatement::Let(node) => self.let_stmt(node),
             AnalyzedStatement::Return(_) => todo!(),
-            AnalyzedStatement::Loop(_) => todo!(),
+            AnalyzedStatement::Loop(node) => self.loop_stmt(node),
             AnalyzedStatement::While(_) => todo!(),
             AnalyzedStatement::For(_) => todo!(),
             AnalyzedStatement::Break => todo!(),
             AnalyzedStatement::Continue => todo!(),
-            AnalyzedStatement::Expr(expr) => {
-                // save current lengths of used register lists
-                let used_registers_len = self.used_registers.len();
-                let used_float_registers_len = self.used_float_registers.len();
-
-                // compile the expression
-                self.expression(expr);
-
-                // free all newly allocated register
-                self.used_registers.truncate(used_registers_len);
-                self.used_float_registers.truncate(used_float_registers_len);
+            AnalyzedStatement::Expr(node) => {
+                self.expr_stmt(node);
             }
         }
     }
 
     fn let_stmt(&mut self, node: AnalyzedLetStmt<'src>) {
-        // save current lengths of used register lists
-        let used_registers_len = self.used_registers.len();
-        let used_float_registers_len = self.used_float_registers.len();
-
         // compile the expression
         let expr_type = node.expr.result_type();
-        match self.expression(node.expr) {
+        match self.expr_stmt(node.expr) {
             Some(Value::Int(IntValue::Register(reg))) => {
                 let size = expr_type.try_into().expect("value has type int, not `()`");
                 self.add_var(node.name, size, Value::Int(reg.into()), false);
@@ -587,7 +574,7 @@ impl<'src> Compiler<'src> {
                 // store ptr size
                 let size = ptr.size;
 
-                let reg = self.get_free_register(size);
+                let reg = self.get_tmp_register(size);
 
                 // temporarily move value from memory to register
                 self.function_body
@@ -603,7 +590,7 @@ impl<'src> Compiler<'src> {
                 // store ptr size
                 let size = ptr.size;
 
-                let reg = self.get_free_float_register();
+                let reg = self.get_tmp_float_register();
 
                 // temporarily move value from memory to register
                 self.function_body
@@ -616,10 +603,35 @@ impl<'src> Compiler<'src> {
                 self.curr_scope().insert(node.name, None);
             }
         }
+    }
+
+    fn loop_stmt(&mut self, node: AnalyzedLoopStmt<'src>) {
+        let start_loop_symbol = self.new_block();
+        let end_loop_symbol = self.new_block();
+
+        self.function_body
+            .push(Instruction::Symbol(start_loop_symbol.clone()));
+
+        self.expr_stmt(AnalyzedExpression::Block(node.block.into()));
+        self.function_body.push(Instruction::Jmp(start_loop_symbol));
+
+        self.function_body
+            .push(Instruction::Symbol(end_loop_symbol));
+    }
+
+    fn expr_stmt(&mut self, node: AnalyzedExpression<'src>) -> Option<Value> {
+        // save current lengths of used register lists
+        let used_registers_len = self.used_registers.len();
+        let used_float_registers_len = self.used_float_registers.len();
+
+        // compile the expression
+        let res = self.expression(node);
 
         // free all newly allocated register
         self.used_registers.truncate(used_registers_len);
         self.used_float_registers.truncate(used_float_registers_len);
+
+        res
     }
 
     /////////////////////////////////////////
