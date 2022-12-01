@@ -686,7 +686,7 @@ impl<'src> Compiler<'src> {
                     Variable { value, .. } if value == VariableValue::Unit => return None,
                     var => var,
                 };
-                self.load_value_from_variable(var)
+                self.load_value_from_variable(var, ident.ident.to_string())
             }
             AnalyzedExpression::Prefix(node) => self.prefix_expr(node),
             AnalyzedExpression::Infix(node) => self.infix_expr(node),
@@ -704,22 +704,22 @@ impl<'src> Compiler<'src> {
 
     /// Loads the specified variable into a register.
     /// Decides which load operation is to be used as it depends on the data size.
-    fn load_value_from_variable(&mut self, var: Variable) -> Option<Register> {
+    fn load_value_from_variable(&mut self, var: Variable, ident: String) -> Option<Register> {
         match var.value {
             VariableValue::Pointer(ptr) => match var.type_ {
                 Type::Bool | Type::Char => {
                     let dest_reg = self.alloc_ireg();
-                    self.insert(Instruction::Lb(dest_reg, ptr));
+                    self.insert_w_comment(Instruction::Lb(dest_reg, ptr), ident);
                     Some(Register::Int(dest_reg))
                 }
                 Type::Int => {
                     let dest_reg = self.alloc_ireg();
-                    self.insert(Instruction::Ld(dest_reg, ptr));
+                    self.insert_w_comment(Instruction::Ld(dest_reg, ptr), ident);
                     Some(Register::Int(dest_reg))
                 }
                 Type::Float => {
                     let dest_reg = self.alloc_freg();
-                    self.insert(Instruction::Fld(dest_reg, ptr));
+                    self.insert_w_comment(Instruction::Fld(dest_reg, ptr), ident);
                     Some(Register::Float(dest_reg))
                 }
                 _ => unreachable!("either filtered or impossible"),
@@ -745,6 +745,24 @@ impl<'src> Compiler<'src> {
                 Some(reg) => reg,
                 None => return,
             },
+            AssignOp::Pow => {
+                // load value from the lhs
+                let lhs = self
+                    .load_value_from_variable(assignee.clone(), node.assignee.to_string())
+                    .expect("filtered above");
+                self.use_reg(lhs, Size::from(assignee.type_));
+
+                // compile the rhs
+                let Some(rhs) = self.expression(&node.expr) else {return };
+                self.use_reg(rhs, Size::from(rhs_type));
+
+                // call the `pow` corelib function using the `infix_helper`
+                let res = self.infix_helper(lhs, rhs, InfixOp::from(node.op), assignee.type_);
+
+                self.release_reg(lhs);
+                self.release_reg(rhs);
+                res
+            }
             _ => {
                 // compile the rhs
                 let Some(rhs) = self.expression(&node.expr) else {return };
@@ -752,7 +770,7 @@ impl<'src> Compiler<'src> {
 
                 // load value from the lhs
                 let lhs = self
-                    .load_value_from_variable(assignee.clone())
+                    .load_value_from_variable(assignee.clone(), node.assignee.to_string())
                     .expect("filtered above");
                 self.use_reg(lhs, Size::from(assignee.type_));
 
@@ -961,11 +979,11 @@ impl<'src> Compiler<'src> {
                 // mark the rhs register as used
                 self.use_reg(rhs_reg, Size::from(rhs_type));
 
+                let res = self.infix_helper(lhs_reg, rhs_reg, node.op, lhs_type);
+
                 // release the usage block of the operands
                 self.release_reg(lhs_reg);
                 self.release_reg(rhs_reg);
-
-                let res = self.infix_helper(lhs_reg, rhs_reg, node.op, lhs_type);
 
                 // TODO: if this is broken, release the operands here
                 // self.release_reg(lhs_reg);
