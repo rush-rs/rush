@@ -1,4 +1,4 @@
-use std::{borrow::Cow, cell::Cell, collections::HashMap, rc::Rc};
+use std::{borrow::Cow, collections::HashMap, rc::Rc};
 
 use rush_analyzer::{ast::*, AssignOp, InfixOp, PrefixOp, Type};
 
@@ -6,7 +6,7 @@ use crate::{InterruptKind, Value};
 
 type ExprResult = Result<Value, InterruptKind>;
 type StmtResult = Result<(), InterruptKind>;
-type Scope<'src> = HashMap<&'src str, Cell<Value>>;
+type Scope<'src> = HashMap<&'src str, Value>;
 
 #[derive(Debug, Default)]
 pub struct Interpreter<'src> {
@@ -29,10 +29,10 @@ impl<'src> Interpreter<'src> {
             global_scope.insert(
                 global.name,
                 match global.expr {
-                    AnalyzedExpression::Int(num) => Value::Int(num).into(),
-                    AnalyzedExpression::Float(num) => Value::Float(num).into(),
-                    AnalyzedExpression::Bool(bool) => Value::Bool(bool).into(),
-                    AnalyzedExpression::Char(num) => Value::Char(num).into(),
+                    AnalyzedExpression::Int(num) => Value::Int(num),
+                    AnalyzedExpression::Float(num) => Value::Float(num),
+                    AnalyzedExpression::Bool(bool) => Value::Bool(bool),
+                    AnalyzedExpression::Char(num) => Value::Char(num),
                     _ => unreachable!("the analyzer guarantees constant globals"),
                 },
             );
@@ -61,9 +61,9 @@ impl<'src> Interpreter<'src> {
 
     //////////////////////////////////
 
-    fn get_var(&self, name: &'src str) -> &Cell<Value> {
-        for scope in self.scopes.iter().rev() {
-            if let Some(var) = scope.get(name) {
+    fn get_var(&mut self, name: &'src str) -> &mut Value {
+        for scope in self.scopes.iter_mut().rev() {
+            if let Some(var) = scope.get_mut(name) {
                 return var;
             }
         }
@@ -81,7 +81,7 @@ impl<'src> Interpreter<'src> {
 
         let mut scope = HashMap::new();
         for (param, arg) in func.params.iter().zip(args) {
-            scope.insert(param.name, arg.into());
+            scope.insert(param.name, arg);
         }
 
         self.scopes.push(scope);
@@ -131,7 +131,7 @@ impl<'src> Interpreter<'src> {
         self.scopes
             .last_mut()
             .expect("there should always be at least one scope")
-            .insert(node.name, value.into());
+            .insert(node.name, value);
         Ok(())
     }
 
@@ -160,7 +160,7 @@ impl<'src> Interpreter<'src> {
     fn visit_for_stmt(&mut self, node: &AnalyzedForStmt<'src>) -> StmtResult {
         let mut scope = HashMap::new();
         let init_val = self.visit_expression(&node.initializer)?;
-        scope.insert(node.ident, init_val.into());
+        scope.insert(node.ident, init_val);
 
         loop {
             self.scopes.push(scope);
@@ -197,7 +197,7 @@ impl<'src> Interpreter<'src> {
             AnalyzedExpression::Float(num) => Ok(num.into()),
             AnalyzedExpression::Bool(bool) => Ok(bool.into()),
             AnalyzedExpression::Char(num) => Ok(num.into()),
-            AnalyzedExpression::Ident(name) => Ok(self.get_var(name.ident).get()),
+            AnalyzedExpression::Ident(name) => Ok(*self.get_var(name.ident)),
             AnalyzedExpression::Prefix(node) => self.visit_prefix_expr(node),
             AnalyzedExpression::Infix(node) => self.visit_infix_expr(node),
             AnalyzedExpression::Assign(node) => self.visit_assign_expr(node),
@@ -273,19 +273,19 @@ impl<'src> Interpreter<'src> {
         let var = self.get_var(node.assignee);
         let new_val = match node.op {
             AssignOp::Basic => rhs,
-            AssignOp::Plus => var.get() + rhs,
-            AssignOp::Minus => var.get() - rhs,
-            AssignOp::Mul => var.get() * rhs,
-            AssignOp::Div => (var.get() / rhs)?,
-            AssignOp::Rem => (var.get() % rhs)?,
-            AssignOp::Pow => var.get().pow(rhs),
-            AssignOp::Shl => (var.get() << rhs)?,
-            AssignOp::Shr => (var.get() >> rhs)?,
-            AssignOp::BitOr => var.get() | rhs,
-            AssignOp::BitAnd => var.get() & rhs,
-            AssignOp::BitXor => var.get() ^ rhs,
+            AssignOp::Plus => *var + rhs,
+            AssignOp::Minus => *var - rhs,
+            AssignOp::Mul => *var * rhs,
+            AssignOp::Div => (*var / rhs)?,
+            AssignOp::Rem => (*var % rhs)?,
+            AssignOp::Pow => var.pow(rhs),
+            AssignOp::Shl => (*var << rhs)?,
+            AssignOp::Shr => (*var >> rhs)?,
+            AssignOp::BitOr => *var | rhs,
+            AssignOp::BitAnd => *var & rhs,
+            AssignOp::BitXor => *var ^ rhs,
         };
-        var.set(new_val);
+        *var = new_val;
 
         Ok(Value::Unit)
     }
