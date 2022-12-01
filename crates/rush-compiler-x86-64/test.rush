@@ -14,8 +14,14 @@ fn main() {
     let mut c = 0;
     loop {
         c += 1;
-        if c == 10 {
-            exit(c)
+        if c == 3 {
+            c += 2;
+            continue;
+        } else if c == 4 {
+            c = 20;
+            break;
+        } else if c == 10 {
+            break;
         }
     }
 
@@ -48,7 +54,8 @@ fn main() {
             let a = 'a';
             a
         } as int
-    ); // = 186
+        - c
+    ); // = 176
 }
 
 fn comparisons() -> int {

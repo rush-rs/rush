@@ -27,6 +27,7 @@ pub struct Compiler<'src> {
     pub(crate) frame_size: i64,
     pub(crate) requires_frame: bool,
     pub(crate) block_count: usize,
+    pub(crate) loop_symbols: Vec<(String, String)>,
 
     pub(crate) exports: Vec<Instruction>,
     pub(crate) text_section: Vec<Instruction>,
@@ -550,8 +551,20 @@ impl<'src> Compiler<'src> {
             AnalyzedStatement::Loop(node) => self.loop_stmt(node),
             AnalyzedStatement::While(_) => todo!(),
             AnalyzedStatement::For(_) => todo!(),
-            AnalyzedStatement::Break => todo!(),
-            AnalyzedStatement::Continue => todo!(),
+            AnalyzedStatement::Break => self.function_body.push(Instruction::Jmp(
+                self.loop_symbols
+                    .last()
+                    .expect("the analyzer guarantees loops around break-statements")
+                    .1
+                    .clone(),
+            )),
+            AnalyzedStatement::Continue => self.function_body.push(Instruction::Jmp(
+                self.loop_symbols
+                    .last()
+                    .expect("the analyzer guarantees loops around break-statements")
+                    .0
+                    .clone(),
+            )),
             AnalyzedStatement::Expr(node) => {
                 self.expr_stmt(node);
             }
@@ -609,6 +622,9 @@ impl<'src> Compiler<'src> {
         let start_loop_symbol = self.new_block();
         let end_loop_symbol = self.new_block();
 
+        self.loop_symbols
+            .push((start_loop_symbol.clone(), end_loop_symbol.clone()));
+
         self.function_body
             .push(Instruction::Symbol(start_loop_symbol.clone()));
 
@@ -617,6 +633,8 @@ impl<'src> Compiler<'src> {
 
         self.function_body
             .push(Instruction::Symbol(end_loop_symbol));
+
+        self.loop_symbols.pop();
     }
 
     fn expr_stmt(&mut self, node: AnalyzedExpression<'src>) -> Option<Value> {
