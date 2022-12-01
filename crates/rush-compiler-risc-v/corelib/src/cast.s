@@ -33,7 +33,7 @@ __rush_internal_cast_float_to_char:
 	fgt.d t0, fa0, ft0
 	bne t0, zero, return_127
 	# truncate argument to int
-	fcvt.w.d a0, fa0
+	fcvt.w.d a0, fa0, rdn
 	ret # return truncated value
 
 
