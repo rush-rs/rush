@@ -1177,7 +1177,7 @@ impl<'src> Analyzer<'src> {
                     self.warn_unreachable(node.span, expr_span, true);
                     Type::Never
                 }
-                _ => {
+                Type::Float | Type::Char | Type::Unit => {
                     self.error(
                         ErrorKind::Type,
                         format!(
@@ -1191,6 +1191,13 @@ impl<'src> Analyzer<'src> {
                 }
             },
             PrefixOp::Neg => match expr.result_type() {
+                Type::Int => Type::Int,
+                Type::Float => Type::Float,
+                Type::Unknown => Type::Unknown,
+                Type::Never => {
+                    self.warn_unreachable(node.span, expr_span, true);
+                    Type::Never
+                }
                 Type::Bool | Type::Char | Type::Unit => {
                     self.error(
                         ErrorKind::Type,
@@ -1203,7 +1210,6 @@ impl<'src> Analyzer<'src> {
                     );
                     Type::Unknown
                 }
-                type_ => type_,
             },
         };
 
