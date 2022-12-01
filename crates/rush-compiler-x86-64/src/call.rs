@@ -1,4 +1,4 @@
-use std::mem;
+use std::{mem, rc::Rc};
 
 use rush_analyzer::{ast::AnalyzedExpression, Type};
 
@@ -13,7 +13,7 @@ impl<'src> Compiler<'src> {
     pub(crate) fn call_func(
         &mut self,
         result_type: Type,
-        func: String,
+        func: Rc<str>,
         args: Vec<AnalyzedExpression<'src>>,
     ) -> Option<Value> {
         let prev_used_registers = mem::take(&mut self.used_registers);

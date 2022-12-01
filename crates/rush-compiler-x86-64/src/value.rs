@@ -1,6 +1,7 @@
 use std::{
     cmp::Ordering,
     fmt::{self, Display, Formatter},
+    rc::Rc,
 };
 
 use rush_analyzer::Type;
@@ -89,7 +90,7 @@ impl TryFrom<Type> for Size {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Offset {
     Immediate(i64),
-    Symbol(String),
+    Symbol(Rc<str>),
 }
 
 /////////////////////////////////////////////////
@@ -214,8 +215,8 @@ impl From<i64> for Offset {
     }
 }
 
-impl From<String> for Offset {
-    fn from(symbol: String) -> Self {
+impl From<Rc<str>> for Offset {
+    fn from(symbol: Rc<str>) -> Self {
         Self::Symbol(symbol)
     }
 }

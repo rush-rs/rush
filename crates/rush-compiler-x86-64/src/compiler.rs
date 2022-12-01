@@ -1,4 +1,4 @@
-use std::{collections::HashMap, hash::Hash};
+use std::{collections::HashMap, hash::Hash, rc::Rc};
 
 use rush_analyzer::{ast::*, AssignOp, InfixOp, PrefixOp, Type};
 
@@ -27,31 +27,31 @@ pub struct Compiler<'src> {
     pub(crate) frame_size: i64,
     pub(crate) requires_frame: bool,
     pub(crate) block_count: usize,
-    pub(crate) loop_symbols: Vec<(String, String)>,
+    pub(crate) loop_symbols: Vec<(Rc<str>, Rc<str>)>,
 
     pub(crate) exports: Vec<Instruction>,
     pub(crate) text_section: Vec<Instruction>,
 
     //////// .data section ////////
-    pub(crate) quad_globals: Vec<(String, u64)>,
-    pub(crate) quad_float_globals: Vec<(String, f64)>,
-    // pub(crate) long_globals: Vec<(String, u32)>,
-    // pub(crate) short_globals: Vec<(String, u16)>,
-    pub(crate) byte_globals: Vec<(String, u8)>,
+    pub(crate) quad_globals: Vec<(Rc<str>, u64)>,
+    pub(crate) quad_float_globals: Vec<(Rc<str>, f64)>,
+    // pub(crate) long_globals: Vec<(Rc<str>, u32)>,
+    // pub(crate) short_globals: Vec<(Rc<str>, u16)>,
+    pub(crate) byte_globals: Vec<(Rc<str>, u8)>,
 
     //////// .rodata section ////////
     /// Constants with 128-bits
-    pub(crate) octa_constants: HashMap<u128, String>,
+    pub(crate) octa_constants: HashMap<u128, Rc<str>>,
     /// Constants with 64-bits
-    pub(crate) quad_constants: HashMap<u64, String>,
+    pub(crate) quad_constants: HashMap<u64, Rc<str>>,
     /// Constant floats with 64-bits
-    pub(crate) quad_float_constants: HashMap<u64, String>,
+    pub(crate) quad_float_constants: HashMap<u64, Rc<str>>,
     // /// Constants with 32-bits
-    // pub(crate) long_constants: HashMap<u32, String>,
+    // pub(crate) long_constants: HashMap<u32, Rc<str>>,
     /// Constants with 16-bits
-    pub(crate) short_constants: HashMap<u16, String>,
+    pub(crate) short_constants: HashMap<u16, Rc<str>>,
     // /// Constants with 8-bits
-    // pub(crate) byte_constants: HashMap<u8, String>,
+    // pub(crate) byte_constants: HashMap<u8, Rc<str>>,
 }
 
 #[derive(Debug, Clone)]
@@ -166,26 +166,26 @@ impl<'src> Compiler<'src> {
     }
 
     pub(crate) fn add_constant<T: Eq + Hash>(
-        map: &mut HashMap<T, String>,
+        map: &mut HashMap<T, Rc<str>>,
         value: T,
         size: Size,
         extra_len: usize,
-    ) -> String {
+    ) -> Rc<str> {
         match map.get(&value) {
             // when a constant with the same value already exists, reuse it
-            Some(name) => name.clone(),
+            Some(name) => Rc::clone(name),
             // else create a new one
             None => {
-                let name = format!(".{size:#}_constant_{}", map.len() + extra_len);
-                map.insert(value, name.clone());
+                let name = format!(".{size:#}_constant_{}", map.len() + extra_len).into();
+                map.insert(value, Rc::clone(&name));
                 name
             }
         }
     }
 
-    pub(crate) fn new_block(&mut self) -> String {
+    pub(crate) fn new_block(&mut self) -> Rc<str> {
         self.block_count = self.block_count.wrapping_add(1);
-        format!(".block_{}", self.block_count)
+        format!(".block_{}", self.block_count).into()
     }
 
     pub(crate) fn curr_scope(&mut self) -> &mut HashMap<&'src str, Option<Variable>> {
@@ -363,7 +363,7 @@ impl<'src> Compiler<'src> {
     }
 
     fn global(&mut self, node: AnalyzedLetStmt<'src>) {
-        let name = format!("main..{}", node.name);
+        let name = format!("main..{}", node.name).into();
 
         self.scopes[0].insert(
             node.name,
@@ -372,7 +372,7 @@ impl<'src> Compiler<'src> {
                     Size::try_from(node.expr.result_type())
                         .expect("the analyzer guarantees constant globals"),
                     IntRegister::Rip,
-                    Offset::Symbol(name.clone()),
+                    Offset::Symbol(Rc::clone(&name)),
                 ),
                 kind: match node.expr.result_type() {
                     Type::Float => VariableKind::Float,
@@ -391,22 +391,25 @@ impl<'src> Compiler<'src> {
     }
 
     fn main_fn(&mut self, body: AnalyzedBlock<'src>) {
-        self.exports.push(Instruction::Global("_start".into()));
-        self.text_section.push(Instruction::Symbol("_start".into()));
+        let start_symbol = "_start".into();
+        let main_fn_symbol = "main..main".into();
+
+        self.exports
+            .push(Instruction::Global(Rc::clone(&start_symbol)));
+        self.text_section.push(Instruction::Symbol(start_symbol));
         self.text_section
-            .push(Instruction::Call("main..main".into()));
+            .push(Instruction::Call(Rc::clone(&main_fn_symbol)));
         self.text_section
             .push(Instruction::Mov(IntRegister::Rax.into(), 0.into()));
         self.text_section.push(Instruction::Call("exit".into()));
 
-        self.text_section
-            .push(Instruction::Symbol("main..main".into()));
+        self.text_section.push(Instruction::Symbol(main_fn_symbol));
         self.function_body(body);
     }
 
     fn function_definition(&mut self, node: AnalyzedFunctionDefinition<'src>) {
         self.text_section
-            .push(Instruction::Symbol(format!("main..{}", node.name)));
+            .push(Instruction::Symbol(format!("main..{}", node.name).into()));
 
         self.push_scope();
         let mut int_param_index = 0;
@@ -551,20 +554,20 @@ impl<'src> Compiler<'src> {
             AnalyzedStatement::Loop(node) => self.loop_stmt(node),
             AnalyzedStatement::While(_) => todo!(),
             AnalyzedStatement::For(_) => todo!(),
-            AnalyzedStatement::Break => self.function_body.push(Instruction::Jmp(
-                self.loop_symbols
+            AnalyzedStatement::Break => self.function_body.push(Instruction::Jmp(Rc::clone(
+                &self
+                    .loop_symbols
                     .last()
                     .expect("the analyzer guarantees loops around break-statements")
-                    .1
-                    .clone(),
-            )),
-            AnalyzedStatement::Continue => self.function_body.push(Instruction::Jmp(
-                self.loop_symbols
+                    .1,
+            ))),
+            AnalyzedStatement::Continue => self.function_body.push(Instruction::Jmp(Rc::clone(
+                &self
+                    .loop_symbols
                     .last()
                     .expect("the analyzer guarantees loops around break-statements")
-                    .0
-                    .clone(),
-            )),
+                    .0,
+            ))),
             AnalyzedStatement::Expr(node) => {
                 self.expr_stmt(node);
             }
@@ -623,10 +626,10 @@ impl<'src> Compiler<'src> {
         let end_loop_symbol = self.new_block();
 
         self.loop_symbols
-            .push((start_loop_symbol.clone(), end_loop_symbol.clone()));
+            .push((Rc::clone(&start_loop_symbol), Rc::clone(&end_loop_symbol)));
 
         self.function_body
-            .push(Instruction::Symbol(start_loop_symbol.clone()));
+            .push(Instruction::Symbol(Rc::clone(&start_loop_symbol)));
 
         self.expr_stmt(AnalyzedExpression::Block(node.block.into()));
         self.function_body.push(Instruction::Jmp(start_loop_symbol));
@@ -712,7 +715,7 @@ impl<'src> Compiler<'src> {
     fn if_expr(&mut self, node: AnalyzedIfExpr<'src>) -> Option<Value> {
         let else_block_symbol = node.else_block.as_ref().map(|_| self.new_block());
         let after_if_symbol = self.new_block();
-        let else_block_symbol = else_block_symbol.unwrap_or_else(|| after_if_symbol.clone());
+        let else_block_symbol = else_block_symbol.unwrap_or_else(|| Rc::clone(&after_if_symbol));
 
         match Condition::try_from_expr(node.cond) {
             Ok((cond, lhs, rhs)) => {
@@ -767,14 +770,14 @@ impl<'src> Compiler<'src> {
                             // else block
                             self.function_body.push(Instruction::JCond(
                                 Condition::Parity,
-                                else_block_symbol.clone(),
+                                Rc::clone(&else_block_symbol),
                             ));
                         } else if cond == Condition::NotEqual {
                             // if floats should not be equal and result is not unordered, jump to
                             // else block
                             self.function_body.push(Instruction::JCond(
                                 Condition::NotParity,
-                                else_block_symbol.clone(),
+                                Rc::clone(&else_block_symbol),
                             ));
                         }
                     }
@@ -783,7 +786,7 @@ impl<'src> Compiler<'src> {
 
                 self.function_body.push(Instruction::JCond(
                     cond.negated(),
-                    else_block_symbol.clone(),
+                    Rc::clone(&else_block_symbol),
                 ))
             }
             Err(expr) => {
@@ -794,14 +797,14 @@ impl<'src> Compiler<'src> {
                 match bool {
                     IntValue::Immediate(0) => {
                         self.function_body
-                            .push(Instruction::Jmp(else_block_symbol.clone()));
+                            .push(Instruction::Jmp(Rc::clone(&else_block_symbol)));
                     }
                     IntValue::Immediate(_) => {}
                     val => {
                         self.function_body.push(Instruction::Cmp(val, 0.into()));
                         self.function_body.push(Instruction::JCond(
                             Condition::Equal,
-                            else_block_symbol.clone(),
+                            Rc::clone(&else_block_symbol),
                         ));
                     }
                 }
@@ -842,7 +845,7 @@ impl<'src> Compiler<'src> {
             }
 
             self.function_body
-                .push(Instruction::Jmp(after_if_symbol.clone()));
+                .push(Instruction::Jmp(Rc::clone(&after_if_symbol)));
             self.function_body
                 .push(Instruction::Symbol(else_block_symbol));
 
@@ -1201,8 +1204,8 @@ impl<'src> Compiler<'src> {
         self.call_func(
             result_type,
             match BUILTIN_FUNCS.contains(&func) {
-                true => func.to_string(),
-                false => format!("main..{func}"),
+                true => func.to_string().into(),
+                false => format!("main..{func}").into(),
             },
             args,
         )

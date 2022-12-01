@@ -1,4 +1,7 @@
-use std::fmt::{self, Display, Formatter};
+use std::{
+    fmt::{self, Display, Formatter},
+    rc::Rc,
+};
 
 use crate::{
     condition::Condition,
@@ -13,9 +16,9 @@ pub enum Instruction {
     Commented(Box<Instruction>, String),
 
     IntelSyntax,
-    Global(String),
+    Global(Rc<str>),
     Section(Section),
-    Symbol(String),
+    Symbol(Rc<str>),
     Byte(u8),
     Short(u16),
     Long(u32),
@@ -26,12 +29,12 @@ pub enum Instruction {
     Leave,
     Ret,
     Syscall,
-    Call(String),
+    Call(Rc<str>),
     Push(IntRegister),
     Pop(IntRegister),
 
-    Jmp(String),
-    JCond(Condition, String),
+    Jmp(Rc<str>),
+    JCond(Condition, Rc<str>),
     SetCond(Condition, IntRegister),
 
     //////////////////////////
@@ -201,18 +204,18 @@ mod tests {
     fn test() {
         let instrs = [
             Instruction::Cmp(IntValue::Register(IntRegister::Rsi), IntValue::Immediate(0)),
-            Instruction::JCond(Condition::Less, "return_0".to_string()),
+            Instruction::JCond(Condition::Less, "return_0".into()),
             Instruction::Mov(IntValue::Register(IntRegister::Rax), IntValue::Immediate(1)),
             Instruction::Ucomisd(
                 FloatRegister::Xmm0,
                 FloatValue::Ptr(Pointer::new(
                     Size::Qword,
                     IntRegister::Rip,
-                    Offset::Symbol("float_0".to_string()),
+                    Offset::Symbol("float_0".into()),
                 )),
             ),
             Instruction::Section(Section::ReadOnlyData),
-            Instruction::Symbol("float_127".to_string()),
+            Instruction::Symbol("float_127".into()),
             Instruction::QuadInt(127_f64.to_bits()),
         ];
         for instr in instrs {
