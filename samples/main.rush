@@ -43,6 +43,28 @@ fn main() {
         is_good as float
     };
 
+    for i = 0; i < 100; i += 1 {
+        if i % 2 == 0 {
+            continue;
+        }
+        if i == 80 {
+            break;
+        }
+    }
+
+    let mut a = 0;
+    while a < 10 {
+        a += 1;
+    }
+
+    let mut a = 0;
+    loop {
+        if a == 10 {
+            break;
+        }
+        a += 1;
+    }
+
     exit(1); // -> ! // exit(code: int) -> (), uses WASI proc_exit(i32)
 }
 
@@ -57,15 +79,5 @@ fn main() {
     let name = "rush";
     let array: [int; 3] = [1, 2, 3];
     println(name, "rush");
-
-    loop { break; }
-    while true { break; }
-
-    // TODO: maybe?
-    // for i = 0; i < len(name); i += 1 {
-    //     let char_ = name[i];
-    //     if char_ == 'u' { continue; }
-    //     print(char_);
-    // }
 }
 */

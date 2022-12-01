@@ -11,8 +11,8 @@ execution and compilation.
 - [Lexer & Parser](./crates/rush-parser/)
 - [Semantic Analyzer](./crates/rush-analyzer/)
 
-- TODO: Tree-walking interpreter
-- [Virtual Machine Interpreter](./crates/rush-interpreter-vm)
+- [Tree-walking Interpreter](./crates/rush-interpreter-tree/)
+- [Virtual Machine Interpreter](./crates/rush-interpreter-vm/)
 
 - [WASM Compiler](./crates/rush-compiler-wasm/)
 - [LLVM Compiler](./crates/rush-compiler-llvm/)
