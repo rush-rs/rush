@@ -109,12 +109,9 @@ impl<'src> Compiler<'src> {
                 type_: Type::Unit | Type::Never,
                 ..
             } => {} // ignore unit / never values
-            Variable::Local { stack_idx, type_ } => self.insert(Instruction::GetVar(stack_idx)),
+            Variable::Local { stack_idx, .. } => self.insert(Instruction::GetVar(stack_idx)),
             Variable::Global => {
-                let var = self
-                    .globals
-                    .get(name)
-                    .expect(&format!("every variable was declared: {name}"));
+                let var = self.globals.get(name).expect("every variable was declared");
                 match var {
                     (_, Type::Unit | Type::Never) => {} // ignore unit / never values
                     (idx, _) => self.insert(Instruction::GetGlob(*idx)),
@@ -444,18 +441,22 @@ impl<'src> Compiler<'src> {
         match node.op {
             InfixOp::Or => {
                 self.expression(&node.lhs);
+                self.insert(Instruction::Not);
                 let merge_jmp_idx = self.functions[self.fp].len();
                 self.insert(Instruction::JmpFalse(usize::MAX));
                 self.expression(&node.rhs);
+                self.insert(Instruction::Jmp(self.functions[self.fp].len() + 2));
+                self.insert(Instruction::Push(Value::Bool(true)));
                 self.functions[self.fp][merge_jmp_idx] =
                     Instruction::JmpFalse(self.functions[self.fp].len() - 1);
             }
             InfixOp::And => {
                 self.expression(&node.lhs);
-                self.insert(Instruction::Not);
                 let merge_jmp_idx = self.functions[self.fp].len();
                 self.insert(Instruction::JmpFalse(usize::MAX));
                 self.expression(&node.rhs);
+                self.insert(Instruction::Jmp(self.functions[self.fp].len() + 2));
+                self.insert(Instruction::Push(Value::Bool(false)));
                 self.functions[self.fp][merge_jmp_idx] =
                     Instruction::JmpFalse(self.functions[self.fp].len() - 1);
             }
@@ -470,8 +471,8 @@ impl<'src> Compiler<'src> {
     fn assign_expr(&mut self, node: &'src AnalyzedAssignExpr) {
         if node.op != AssignOp::Basic {
             // load the assignee value
-            self.expression(&node.expr);
             self.load_var(node.assignee);
+            self.expression(&node.expr);
             self.insert(Instruction::from(node.op))
         } else {
             self.expression(&node.expr);

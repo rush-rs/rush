@@ -63,7 +63,7 @@ impl Value {
             Value::Int(value) => Value::Int(value.wrapping_add(rhs.into_int())),
             Value::Char(value) => Value::Char(value.wrapping_add(rhs.into_char()) & 0x7f),
             Value::Float(value) => Value::Float(value + rhs.into_float()),
-            _ => unreachable!("other types do not support this operation"),
+            _ => unreachable!("other types do not support this operation: {self} {rhs}"),
         }
     }
 

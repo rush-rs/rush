@@ -1,4 +1,4 @@
-use std::{env, fs, process};
+use std::{env, fs, process, time::Instant};
 
 fn main() {
     let path = env::args().nth(1).unwrap();
@@ -9,6 +9,8 @@ fn main() {
     } else {
         0
     };
+
+    let start = Instant::now();
 
     let code = fs::read_to_string(&path).unwrap();
     let (ast, _) = rush_analyzer::analyze(&code, &path).unwrap();
@@ -26,5 +28,6 @@ fn main() {
         process::exit(1);
     });
     println!("Program exited with code {code}");
+    println!("{:?}", start.elapsed());
     process::exit(code as i32);
 }
