@@ -15,8 +15,8 @@ pub(crate) struct Compiler<'src> {
     // Maps a function name to its position in the `functions` Vec
     fn_names: HashMap<&'src str, usize>,
 
-    /// Maps a name to a global index.
-    globals: HashMap<&'src str, usize>,
+    /// Maps a name to a global index and the variable type.
+    globals: HashMap<&'src str, (usize, Type)>,
     global_idx: usize,
 
     /// Contains the scopes of the current function. The last item is the current scope.
@@ -30,8 +30,14 @@ pub(crate) struct Compiler<'src> {
 
 #[derive(Default, Debug)]
 struct Scope<'src> {
-    /// Maps an ident to a stack offset
-    vars: HashMap<&'src str, usize>,
+    /// Maps an ident to a variable
+    vars: HashMap<&'src str, Variable>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum Variable {
+    Local { stack_idx: usize, type_: Type },
+    Global,
 }
 
 #[derive(Default)]
@@ -85,24 +91,34 @@ impl<'src> Compiler<'src> {
         self.scopes.last_mut().expect("there is always a scope")
     }
 
-    /// Returns the index of the specified variable or `None` if it is global.
-    fn var_idx(&self, name: &'src str) -> Option<usize> {
+    /// Returns the specified variable given its identifier
+    fn resolve_var(&self, name: &'src str) -> Variable {
         for scope in self.scopes.iter().rev() {
             if let Some(i) = scope.vars.get(name) {
-                return Some(*i);
+                return *i;
             };
         }
-        None
+        Variable::Global
     }
 
     /// Loads the value of the specified variable name on the stack
     fn load_var(&mut self, name: &'src str) {
-        let idx = self.var_idx(name);
-        match idx {
-            Some(idx) => self.insert(Instruction::GetVar(idx)),
-            None => {
-                let idx = self.globals.get(name).expect("every variable was declared");
-                self.insert(Instruction::GetGlob(*idx));
+        let var = self.resolve_var(name);
+        match var {
+            Variable::Local {
+                type_: Type::Unit | Type::Never,
+                ..
+            } => {} // ignore unit / never values
+            Variable::Local { stack_idx, type_ } => self.insert(Instruction::GetVar(stack_idx)),
+            Variable::Global => {
+                let var = self
+                    .globals
+                    .get(name)
+                    .expect(&format!("every variable was declared: {name}"));
+                match var {
+                    (_, Type::Unit | Type::Never) => {} // ignore unit / never values
+                    (idx, _) => self.insert(Instruction::GetGlob(*idx)),
+                }
             }
         }
     }
@@ -135,7 +151,8 @@ impl<'src> Compiler<'src> {
 
     fn declare_global(&mut self, node: &'src AnalyzedLetStmt<'src>) {
         // map the name to the new global index
-        self.globals.insert(node.name, self.global_idx);
+        self.globals
+            .insert(node.name, (self.global_idx, node.expr.result_type()));
         // push global value onto the stack
         self.expression(&node.expr);
         // pop and set the value as global
@@ -148,16 +165,20 @@ impl<'src> Compiler<'src> {
         self.curr_fn = Function::default();
         self.scopes.push(Scope::default());
 
-        for param in node
-            .params
-            .iter()
-            .rev()
-            .filter(|p| !matches!(p.type_, Type::Unit | Type::Never))
-        {
-            let cnt = self.curr_fn.let_cnt;
-            self.scope_mut().vars.insert(param.name, cnt);
-            self.insert(Instruction::SetVar(self.curr_fn.let_cnt));
-            self.curr_fn.let_cnt += 1;
+        for param in node.params.iter().rev() {
+            let stack_idx = self.curr_fn.let_cnt;
+            self.scope_mut().vars.insert(
+                param.name,
+                Variable::Local {
+                    stack_idx,
+                    type_: param.type_,
+                },
+            );
+
+            if !matches!(param.type_, Type::Unit | Type::Never) {
+                self.insert(Instruction::SetVar(self.curr_fn.let_cnt));
+                self.curr_fn.let_cnt += 1;
+            }
         }
 
         self.fn_block(&node.block);
@@ -229,10 +250,31 @@ impl<'src> Compiler<'src> {
 
     fn let_stmt(&mut self, node: &'src AnalyzedLetStmt) {
         self.expression(&node.expr);
-        let let_cnt = self.curr_fn.let_cnt;
-        self.insert(Instruction::SetVar(let_cnt));
-        self.scope_mut().vars.insert(node.name, let_cnt);
-        self.curr_fn.let_cnt += 1;
+
+        match node.expr.result_type() {
+            Type::Unit | Type::Never => {
+                self.scope_mut().vars.insert(
+                    node.name,
+                    Variable::Local {
+                        stack_idx: 0,
+                        type_: Type::Unit,
+                    },
+                );
+            }
+            _ => {
+                let stack_idx = self.curr_fn.let_cnt;
+                self.insert(Instruction::SetVar(stack_idx));
+
+                self.scope_mut().vars.insert(
+                    node.name,
+                    Variable::Local {
+                        stack_idx,
+                        type_: node.expr.result_type(),
+                    },
+                );
+                self.curr_fn.let_cnt += 1;
+            }
+        }
     }
 
     /// Fills in any blank-value `break` statement instructions.
@@ -298,9 +340,15 @@ impl<'src> Compiler<'src> {
     fn for_stmt(&mut self, node: &'src AnalyzedForStmt) {
         // compile the init expression
         self.expression(&node.initializer);
-        let let_cnt = self.curr_fn.let_cnt;
-        self.insert(Instruction::SetVar(let_cnt));
-        self.scope_mut().vars.insert(node.ident, let_cnt);
+        let stack_idx = self.curr_fn.let_cnt;
+        self.insert(Instruction::SetVar(stack_idx));
+        self.scope_mut().vars.insert(
+            node.ident,
+            Variable::Local {
+                stack_idx,
+                type_: node.initializer.result_type(),
+            },
+        );
         self.curr_fn.let_cnt += 1;
 
         // save location of the loop head (for continue stmts)
@@ -429,15 +477,23 @@ impl<'src> Compiler<'src> {
             self.expression(&node.expr);
         }
 
-        let assignee_idx = self.var_idx(node.assignee);
-        match assignee_idx {
-            Some(idx) => self.insert(Instruction::SetVar(idx)),
-            None => {
-                let idx = self
+        let assignee = self.resolve_var(node.assignee);
+        match assignee {
+            Variable::Local {
+                type_: Type::Unit | Type::Never,
+                ..
+            } => {}
+            Variable::Local { stack_idx, .. } => self.insert(Instruction::SetVar(stack_idx)),
+            Variable::Global => {
+                let var = self
                     .globals
                     .get(node.assignee)
                     .expect("every variable was declared");
-                self.insert(Instruction::SetGlob(*idx));
+
+                match var {
+                    (_, Type::Unit | Type::Never) => {}
+                    (idx, _) => self.insert(Instruction::SetGlob(*idx)),
+                };
             }
         };
     }
