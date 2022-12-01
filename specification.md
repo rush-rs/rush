@@ -137,7 +137,7 @@ value as type
 
 ### A Note on Casting to Char
 
-When casting `int` or `float` values to char, any source value $lt 0$ is
+When casting `int` or `float` values to char, any source value $\lt 0$ is
 transformed into a `char` with the value $0$. Furthermore, if the source value
 is $\gt127$, the resulting char will have the value $127$. These limitations are
 due to chars only containing valid `ASCII` characters which lie in the range $0
