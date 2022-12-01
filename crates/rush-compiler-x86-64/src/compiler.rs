@@ -823,13 +823,13 @@ impl<'src> Compiler<'src> {
 
             (Value::Int(val), AssignOp::Basic) => {
                 let source = match val {
-                    val @ (IntValue::Register(_) | IntValue::Immediate(_)) => val,
                     IntValue::Ptr(ptr) => {
                         let reg = self.get_tmp_register(ptr.size);
                         self.function_body
                             .push(Instruction::Mov(reg.into(), ptr.into()));
                         reg.into()
                     }
+                    val => val,
                 };
                 self.function_body
                     .push(Instruction::Mov(var.ptr.into(), source));
@@ -896,7 +896,10 @@ impl<'src> Compiler<'src> {
             }
             (Value::Float(val), AssignOp::Basic) => {
                 let reg = match val {
-                    FloatValue::Register(reg) => reg,
+                    FloatValue::Register(reg) => {
+                        self.used_float_registers.pop();
+                        reg
+                    }
                     FloatValue::Ptr(ptr) => {
                         let reg = self.get_tmp_float_register();
                         self.function_body
@@ -1196,7 +1199,8 @@ impl<'src> Compiler<'src> {
             (Some(Value::Int(val)), Type::Int | Type::Char | Type::Bool, Type::Float) => {
                 match val {
                     IntValue::Register(reg) => {
-                        let float_reg = self.get_tmp_float_register();
+                        self.used_registers.pop();
+                        let float_reg = self.get_free_float_register();
                         self.function_body.push(Instruction::Cvtsi2sd(
                             float_reg.into(),
                             reg.in_qword_size().into(),
@@ -1211,8 +1215,11 @@ impl<'src> Compiler<'src> {
                     }
                     IntValue::Ptr(ptr) => {
                         let reg = self.get_tmp_register(ptr.size);
+                        let used_bits = ptr.size.mask();
                         self.function_body
                             .push(Instruction::Mov(reg.into(), ptr.into()));
+                        self.function_body
+                            .push(Instruction::And(reg.into(), used_bits.into()));
 
                         let float_reg = self.get_free_float_register();
                         self.function_body.push(Instruction::Cvtsi2sd(

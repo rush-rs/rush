@@ -61,6 +61,16 @@ impl Size {
     pub fn byte_count(&self) -> i64 {
         *self as i64
     }
+
+    pub fn mask(&self) -> i64 {
+        match self {
+            Size::Byte => 0xff,
+            Size::Word => 0xffff,
+            Size::Dword => 0xffff_ffff,
+            Size::Qword => -1,
+            Size::Oword => panic!("oword mask too large for 64 bits"),
+        }
+    }
 }
 
 impl TryFrom<Type> for Size {
