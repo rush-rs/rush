@@ -36,7 +36,11 @@ fn main() {
         + casts()
         + !hundred
         - assignments()
-    ); // = 89
+        + {
+            let a = 'a';
+            a
+        } as int
+    ); // = 186
 }
 
 fn comparisons() -> int {

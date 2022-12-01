@@ -545,16 +545,26 @@ impl<'src> Compiler<'src> {
             AnalyzedStatement::Break => todo!(),
             AnalyzedStatement::Continue => todo!(),
             AnalyzedStatement::Expr(expr) => {
+                // save current lengths of used register lists
+                let used_registers_len = self.used_registers.len();
+                let used_float_registers_len = self.used_float_registers.len();
+
+                // compile the expression
                 self.expression(expr);
+
+                // free all newly allocated register
+                self.used_registers.truncate(used_registers_len);
+                self.used_float_registers.truncate(used_float_registers_len);
             }
         }
-
-        // Clear used registers
-        self.used_registers.clear();
-        self.used_float_registers.clear();
     }
 
     fn let_stmt(&mut self, node: AnalyzedLetStmt<'src>) {
+        // save current lengths of used register lists
+        let used_registers_len = self.used_registers.len();
+        let used_float_registers_len = self.used_float_registers.len();
+
+        // compile the expression
         let expr_type = node.expr.result_type();
         match self.expression(node.expr) {
             Some(Value::Int(IntValue::Register(reg))) => {
@@ -598,13 +608,17 @@ impl<'src> Compiler<'src> {
                 self.curr_scope().insert(node.name, None);
             }
         }
+
+        // free all newly allocated register
+        self.used_registers.truncate(used_registers_len);
+        self.used_float_registers.truncate(used_float_registers_len);
     }
 
     /////////////////////////////////////////
 
     fn expression(&mut self, node: AnalyzedExpression<'src>) -> Option<Value> {
         match node {
-            AnalyzedExpression::Block(_node) => todo!(),
+            AnalyzedExpression::Block(node) => self.block_expr(*node),
             AnalyzedExpression::If(_node) => todo!(),
             AnalyzedExpression::Int(num) => match num > i32::MAX as i64 || num < i32::MIN as i64 {
                 true => {
@@ -645,6 +659,16 @@ impl<'src> Compiler<'src> {
             AnalyzedExpression::Cast(node) => self.cast_expr(*node),
             AnalyzedExpression::Grouped(node) => self.expression(*node),
         }
+    }
+
+    fn block_expr(&mut self, node: AnalyzedBlock<'src>) -> Option<Value> {
+        self.push_scope();
+        for stmt in node.stmts {
+            self.statement(stmt);
+        }
+        let res = node.expr.and_then(|expr| self.expression(expr));
+        self.pop_scope();
+        res
     }
 
     fn ident_expr(&mut self, node: AnalyzedIdentExpr<'src>) -> Option<Value> {
