@@ -273,17 +273,17 @@ impl<'src> Interpreter<'src> {
         let var = self.get_var(node.assignee);
         let new_val = match node.op {
             AssignOp::Basic => rhs,
-            AssignOp::Plus => rhs + var.get(),
-            AssignOp::Minus => rhs - var.get(),
-            AssignOp::Mul => rhs * var.get(),
-            AssignOp::Div => (rhs / var.get())?,
-            AssignOp::Rem => (rhs % var.get())?,
-            AssignOp::Pow => rhs.pow(var.get()),
-            AssignOp::Shl => (rhs << var.get())?,
-            AssignOp::Shr => (rhs >> var.get())?,
-            AssignOp::BitOr => rhs | var.get(),
-            AssignOp::BitAnd => rhs & var.get(),
-            AssignOp::BitXor => rhs ^ var.get(),
+            AssignOp::Plus => var.get() + rhs,
+            AssignOp::Minus => var.get() - rhs,
+            AssignOp::Mul => var.get() * rhs,
+            AssignOp::Div => (var.get() / rhs)?,
+            AssignOp::Rem => (var.get() % rhs)?,
+            AssignOp::Pow => var.get().pow(rhs),
+            AssignOp::Shl => (var.get() << rhs)?,
+            AssignOp::Shr => (var.get() >> rhs)?,
+            AssignOp::BitOr => var.get() | rhs,
+            AssignOp::BitAnd => var.get() & rhs,
+            AssignOp::BitXor => var.get() ^ rhs,
         };
         var.set(new_val);
 
