@@ -24,8 +24,8 @@ pub(crate) struct Compiler<'src> {
 
     curr_fn: Function,
 
-    /// Contains information about the current loop
-    curr_loop: Loop,
+    /// Contains information about the current loop(s)
+    loops: Vec<Loop>,
 }
 
 #[derive(Default, Debug)]
@@ -75,7 +75,7 @@ impl<'src> Compiler<'src> {
             scopes: vec![],
             globals: HashMap::new(),
             global_idx: 0,
-            curr_loop: Loop::default(),
+            loops: vec![],
         }
     }
 
@@ -89,6 +89,22 @@ impl<'src> Compiler<'src> {
     /// Returns a mutable reference to the current scope
     fn scope_mut(&mut self) -> &mut Scope<'src> {
         self.scopes.last_mut().expect("there is always a scope")
+    }
+
+    #[inline]
+    /// Returns a reference to the current loop
+    fn curr_loop(&mut self) -> &Loop {
+        self.loops
+            .last_mut()
+            .expect("there is always a loop when called")
+    }
+
+    #[inline]
+    /// Returns a mutable reference to the current loop
+    fn curr_loop_mut(&mut self) -> &mut Loop {
+        self.loops
+            .last_mut()
+            .expect("there is always a loop when called")
     }
 
     /// Returns the specified variable given its identifier
@@ -230,12 +246,15 @@ impl<'src> Compiler<'src> {
             AnalyzedStatement::For(node) => self.for_stmt(node),
             AnalyzedStatement::Break => {
                 // the jmp instruction is corrected later
-                self.curr_loop
-                    .break_jmp_indices
-                    .push(self.functions[self.fp].len() + 1);
+                let end = self.functions[self.fp].len();
+                self.curr_loop_mut().break_jmp_indices.push(end);
                 self.insert(Instruction::Jmp(usize::MAX));
             }
-            AnalyzedStatement::Continue => self.insert(Instruction::Jmp(self.curr_loop.head)),
+            AnalyzedStatement::Continue => {
+                let head = self.curr_loop().head;
+                self.insert(Instruction::Jmp(head))
+            }
+
             AnalyzedStatement::Expr(node) => {
                 self.expression(node);
                 if !matches!(node.result_type(), Type::Unit | Type::Never) {
@@ -276,7 +295,7 @@ impl<'src> Compiler<'src> {
 
     /// Fills in any blank-value `break` statement instructions.
     fn fill_blank_jmps(&mut self, offset: usize) {
-        for idx in &self.curr_loop.break_jmp_indices {
+        for idx in &self.curr_loop().break_jmp_indices.clone() {
             match &mut self.functions[self.fp][*idx] {
                 Instruction::Jmp(o) => *o = offset,
                 Instruction::JmpFalse(o) => *o = offset,
@@ -288,7 +307,7 @@ impl<'src> Compiler<'src> {
     fn loop_stmt(&mut self, node: &'src AnalyzedLoopStmt) {
         // save location of the loop head (for continue stmts)
         let loop_head_pos = self.functions[self.fp].len();
-        self.curr_loop = Loop::new(loop_head_pos);
+        self.loops.push(Loop::new(loop_head_pos));
 
         // compile the loop body
         self.block(&node.block);
@@ -303,20 +322,20 @@ impl<'src> Compiler<'src> {
 
         // correct placeholder break values
         self.fill_blank_jmps(self.functions[self.fp].len());
+        self.loops.pop();
     }
 
     fn while_stmt(&mut self, node: &'src AnalyzedWhileStmt) {
         // save location of the loop head (for continue stmts)
         let loop_head_pos = self.functions[self.fp].len();
-        self.curr_loop = Loop::new(loop_head_pos);
+        self.loops.push(Loop::new(loop_head_pos));
 
         // compile the while condition
         self.expression(&node.cond);
 
         // jump to the end if the condition is false
-        self.curr_loop
-            .break_jmp_indices
-            .push(self.functions[self.fp].len());
+        let end = self.functions[self.fp].len();
+        self.curr_loop_mut().break_jmp_indices.push(end);
         self.insert(Instruction::JmpFalse(usize::MAX));
 
         // compile the loop body
@@ -332,6 +351,7 @@ impl<'src> Compiler<'src> {
 
         // correct placeholder break values
         self.fill_blank_jmps(self.functions[self.fp].len());
+        self.loops.pop();
     }
 
     fn for_stmt(&mut self, node: &'src AnalyzedForStmt) {
@@ -350,15 +370,15 @@ impl<'src> Compiler<'src> {
 
         // save location of the loop head (for continue stmts)
         let loop_head_pos = self.functions[self.fp].len();
-        self.curr_loop = Loop::new(loop_head_pos);
+
+        self.loops.push(Loop::new(loop_head_pos));
 
         // compile the condition expr
         self.expression(&node.cond);
 
         // jump to the end if the condition is false
-        self.curr_loop
-            .break_jmp_indices
-            .push(self.functions[self.fp].len());
+        let end = self.functions[self.fp].len();
+        self.curr_loop_mut().break_jmp_indices.push(end);
         self.insert(Instruction::JmpFalse(usize::MAX));
 
         // compile the loop body
@@ -388,6 +408,7 @@ impl<'src> Compiler<'src> {
 
         // correct placeholder break values
         self.fill_blank_jmps(self.functions[self.fp].len());
+        self.loops.pop();
     }
 
     fn expression(&mut self, node: &'src AnalyzedExpression) {
@@ -413,22 +434,26 @@ impl<'src> Compiler<'src> {
     fn if_expr(&mut self, node: &'src AnalyzedIfExpr) {
         // compile the condition
         self.expression(&node.cond);
-        let after_condition = self.functions[self.fp].len() - 1;
+        let after_condition = self.functions[self.fp].len();
+        self.insert(Instruction::Jmp(usize::MAX)); // placeholder
 
         // compile the `then` branch
         self.block(&node.then_block);
-        let after_then_idx = self.functions[self.fp].len() - 1;
-
-        // insert the jump (skip the then block)
-        self.functions[self.fp].insert(
-            after_condition + 1,
-            Instruction::JmpFalse(after_then_idx + 3),
-        );
+        let after_then_idx = self.functions[self.fp].len();
 
         if let Some(else_block) = &node.else_block {
+            self.insert(Instruction::Jmp(usize::MAX)); // placeholder
+                                                       // if there is `else`, jump to the instruction after the jump after `then`
+            self.functions[self.fp][after_condition] = Instruction::JmpFalse(after_then_idx + 1);
+
             self.block(else_block);
             let after_else = self.functions[self.fp].len();
-            self.functions[self.fp].insert(after_then_idx + 2, Instruction::Jmp(after_else + 1))
+
+            // skip the `else` block when coming from the `then` block
+            self.functions[self.fp][after_then_idx] = Instruction::Jmp(after_else);
+        } else {
+            // if there is no `else` branch, jump after the last instruction of the `then` branch
+            self.functions[self.fp][after_condition] = Instruction::JmpFalse(after_then_idx);
         }
     }
 
