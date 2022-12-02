@@ -1509,7 +1509,12 @@ impl<'src> Analyzer<'src> {
                 );
                 Type::Unknown
             }
-            (AssignOp::Plus | AssignOp::Minus | AssignOp::Mul | AssignOp::Div, _, type_)
+            (AssignOp::Plus | AssignOp::Minus, _, type_)
+                if ![Type::Int, Type::Float, Type::Char].contains(&type_) =>
+            {
+                self.assign_type_error(node.op, type_, expr_span)
+            }
+            (AssignOp::Mul | AssignOp::Div, _, type_)
                 if ![Type::Int, Type::Float].contains(&type_) =>
             {
                 self.assign_type_error(node.op, type_, expr_span)
