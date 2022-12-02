@@ -63,6 +63,7 @@ pub enum Instruction {
     Xor(IntValue, IntValue),
 
     Cmp(IntValue, IntValue),
+    Test(IntValue, i64),
     /// Convert int to float. (**c**on**v**er**t** **s**igned **i**nteger to **s**calar **d**ouble)
     Cvtsi2sd(FloatValue, IntValue),
     /// Sign-extend 64-bit int in %rax to 128-bit int in %rdx:%rax (**c**onvert **q**uad to **o**cta)
@@ -152,6 +153,7 @@ impl Display for Instruction {
             Instruction::Or(dest, src) => write!(f, "    {:11} {dest}, {src}", "or"),
             Instruction::Xor(dest, src) => write!(f, "    {:11} {dest}, {src}", "xor"),
             Instruction::Cmp(left, right) => write!(f, "    {:11} {left}, {right}", "cmp"),
+            Instruction::Test(left, right) => write!(f, "    {:11} {left}, {right}", "test"),
             Instruction::Cvtsi2sd(dest, src) => write!(f, "    {:11} {dest}, {src}", "cvtsi2sd"),
             Instruction::Cqo => write!(f, "    cqo"),
             Instruction::Movsd(dest, src) if dest == src => return Ok(()),

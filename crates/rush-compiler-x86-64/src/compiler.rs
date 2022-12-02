@@ -1030,39 +1030,54 @@ impl<'src> Compiler<'src> {
                     vec![node.lhs, node.rhs],
                 )
             }
-            // logical OR
-            InfixOp::Or => {
-                return self.if_expr(AnalyzedIfExpr {
-                    result_type: Type::Bool,
-                    cond: node.lhs,
-                    then_block: AnalyzedBlock {
-                        result_type: Type::Bool,
-                        stmts: vec![],
-                        expr: Some(AnalyzedExpression::Bool(true)),
+            // logical AND | logical OR
+            InfixOp::And | InfixOp::Or => {
+                let bool_left = self
+                    .tmp_expr(node.lhs)?
+                    .expect_int("the analyzer guarantees bools around logical operators");
+
+                let result_reg = match bool_left {
+                    IntValue::Register(reg) => reg,
+                    _ => {
+                        // don't allocate the register, so the rhs uses the same one
+                        let reg = self.get_tmp_register(Size::Byte);
+                        self.function_body
+                            .push(Instruction::Mov(reg.into(), bool_left));
+                        reg
+                    }
+                };
+                debug_assert_eq!(result_reg.size(), Size::Byte);
+                let skip_symbol = self.new_block();
+
+                // jump to end if result is clear
+                self.function_body
+                    .push(Instruction::Test(result_reg.into(), 1));
+                self.function_body.push(Instruction::JCond(
+                    match node.op == InfixOp::And {
+                        true => Condition::Equal,
+                        false => Condition::NotEqual,
                     },
-                    else_block: Some(AnalyzedBlock {
-                        result_type: Type::Bool,
-                        stmts: vec![],
-                        expr: Some(node.rhs),
-                    }),
-                });
-            }
-            // logical AND
-            InfixOp::And => {
-                return self.if_expr(AnalyzedIfExpr {
-                    result_type: Type::Bool,
-                    cond: node.lhs,
-                    then_block: AnalyzedBlock {
-                        result_type: Type::Bool,
-                        stmts: vec![],
-                        expr: Some(node.rhs),
-                    },
-                    else_block: Some(AnalyzedBlock {
-                        result_type: Type::Bool,
-                        stmts: vec![],
-                        expr: Some(AnalyzedExpression::Bool(false)),
-                    }),
-                });
+                    Rc::clone(&skip_symbol),
+                ));
+
+                // else use value of rhs
+                match self.expression(node.rhs) {
+                    Some(Value::Int(IntValue::Register(reg))) => debug_assert_eq!(reg, result_reg),
+                    Some(Value::Int(val)) => {
+                        let reg = self.get_free_register(Size::Byte);
+                        debug_assert_eq!(reg, result_reg);
+                        self.function_body.push(Instruction::Mov(reg.into(), val));
+                    }
+                    Some(Value::Float(_)) => {
+                        unreachable!("the analyzer guarantees bools around logical operators")
+                    }
+                    None => {}
+                }
+
+                self.function_body
+                    .push(Instruction::Symbol(skip_symbol, false));
+
+                return Some(Value::Int(IntValue::Register(result_reg)));
             }
             _ => {}
         }
