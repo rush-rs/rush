@@ -48,18 +48,19 @@ struct Function {
 
 #[derive(Default)]
 struct Loop {
-    /// Specifies the instruction index of the loop head
-    head: usize,
     /// Specifies the instruction indices in the current function of `break` statements.
     /// Used for replacing the offset with the real value after the loop body has been compiled.
     break_jmp_indices: Vec<usize>,
+    /// Specifies the instruction indices in the current function of `continue` statements.
+    /// Used for replacing the offset with the real value after the loop body has been compiled.
+    continue_jmp_indices: Vec<usize>,
 }
 
 impl Loop {
-    fn new(head: usize) -> Self {
+    fn new() -> Self {
         Self {
-            head,
             break_jmp_indices: vec![],
+            continue_jmp_indices: vec![],
         }
     }
 }
@@ -93,9 +94,9 @@ impl<'src> Compiler<'src> {
 
     #[inline]
     /// Returns a reference to the current loop
-    fn curr_loop(&mut self) -> &Loop {
+    fn curr_loop(&self) -> &Loop {
         self.loops
-            .last_mut()
+            .last()
             .expect("there is always a loop when called")
     }
 
@@ -251,8 +252,10 @@ impl<'src> Compiler<'src> {
                 self.insert(Instruction::Jmp(usize::MAX));
             }
             AnalyzedStatement::Continue => {
-                let head = self.curr_loop().head;
-                self.insert(Instruction::Jmp(head))
+                // the jmp instruction is corrected later
+                let end = self.functions[self.fp].len();
+                self.curr_loop_mut().continue_jmp_indices.push(end);
+                self.insert(Instruction::Jmp(usize::MAX));
             }
 
             AnalyzedStatement::Expr(node) => {
@@ -294,11 +297,21 @@ impl<'src> Compiler<'src> {
     }
 
     /// Fills in any blank-value `break` statement instructions.
-    fn fill_blank_jmps(&mut self, offset: usize) {
+    fn fill_blank_jmps(&mut self, break_offset: usize) {
         for idx in &self.curr_loop().break_jmp_indices.clone() {
             match &mut self.functions[self.fp][*idx] {
-                Instruction::Jmp(o) => *o = offset,
-                Instruction::JmpFalse(o) => *o = offset,
+                Instruction::Jmp(o) => *o = break_offset,
+                Instruction::JmpFalse(o) => *o = break_offset,
+                _ => unreachable!("other instructions do not jump"),
+            }
+        }
+    }
+
+    /// Fills in any blank-value `continue` statement instructions.
+    fn fill_blank_continues(&mut self, continue_offset: usize) {
+        for idx in &self.curr_loop().continue_jmp_indices.clone() {
+            match &mut self.functions[self.fp][*idx] {
+                Instruction::Jmp(o) => *o = continue_offset,
                 _ => unreachable!("other instructions do not jump"),
             }
         }
@@ -307,7 +320,7 @@ impl<'src> Compiler<'src> {
     fn loop_stmt(&mut self, node: &'src AnalyzedLoopStmt) {
         // save location of the loop head (for continue stmts)
         let loop_head_pos = self.functions[self.fp].len();
-        self.loops.push(Loop::new(loop_head_pos));
+        self.loops.push(Loop::new());
 
         // compile the loop body
         self.block(&node.block);
@@ -322,13 +335,16 @@ impl<'src> Compiler<'src> {
 
         // correct placeholder break values
         self.fill_blank_jmps(self.functions[self.fp].len());
+        // correct placeholder continue values
+        self.fill_blank_continues(loop_head_pos);
+
         self.loops.pop();
     }
 
     fn while_stmt(&mut self, node: &'src AnalyzedWhileStmt) {
         // save location of the loop head (for continue stmts)
         let loop_head_pos = self.functions[self.fp].len();
-        self.loops.push(Loop::new(loop_head_pos));
+        self.loops.push(Loop::new());
 
         // compile the while condition
         self.expression(&node.cond);
@@ -351,6 +367,13 @@ impl<'src> Compiler<'src> {
 
         // correct placeholder break values
         self.fill_blank_jmps(self.functions[self.fp].len());
+
+        // correct placeholder continue values
+        self.fill_blank_continues(loop_head_pos);
+
+        // correct placeholder continue values
+        self.fill_blank_continues(loop_head_pos);
+
         self.loops.pop();
     }
 
@@ -368,17 +391,18 @@ impl<'src> Compiler<'src> {
         );
         self.curr_fn.let_cnt += 1;
 
-        // save location of the loop head (for continue stmts)
+        // save location of the loop head (for repetition)
         let loop_head_pos = self.functions[self.fp].len();
 
-        self.loops.push(Loop::new(loop_head_pos));
+        // `loop_head` is set to placeholder value and updated later
+        self.loops.push(Loop::new());
 
         // compile the condition expr
         self.expression(&node.cond);
 
         // jump to the end if the condition is false
-        let end = self.functions[self.fp].len();
-        self.curr_loop_mut().break_jmp_indices.push(end);
+        let curr_pos = self.functions[self.fp].len();
+        self.curr_loop_mut().break_jmp_indices.push(curr_pos);
         self.insert(Instruction::JmpFalse(usize::MAX));
 
         // compile the loop body
@@ -395,6 +419,10 @@ impl<'src> Compiler<'src> {
             None => {}
         }
 
+        // all `continue` statements jump before the update expr
+        let curr_pos = self.functions[self.fp].len();
+        self.fill_blank_continues(curr_pos);
+
         // compile the update expression
         self.expression(&node.update);
         if node.block.expr.as_ref().map_or(false, |e| {
@@ -408,6 +436,7 @@ impl<'src> Compiler<'src> {
 
         // correct placeholder break values
         self.fill_blank_jmps(self.functions[self.fp].len());
+
         self.loops.pop();
     }
 
