@@ -61,7 +61,7 @@ make build
 
 ### Running RISC-V Binaries
 
-- Since you have installed a RISC-V emulator prior to this section, following
+- Since you have installed a RISC-V emulator prior to reading this section, following
   command can be used to run the binary using the emulator.
 - The suffix containing `echo ...` is optional and merely prints out the
   program's exit-code.

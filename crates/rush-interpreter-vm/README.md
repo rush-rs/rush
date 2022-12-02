@@ -1,6 +1,6 @@
 # VM Interpreter Backend
 
-A rush Interpreter using a micro-compiler alongside a VM for its runtime.
+A rush interpreter using a micro-compiler alongside a VM for its runtime.
 
 ## Running rush Code
 
