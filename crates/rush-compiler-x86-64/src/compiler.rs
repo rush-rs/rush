@@ -554,20 +554,28 @@ impl<'src> Compiler<'src> {
             AnalyzedStatement::Loop(node) => self.loop_stmt(node),
             AnalyzedStatement::While(_) => todo!(),
             AnalyzedStatement::For(_) => todo!(),
-            AnalyzedStatement::Break => self.function_body.push(Instruction::Jmp(Rc::clone(
-                &self
-                    .loop_symbols
-                    .last()
-                    .expect("the analyzer guarantees loops around break-statements")
-                    .1,
-            ))),
-            AnalyzedStatement::Continue => self.function_body.push(Instruction::Jmp(Rc::clone(
-                &self
-                    .loop_symbols
-                    .last()
-                    .expect("the analyzer guarantees loops around break-statements")
-                    .0,
-            ))),
+            AnalyzedStatement::Break => self.function_body.push(Instruction::Commented(
+                Instruction::Jmp(Rc::clone(
+                    &self
+                        .loop_symbols
+                        .last()
+                        .expect("the analyzer guarantees loops around break-statements")
+                        .1,
+                ))
+                .into(),
+                "break;".into(),
+            )),
+            AnalyzedStatement::Continue => self.function_body.push(Instruction::Commented(
+                Instruction::Jmp(Rc::clone(
+                    &self
+                        .loop_symbols
+                        .last()
+                        .expect("the analyzer guarantees loops around continue-statements")
+                        .0,
+                ))
+                .into(),
+                "continue;".into(),
+            )),
             AnalyzedStatement::Expr(node) => {
                 self.expr_stmt(node);
             }
@@ -634,7 +642,10 @@ impl<'src> Compiler<'src> {
         ));
 
         self.expr_stmt(AnalyzedExpression::Block(node.block.into()));
-        self.function_body.push(Instruction::Jmp(start_loop_symbol));
+        self.function_body.push(Instruction::Commented(
+            Instruction::Jmp(start_loop_symbol).into(),
+            "continue;".into(),
+        ));
 
         self.function_body.push(Instruction::Commented(
             Instruction::Symbol(end_loop_symbol, false).into(),
