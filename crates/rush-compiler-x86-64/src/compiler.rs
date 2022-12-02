@@ -577,7 +577,7 @@ impl<'src> Compiler<'src> {
                 "continue;".into(),
             )),
             AnalyzedStatement::Expr(node) => {
-                self.expr_stmt(node);
+                self.tmp_expr(node);
             }
         }
     }
@@ -585,10 +585,10 @@ impl<'src> Compiler<'src> {
     fn let_stmt(&mut self, node: AnalyzedLetStmt<'src>) {
         // compile the expression
         let expr_type = node.expr.result_type();
-        match self.expr_stmt(node.expr) {
+        match self.tmp_expr(node.expr) {
             Some(Value::Int(IntValue::Register(reg))) => {
                 let size = expr_type.try_into().expect("value has type int, not `()`");
-                self.add_var(node.name, size, Value::Int(reg.into()), false);
+                self.add_var(node.name, size, Value::Int(reg.in_size(size).into()), false);
             }
             Some(Value::Int(IntValue::Immediate(num))) => {
                 let size = expr_type.try_into().expect("value has type int, not `()`");
@@ -641,7 +641,7 @@ impl<'src> Compiler<'src> {
             "loop {".into(),
         ));
 
-        self.expr_stmt(AnalyzedExpression::Block(node.block.into()));
+        self.tmp_expr(AnalyzedExpression::Block(node.block.into()));
         self.function_body.push(Instruction::Commented(
             Instruction::Jmp(start_loop_symbol).into(),
             "continue;".into(),
@@ -655,7 +655,7 @@ impl<'src> Compiler<'src> {
         self.loop_symbols.pop();
     }
 
-    fn expr_stmt(&mut self, node: AnalyzedExpression<'src>) -> Option<Value> {
+    fn tmp_expr(&mut self, node: AnalyzedExpression<'src>) -> Option<Value> {
         // save current lengths of used register lists
         let used_registers_len = self.used_registers.len();
         let used_float_registers_len = self.used_float_registers.len();
@@ -806,7 +806,7 @@ impl<'src> Compiler<'src> {
             }
             Err(expr) => {
                 let bool = self
-                    .expression(expr)?
+                    .tmp_expr(expr)?
                     .expect_int("the analyzer guarantees boolean conditions");
 
                 match bool {
@@ -874,17 +874,28 @@ impl<'src> Compiler<'src> {
                 Some(Value::Int(val)) => {
                     match val {
                         IntValue::Register(reg) => {
-                            debug_assert_eq!(result_reg, Some(Register::Int(reg)))
+                            debug_assert_eq!(
+                                result_reg.map(|r| r.in_size(reg.size())),
+                                Some(Register::Int(reg))
+                            )
                         }
                         _ => {
-                            let result_reg = result_reg
-                                .expect("the else-block has a result, so the then-block must have one too")
-                                .expect_int("the analyzer guarantees equal types in both blocks");
+                            let size = match &val {
+                                IntValue::Ptr(ptr) => ptr.size,
+                                _ => Size::Qword,
+                            };
+                            let result_reg = match result_reg {
+                                Some(reg) => reg.expect_int(
+                                    "the analyzer guarantees equal types in both blocks",
+                                ),
+                                None => self.get_free_register(size),
+                            };
+
                             // restore temporarily freed register
                             self.used_registers.push(result_reg);
 
                             self.function_body
-                                .push(Instruction::Mov(result_reg.into(), val))
+                                .push(Instruction::Mov(result_reg.in_size(size).into(), val))
                         }
                     }
                 }
@@ -1009,7 +1020,7 @@ impl<'src> Compiler<'src> {
     }
 
     fn infix_expr(&mut self, node: AnalyzedInfixExpr<'src>) -> Option<Value> {
-        // some ops handle compilation of the expressions themselves
+        // some ops handle compilation of the expressions themselves..
         match node.op {
             // integer pow
             InfixOp::Pow => {
@@ -1019,20 +1030,65 @@ impl<'src> Compiler<'src> {
                     vec![node.lhs, node.rhs],
                 )
             }
-            // logical AND
-            InfixOp::And => todo!(),
             // logical OR
-            InfixOp::Or => todo!(),
+            InfixOp::Or => {
+                return self.if_expr(AnalyzedIfExpr {
+                    result_type: Type::Bool,
+                    cond: node.lhs,
+                    then_block: AnalyzedBlock {
+                        result_type: Type::Bool,
+                        stmts: vec![],
+                        expr: Some(AnalyzedExpression::Bool(true)),
+                    },
+                    else_block: Some(AnalyzedBlock {
+                        result_type: Type::Bool,
+                        stmts: vec![],
+                        expr: Some(node.rhs),
+                    }),
+                });
+            }
+            // logical AND
+            InfixOp::And => {
+                return self.if_expr(AnalyzedIfExpr {
+                    result_type: Type::Bool,
+                    cond: node.lhs,
+                    then_block: AnalyzedBlock {
+                        result_type: Type::Bool,
+                        stmts: vec![],
+                        expr: Some(node.rhs),
+                    },
+                    else_block: Some(AnalyzedBlock {
+                        result_type: Type::Bool,
+                        stmts: vec![],
+                        expr: Some(AnalyzedExpression::Bool(false)),
+                    }),
+                });
+            }
             _ => {}
         }
 
-        // else compile the expressions
-        let is_char = node.lhs.result_type() == Type::Char;
-        let lhs = self.expression(node.lhs);
+        // ..else compile the expressions..
+        let lhs_type = node.lhs.result_type();
+        //// when lhs is no register, move it into one
+        let lhs = match self.expression(node.lhs) {
+            Some(Value::Int(IntValue::Register(reg))) => Some(Register::Int(reg)),
+            Some(Value::Int(val)) => {
+                let reg = self.get_free_register(lhs_type.try_into().unwrap_or(Size::Qword));
+                self.function_body.push(Instruction::Mov(reg.into(), val));
+                Some(Register::Int(reg))
+            }
+            Some(Value::Float(FloatValue::Register(reg))) => Some(Register::Float(reg)),
+            Some(Value::Float(val)) => {
+                let reg = self.get_free_float_register();
+                self.function_body.push(Instruction::Movsd(reg.into(), val));
+                Some(Register::Float(reg))
+            }
+            None => None,
+        };
         let rhs = self.expression(node.rhs);
 
-        // and the operation on them
-        self.compile_infix(lhs, rhs, node.op, is_char)
+        // ..and the operation on them
+        self.compile_infix(lhs, rhs, node.op, lhs_type == Type::Char)
     }
 
     fn assign_expr(&mut self, node: AnalyzedAssignExpr<'src>) -> Option<Value> {
@@ -1164,11 +1220,22 @@ impl<'src> Compiler<'src> {
                     .push(Instruction::Movsd(var.ptr.into(), reg.into()));
             }
             (rhs, op) => {
+                let lhs = match rhs {
+                    Value::Int(_) => {
+                        let reg = self.get_free_register(var.ptr.size);
+                        self.function_body
+                            .push(Instruction::Mov(reg.into(), var.ptr.clone().into()));
+                        Some(Register::Int(reg))
+                    }
+                    Value::Float(_) => {
+                        let reg = self.get_free_float_register();
+                        self.function_body
+                            .push(Instruction::Movsd(reg.into(), var.ptr.clone().into()));
+                        Some(Register::Float(reg))
+                    }
+                };
                 let new_val = self.compile_infix(
-                    Some(match rhs {
-                        Value::Int(_) => Value::Int(var.ptr.clone().into()),
-                        Value::Float(_) => Value::Float(var.ptr.clone().into()),
-                    }),
+                    lhs,
                     Some(rhs),
                     match op {
                         AssignOp::Basic => unreachable!("basic assignments are covered above"),
@@ -1195,7 +1262,6 @@ impl<'src> Compiler<'src> {
                             // free the register
                             self.used_registers.pop();
                         }
-                        // TODO: validate this
                         IntValue::Ptr(_) => {
                             unreachable!("infix expressions never return pointers")
                         }
@@ -1211,7 +1277,6 @@ impl<'src> Compiler<'src> {
                             // free the register
                             self.used_float_registers.pop();
                         }
-                        // TODO: validate this
                         FloatValue::Ptr(_) => {
                             unreachable!("infix expressions never return pointers")
                         }

@@ -3,7 +3,7 @@ use rush_analyzer::InfixOp;
 use crate::{
     condition::Condition,
     instruction::Instruction,
-    register::IntRegister,
+    register::{IntRegister, Register},
     value::{FloatValue, IntValue, Size, Value},
     Compiler,
 };
@@ -11,7 +11,7 @@ use crate::{
 impl<'src> Compiler<'src> {
     pub(crate) fn compile_infix(
         &mut self,
-        lhs: Option<Value>,
+        lhs: Option<Register>,
         rhs: Option<Value>,
         op: InfixOp,
         is_char: bool,
@@ -22,7 +22,7 @@ impl<'src> Compiler<'src> {
             (None, _, _) | (_, None, _) => None,
             // basic arithmetic for `int` and bitwise ops for `int` and `bool`
             (
-                Some(Value::Int(left)),
+                Some(Register::Int(left)),
                 Some(Value::Int(right)),
                 InfixOp::Plus
                 | InfixOp::Minus
@@ -31,39 +31,10 @@ impl<'src> Compiler<'src> {
                 | InfixOp::BitAnd
                 | InfixOp::BitXor,
             ) => {
-                // if two registers were in use before, one can be freed afterwards
-                let pop_rhs_reg = matches!(
-                    (&left, &right),
-                    (IntValue::Register(_), IntValue::Register(_))
-                );
-
-                let (left, right) = match (left, right) {
-                    // when one side is already a register, use that in matching size
-                    (IntValue::Register(left), right)
-                    // note the swapped sides here
-                    | (right, IntValue::Register(left)) => {
-                        (
-                            match &right {
-                                IntValue::Register(reg) => left.in_size(reg.size()),
-                                IntValue::Ptr(ptr) => left.in_size(ptr.size),
-                                IntValue::Immediate(_) => left,
-                            },
-                            right,
-                        )
-                    }
-                    // else move the left value into a free register and use that
-                    (left, right) => {
-                        let reg = self.get_free_register(match &right {
-                            IntValue::Ptr(ptr) => ptr.size,
-                            _ => match &left {
-                                IntValue::Ptr(ptr) => ptr.size,
-                                _ => Size::Qword,
-                            },
-                        });
-                        self.function_body.push(Instruction::Mov(reg.into(), left));
-                        (reg, right)
-                    }
-                };
+                // if rhs is a register, it can be freed
+                if matches!(&right, IntValue::Register(_)) {
+                    self.used_registers.pop();
+                }
 
                 self.function_body.push(match op {
                     InfixOp::Plus => Instruction::Add(left.into(), right),
@@ -75,47 +46,33 @@ impl<'src> Compiler<'src> {
                     _ => unreachable!("this arm only matches with above ops"),
                 });
                 if is_char {
+                    // truncate char to 7 bits
                     self.function_body
                         .push(Instruction::And(left.into(), 0x7f.into()));
-                }
-                if pop_rhs_reg {
-                    // free the rhs register
-                    self.used_registers.pop();
                 }
                 Some(Value::Int(left.into()))
             }
             // integer division
-            (Some(Value::Int(left)), Some(Value::Int(right)), InfixOp::Div | InfixOp::Rem) => {
+            (Some(Register::Int(left)), Some(Value::Int(right)), InfixOp::Div | InfixOp::Rem) => {
                 // make sure the rax and rdx registers are free
                 let spilled_rax = self.spill_int_if_used(IntRegister::Rax);
                 let spilled_rdx = self.spill_int_if_used(IntRegister::Rdx);
 
-                let mut pop_rhs_reg = false;
-                let result_reg = match (&left, &right) {
-                    (IntValue::Register(reg), IntValue::Register(_)) => {
-                        pop_rhs_reg = true;
-                        *reg
-                    }
-                    (IntValue::Register(reg), _) | (_, IntValue::Register(reg)) => *reg,
-                    _ => self.get_free_register(Size::Qword),
-                };
+                let pop_rhs_reg = matches!(&right, IntValue::Register(_));
 
                 // move lhs result into rax
                 // analyzer guarantees `left` and `right` to be 8 bytes in size
                 self.function_body
-                    .push(Instruction::Mov(IntRegister::Rax.into(), left));
+                    .push(Instruction::Mov(IntRegister::Rax.into(), left.into()));
 
                 // get source operand
                 let source = match right {
                     right @ IntValue::Ptr(_) => right,
                     right => {
                         // move rhs result into free register
-                        let mut reg = self
-                            .used_registers
-                            .last()
-                            .map_or(IntRegister::Rdi, |reg| reg.next());
-                        // don't allow %rdx
-                        if reg == IntRegister::Rdx {
+                        let mut reg = self.get_tmp_register(Size::Qword);
+                        // don't allow %rax and %rdx
+                        if reg == IntRegister::Rax || reg == IntRegister::Rdx {
                             reg = reg.next()
                         }
                         self.function_body.push(Instruction::Mov(reg.into(), right));
@@ -136,7 +93,7 @@ impl<'src> Compiler<'src> {
 
                 // move result into result register
                 self.function_body.push(Instruction::Mov(
-                    result_reg.into(),
+                    left.into(),
                     // use either `%rax` or `%rdx` register, depending on operator
                     IntValue::Register(match op {
                         InfixOp::Div => IntRegister::Rax,
@@ -149,10 +106,10 @@ impl<'src> Compiler<'src> {
                 self.reload_int_if_used(spilled_rax);
                 self.reload_int_if_used(spilled_rdx);
 
-                Some(Value::Int(IntValue::Register(result_reg)))
+                Some(Value::Int(IntValue::Register(left)))
             }
             // integer shifts
-            (Some(Value::Int(left)), Some(Value::Int(right)), InfixOp::Shl | InfixOp::Shr) => {
+            (Some(Register::Int(left)), Some(Value::Int(right)), InfixOp::Shl | InfixOp::Shr) => {
                 // make sure the %rcx register is free
                 let spilled_rcx = self.spill_int_if_used(IntRegister::Rcx);
 
@@ -176,32 +133,21 @@ impl<'src> Compiler<'src> {
                     }
                 };
 
-                let lhs = match left {
-                    // when left side already uses a register, use that register
-                    IntValue::Register(reg) => reg,
-                    // else move into free one
-                    left => {
-                        let reg = self.get_free_register(Size::Qword);
-                        self.function_body.push(Instruction::Mov(reg.into(), left));
-                        reg
-                    }
-                };
-
                 // shift
                 self.function_body.push(match op {
-                    InfixOp::Shl => Instruction::Shl(lhs.into(), rhs),
-                    InfixOp::Shr => Instruction::Sar(lhs.into(), rhs),
+                    InfixOp::Shl => Instruction::Shl(left.into(), rhs),
+                    InfixOp::Shr => Instruction::Sar(left.into(), rhs),
                     _ => unreachable!("this arm is only entered with `<<` or `>>` operator"),
                 });
 
                 // reload spilled register
                 self.reload_int_if_used(spilled_rcx);
 
-                Some(Value::Int(IntValue::Register(lhs)))
+                Some(Value::Int(IntValue::Register(left)))
             }
             // int comparisons
             (
-                Some(Value::Int(left)),
+                Some(Register::Int(left)),
                 Some(Value::Int(right)),
                 InfixOp::Eq
                 | InfixOp::Neq
@@ -210,77 +156,35 @@ impl<'src> Compiler<'src> {
                 | InfixOp::Gt
                 | InfixOp::Gte,
             ) => {
-                let (lhs, rhs, reg) = match (left, right) {
-                    (IntValue::Register(reg), right @ IntValue::Register(_)) => {
-                        // free right register
-                        self.used_registers.pop();
-
-                        // use left register for result
-                        (reg.into(), right, reg.in_byte_size())
-                    }
-                    (IntValue::Register(reg), right) => (reg.into(), right, reg.in_byte_size()),
-                    (left, IntValue::Register(reg)) => (left, reg.into(), reg.in_byte_size()),
-                    (left, IntValue::Ptr(ptr)) => {
-                        let reg = self.get_free_register(ptr.size);
-                        self.function_body.push(Instruction::Mov(reg.into(), left));
-                        (reg.into(), ptr.into(), reg.in_byte_size())
-                    }
-                    (IntValue::Ptr(ptr), right @ IntValue::Immediate(_)) => {
-                        let reg = self.get_free_register(ptr.size);
-                        (ptr.into(), right, reg.in_byte_size())
-                    }
-                    (IntValue::Immediate(left), IntValue::Immediate(right)) => {
-                        return Some(Value::Int(IntValue::Immediate(match op {
-                            InfixOp::Eq => left == right,
-                            InfixOp::Neq => left != right,
-                            InfixOp::Lt => left < right,
-                            InfixOp::Gt => left > right,
-                            InfixOp::Lte => left <= right,
-                            InfixOp::Gte => left >= right,
-                            _ => unreachable!("this block is only run with above ops"),
-                        }
-                            as i64)))
-                    }
-                };
+                // if rhs is a register, free it
+                if let IntValue::Register(_) = right {
+                    self.used_registers.pop();
+                }
 
                 // compare the sides
-                self.function_body.push(Instruction::Cmp(lhs, rhs));
+                self.function_body
+                    .push(Instruction::Cmp(left.into(), right));
 
                 // set the result
+                let result_reg = left.in_byte_size();
                 self.function_body.push(Instruction::SetCond(
                     Condition::try_from_op(op, true)
                         .expect("this block is only run with above ops"),
-                    reg,
+                    result_reg,
                 ));
 
-                Some(Value::Int(IntValue::Register(reg)))
+                Some(Value::Int(IntValue::Register(result_reg)))
             }
             // float arithmetic
             (
-                Some(Value::Float(left)),
+                Some(Register::Float(left)),
                 Some(Value::Float(right)),
                 InfixOp::Plus | InfixOp::Minus | InfixOp::Mul | InfixOp::Div,
             ) => {
-                // if two registers were in use before, one can be freed afterwards
-                let pop_rhs_reg = matches!(
-                    (&left, &right),
-                    (FloatValue::Register(_), FloatValue::Register(_))
-                );
-
-                let (left, right) = match (left, right) {
-                    // when one side is already a register, use that
-                    (FloatValue::Register(left), right)
-                    // note the swapped sides here
-                    | (right, FloatValue::Register(left)) => {
-                        (left, right)
-                    }
-                    // else move the left value into a free register and use that
-                    (left, right) => {
-                        let reg = self.get_free_float_register();
-                        self.function_body.push(Instruction::Movsd(reg.into(), left));
-                        (reg, right)
-                    }
-                };
+                // if rhs is a register, it can be freed
+                if matches!(&right, FloatValue::Register(_)) {
+                    self.used_float_registers.pop();
+                }
 
                 self.function_body.push(match op {
                     InfixOp::Plus => Instruction::Addsd(left.into(), right),
@@ -289,15 +193,12 @@ impl<'src> Compiler<'src> {
                     InfixOp::Div => Instruction::Divsd(left.into(), right),
                     _ => unreachable!("this arm only matches with above ops"),
                 });
-                if pop_rhs_reg {
-                    // free the rhs register
-                    self.used_registers.pop();
-                }
+
                 Some(Value::Float(left.into()))
             }
             // float comparisons
             (
-                Some(Value::Float(left)),
+                Some(Register::Float(left)),
                 Some(Value::Float(right)),
                 InfixOp::Eq
                 | InfixOp::Neq
@@ -306,43 +207,16 @@ impl<'src> Compiler<'src> {
                 | InfixOp::Gt
                 | InfixOp::Gte,
             ) => {
-                let (lhs, rhs) = match (left, right) {
-                    (FloatValue::Register(left), right @ FloatValue::Register(_)) => {
-                        // free both registers
-                        self.used_float_registers.pop();
-                        self.used_float_registers.pop();
+                // if rhs is a register, it can be freed
+                if matches!(&right, FloatValue::Register(_)) {
+                    self.used_float_registers.pop();
+                }
 
-                        (left, right)
-                    }
-                    (FloatValue::Register(left), right) => {
-                        // free the left register
-                        self.used_float_registers.pop();
-
-                        (left, right)
-                    }
-                    (left, right @ FloatValue::Register(_)) => {
-                        // move left side into free register
-                        let reg = self.get_tmp_float_register();
-                        self.function_body
-                            .push(Instruction::Movsd(reg.into(), left));
-
-                        // free the right register
-                        self.used_float_registers.pop();
-
-                        (reg, right)
-                    }
-                    (left, right) => {
-                        // move left side into free register
-                        let reg = self.get_tmp_float_register();
-                        self.function_body
-                            .push(Instruction::Movsd(reg.into(), left));
-
-                        (reg, right)
-                    }
-                };
+                // free the left register (result needs an IntRegister)
+                self.used_float_registers.pop();
 
                 // compare the sides
-                self.function_body.push(Instruction::Ucomisd(lhs, rhs));
+                self.function_body.push(Instruction::Ucomisd(left, right));
 
                 // set the result
                 let reg = self.get_free_register(Size::Byte);

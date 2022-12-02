@@ -25,6 +25,13 @@ impl Register {
             _ => panic!("called `expect_float` on int variant: {msg}"),
         }
     }
+
+    pub fn in_size(self, size: Size) -> Self {
+        match self {
+            Self::Int(reg) => Self::Int(reg.in_size(size)),
+            Self::Float(reg) => Self::Float(reg),
+        }
+    }
 }
 
 pub const INT_PARAM_REGISTERS: &[IntRegister] = &[
