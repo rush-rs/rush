@@ -243,7 +243,7 @@ impl Compiler<'_> {
 
     /////////////////////////
 
-    fn call_wasi(&mut self, name: &'static str, wasi_name: &str, signature: Vec<u8>) {
+    fn call_wasi(&mut self, name: &'static str, wasi_name: &str, call: bool, signature: Vec<u8>) {
         let idx = match self.builtin_functions.get(name) {
             Some(idx) => idx,
             None => {
@@ -285,15 +285,20 @@ impl Compiler<'_> {
         };
 
         // push call instruction
-        self.function_body.push(instructions::CALL);
-        self.function_body.extend_from_slice(idx);
+        if call {
+            self.function_body.push(instructions::CALL);
+            self.function_body.extend_from_slice(idx);
+        }
     }
 
-    pub(crate) fn __wasi_exit(&mut self) {
-        self.function_body.push(instructions::I32_WRAP_I64);
+    pub(crate) fn __wasi_exit(&mut self, call: bool) {
+        if call {
+            self.function_body.push(instructions::I32_WRAP_I64);
+        }
         self.call_wasi(
             "__wasi_exit",
             "proc_exit",
+            call,
             vec![
                 types::FUNC,
                 1, // num of params

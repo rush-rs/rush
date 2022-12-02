@@ -66,6 +66,12 @@ impl<'src> Compiler<'src> {
     pub fn compile(mut self, tree: AnalyzedProgram<'src>) -> Vec<u8> {
         // set count of imports needed
         self.import_count = tree.used_builtins.len();
+        // add required imports
+        for import in &tree.used_builtins {
+            if *import == "exit" {
+                self.__wasi_exit(false);
+            }
+        }
 
         // compile program
         self.program(tree);
@@ -268,8 +274,8 @@ impl<'src> Compiler<'src> {
                 0, // num of return vals
             ]);
 
-            // index of signature in type section (main func is always 0)
-            self.function_section.push(vec![0]);
+            // index of signature in type section
+            self.function_section.push(self.import_count.to_uleb128());
 
             // add name to name section
             self.function_names.push(
@@ -900,7 +906,7 @@ impl<'src> Compiler<'src> {
                 self.function_body.extend_from_slice(func);
             }
             None => match node.func {
-                "exit" => self.__wasi_exit(),
+                "exit" => self.__wasi_exit(true),
                 _ => unreachable!("the analyzer guarantees one of the above to match"),
             },
         }
