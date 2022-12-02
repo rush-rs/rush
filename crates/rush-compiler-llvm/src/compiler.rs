@@ -1083,7 +1083,12 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                 .as_basic_value_enum(),
             (Type::Bool, Type::Char) => self
                 .builder
-                .build_int_cast(lhs.into_int_value(), self.context.i8_type(), "bc_cast")
+                .build_int_cast_sign_flag(
+                    lhs.into_int_value(),
+                    self.context.i8_type(),
+                    false,
+                    "bc_cast",
+                )
                 .as_basic_value_enum(),
             (Type::Char, Type::Float) => self
                 .builder
