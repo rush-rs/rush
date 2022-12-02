@@ -161,10 +161,9 @@ impl<'src> Interpreter<'src> {
         let mut scope = HashMap::new();
         let init_val = self.visit_expression(&node.initializer)?;
         scope.insert(node.ident, init_val);
+        self.scopes.push(scope);
 
         loop {
-            self.scopes.push(scope);
-
             if !self.visit_expression(&node.cond)?.unwrap_bool() {
                 break;
             }
@@ -173,17 +172,14 @@ impl<'src> Interpreter<'src> {
 
             self.visit_expression(&node.update)?;
 
-            scope = self
-                .scopes
-                .pop()
-                .expect("there should always be at least one scope");
-
             match res {
                 Err(InterruptKind::Break) => break,
                 Err(InterruptKind::Continue) => continue,
                 res => res?,
             };
         }
+
+        self.scopes.pop();
         Ok(())
     }
 
