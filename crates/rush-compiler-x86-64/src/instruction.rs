@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     fmt::{self, Display, Formatter},
     rc::Rc,
 };
@@ -13,12 +14,12 @@ use crate::{
 #[allow(dead_code)] // TODO: remove this attribute
 pub enum Instruction {
     /// Wraps an instruction with an additional comment
-    Commented(Box<Instruction>, String),
+    Commented(Box<Instruction>, Cow<'static, str>),
 
     IntelSyntax,
     Global(Rc<str>),
     Section(Section),
-    Symbol(Rc<str>),
+    Symbol(Rc<str>, bool),
     Byte(u8),
     Short(u16),
     Long(u32),
@@ -110,7 +111,8 @@ impl Display for Instruction {
             Instruction::IntelSyntax => write!(f, ".intel_syntax"),
             Instruction::Global(name) => write!(f, ".global {name}"),
             Instruction::Section(section) => write!(f, "\n.section {section}"),
-            Instruction::Symbol(name) => write!(f, "\n{name}:"),
+            Instruction::Symbol(name, true) => write!(f, "\n{name}:"),
+            Instruction::Symbol(name, false) => write!(f, "{name}:"),
             Instruction::Byte(num) => write!(f, "    {:11} {num:#04x}  # = {num}", ".byte"),
             Instruction::Short(num) => write!(f, "    {:11} {num:#06x}  # = {num}", ".short"),
             Instruction::Long(num) => write!(f, "    {:11} {num:#010x}  # = {num}", ".long"),
@@ -215,7 +217,7 @@ mod tests {
                 )),
             ),
             Instruction::Section(Section::ReadOnlyData),
-            Instruction::Symbol("float_127".into()),
+            Instruction::Symbol("float_127".into(), true),
             Instruction::QuadInt(127_f64.to_bits()),
         ];
         for instr in instrs {

@@ -14,6 +14,7 @@ impl<'src> Compiler<'src> {
         lhs: Option<Value>,
         rhs: Option<Value>,
         op: InfixOp,
+        is_char: bool,
     ) -> Option<Value> {
         match (lhs, rhs, op) {
             // `None` means a value of type `!` in this context, so don't do anything, as this
@@ -54,7 +55,10 @@ impl<'src> Compiler<'src> {
                     (left, right) => {
                         let reg = self.get_free_register(match &right {
                             IntValue::Ptr(ptr) => ptr.size,
-                            _ => Size::Qword,
+                            _ => match &left {
+                                IntValue::Ptr(ptr) => ptr.size,
+                                _ => Size::Qword,
+                            },
                         });
                         self.function_body.push(Instruction::Mov(reg.into(), left));
                         (reg, right)
@@ -70,6 +74,10 @@ impl<'src> Compiler<'src> {
                     InfixOp::BitXor => Instruction::Xor(left.into(), right),
                     _ => unreachable!("this arm only matches with above ops"),
                 });
+                if is_char {
+                    self.function_body
+                        .push(Instruction::And(left.into(), 0x7f.into()));
+                }
                 if pop_rhs_reg {
                     // free the rhs register
                     self.used_registers.pop();
