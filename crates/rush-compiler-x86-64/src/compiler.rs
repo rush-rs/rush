@@ -1,4 +1,4 @@
-use std::{collections::HashMap, hash::Hash, rc::Rc};
+use std::{borrow::Cow, collections::HashMap, hash::Hash, rc::Rc};
 
 use rush_analyzer::{ast::*, AssignOp, InfixOp, PrefixOp, Type};
 
@@ -35,8 +35,8 @@ pub struct Compiler<'src> {
     //////// .data section ////////
     pub(crate) quad_globals: Vec<(Rc<str>, u64)>,
     pub(crate) quad_float_globals: Vec<(Rc<str>, f64)>,
-    // pub(crate) long_globals: Vec<(Rc<str>, u32)>,
-    // pub(crate) short_globals: Vec<(Rc<str>, u16)>,
+    pub(crate) long_globals: Vec<(Rc<str>, u32)>,
+    pub(crate) short_globals: Vec<(Rc<str>, u16)>,
     pub(crate) byte_globals: Vec<(Rc<str>, u8)>,
 
     //////// .rodata section ////////
@@ -46,12 +46,12 @@ pub struct Compiler<'src> {
     pub(crate) quad_constants: HashMap<u64, Rc<str>>,
     /// Constant floats with 64-bits
     pub(crate) quad_float_constants: HashMap<u64, Rc<str>>,
-    // /// Constants with 32-bits
-    // pub(crate) long_constants: HashMap<u32, Rc<str>>,
+    /// Constants with 32-bits
+    pub(crate) long_constants: HashMap<u32, Rc<str>>,
     /// Constants with 16-bits
     pub(crate) short_constants: HashMap<u16, Rc<str>>,
-    // /// Constants with 8-bits
-    // pub(crate) byte_constants: HashMap<u8, Rc<str>>,
+    /// Constants with 8-bits
+    pub(crate) byte_constants: HashMap<u8, Rc<str>>,
 }
 
 #[derive(Debug, Clone)]
@@ -90,71 +90,62 @@ impl<'src> Compiler<'src> {
 
         // mutable globals
         buf.push(Instruction::Section(Section::Data));
-        buf.extend(
-            self.quad_globals
-                .into_iter()
-                .flat_map(|(name, value)| [Instruction::Symbol(name), Instruction::QuadInt(value)]),
-        );
+        buf.extend(self.quad_globals.into_iter().flat_map(|(name, value)| {
+            [
+                Instruction::Symbol(name, false),
+                Instruction::QuadInt(value),
+            ]
+        }));
         buf.extend(
             self.quad_float_globals
                 .into_iter()
                 .flat_map(|(name, value)| {
                     [
-                        Instruction::Symbol(name),
+                        Instruction::Symbol(name, false),
                         Instruction::QuadFloat(value.to_bits()),
                     ]
                 }),
         );
-        // buf.extend(
-        //     self.long_globals
-        //         .into_iter()
-        //         .flat_map(|(name, value)| [Instruction::Symbol(name), Instruction::Long(value)]),
-        // );
-        // buf.extend(
-        //     self.short_globals
-        //         .into_iter()
-        //         .flat_map(|(name, value)| [Instruction::Symbol(name), Instruction::Short(value)]),
-        // );
-        buf.extend(
-            self.byte_globals
-                .into_iter()
-                .flat_map(|(name, value)| [Instruction::Symbol(name), Instruction::Byte(value)]),
-        );
+        buf.extend(self.long_globals.into_iter().flat_map(|(name, value)| {
+            [Instruction::Symbol(name, false), Instruction::Long(value)]
+        }));
+        buf.extend(self.short_globals.into_iter().flat_map(|(name, value)| {
+            [Instruction::Symbol(name, false), Instruction::Short(value)]
+        }));
+        buf.extend(self.byte_globals.into_iter().flat_map(|(name, value)| {
+            [Instruction::Symbol(name, false), Instruction::Byte(value)]
+        }));
 
         // constants
         buf.push(Instruction::Section(Section::ReadOnlyData));
-        buf.extend(
-            self.octa_constants
-                .into_iter()
-                .flat_map(|(value, name)| [Instruction::Symbol(name), Instruction::Octa(value)]),
-        );
-        buf.extend(
-            self.quad_constants
-                .into_iter()
-                .flat_map(|(value, name)| [Instruction::Symbol(name), Instruction::QuadInt(value)]),
-        );
+        buf.extend(self.octa_constants.into_iter().flat_map(|(value, name)| {
+            [Instruction::Symbol(name, false), Instruction::Octa(value)]
+        }));
+        buf.extend(self.quad_constants.into_iter().flat_map(|(value, name)| {
+            [
+                Instruction::Symbol(name, false),
+                Instruction::QuadInt(value),
+            ]
+        }));
         buf.extend(
             self.quad_float_constants
                 .into_iter()
                 .flat_map(|(value, name)| {
-                    [Instruction::Symbol(name), Instruction::QuadFloat(value)]
+                    [
+                        Instruction::Symbol(name, false),
+                        Instruction::QuadFloat(value),
+                    ]
                 }),
         );
-        // buf.extend(
-        //     self.long_constants
-        //         .into_iter()
-        //         .flat_map(|(value, name)| [Instruction::Symbol(name), Instruction::Long(value)]),
-        // );
-        buf.extend(
-            self.short_constants
-                .into_iter()
-                .flat_map(|(value, name)| [Instruction::Symbol(name), Instruction::Short(value)]),
-        );
-        // buf.extend(
-        //     self.byte_constants
-        //         .into_iter()
-        //         .flat_map(|(value, name)| [Instruction::Symbol(name), Instruction::Byte(value)]),
-        // );
+        buf.extend(self.long_constants.into_iter().flat_map(|(value, name)| {
+            [Instruction::Symbol(name, false), Instruction::Long(value)]
+        }));
+        buf.extend(self.short_constants.into_iter().flat_map(|(value, name)| {
+            [Instruction::Symbol(name, false), Instruction::Short(value)]
+        }));
+        buf.extend(self.byte_constants.into_iter().flat_map(|(value, name)| {
+            [Instruction::Symbol(name, false), Instruction::Byte(value)]
+        }));
 
         buf.into_iter().map(|instr| instr.to_string()).collect()
     }
@@ -233,7 +224,7 @@ impl<'src> Compiler<'src> {
         &mut self,
         size: Size,
         value: Value,
-        comment: Option<String>,
+        comment: Option<impl Into<Cow<'static, str>>>,
     ) -> Pointer {
         // add padding for correct alignment
         Self::align(&mut self.stack_pointer, size);
@@ -256,14 +247,19 @@ impl<'src> Compiler<'src> {
             Value::Float(value) => Instruction::Movsd(ptr.clone().into(), value),
         };
         self.function_body.push(match comment {
-            Some(comment) => Instruction::Commented(Box::new(instr), comment),
+            Some(comment) => Instruction::Commented(Box::new(instr), comment.into()),
             None => instr,
         });
 
         ptr
     }
 
-    pub(crate) fn pop_from_stack(&mut self, ptr: Pointer, dest: Value, comment: Option<String>) {
+    pub(crate) fn pop_from_stack(
+        &mut self,
+        ptr: Pointer,
+        dest: Value,
+        comment: Option<impl Into<Cow<'static, str>>>,
+    ) {
         let offset = match ptr.offset {
             Offset::Immediate(offset) => -offset,
             Offset::Symbol(_) => panic!("called `Compiler::pop()` with a symbol offset in ptr"),
@@ -281,7 +277,7 @@ impl<'src> Compiler<'src> {
             Value::Float(dest) => Instruction::Movsd(dest, ptr.into()),
         };
         self.function_body.push(match comment {
-            Some(comment) => Instruction::Commented(Box::new(instr), comment),
+            Some(comment) => Instruction::Commented(Box::new(instr), comment.into()),
             None => instr,
         });
     }
@@ -396,20 +392,24 @@ impl<'src> Compiler<'src> {
 
         self.exports
             .push(Instruction::Global(Rc::clone(&start_symbol)));
-        self.text_section.push(Instruction::Symbol(start_symbol));
+        self.text_section
+            .push(Instruction::Symbol(start_symbol, true));
         self.text_section
             .push(Instruction::Call(Rc::clone(&main_fn_symbol)));
         self.text_section
             .push(Instruction::Mov(IntRegister::Rax.into(), 0.into()));
         self.text_section.push(Instruction::Call("exit".into()));
 
-        self.text_section.push(Instruction::Symbol(main_fn_symbol));
+        self.text_section
+            .push(Instruction::Symbol(main_fn_symbol, true));
         self.function_body(body);
     }
 
     fn function_definition(&mut self, node: AnalyzedFunctionDefinition<'src>) {
-        self.text_section
-            .push(Instruction::Symbol(format!("main..{}", node.name).into()));
+        self.text_section.push(Instruction::Symbol(
+            format!("main..{}", node.name).into(),
+            true,
+        ));
 
         self.push_scope();
         let mut int_param_index = 0;
@@ -628,14 +628,18 @@ impl<'src> Compiler<'src> {
         self.loop_symbols
             .push((Rc::clone(&start_loop_symbol), Rc::clone(&end_loop_symbol)));
 
-        self.function_body
-            .push(Instruction::Symbol(Rc::clone(&start_loop_symbol)));
+        self.function_body.push(Instruction::Commented(
+            Instruction::Symbol(Rc::clone(&start_loop_symbol), false).into(),
+            "loop {".into(),
+        ));
 
         self.expr_stmt(AnalyzedExpression::Block(node.block.into()));
         self.function_body.push(Instruction::Jmp(start_loop_symbol));
 
-        self.function_body
-            .push(Instruction::Symbol(end_loop_symbol));
+        self.function_body.push(Instruction::Commented(
+            Instruction::Symbol(end_loop_symbol, false).into(),
+            "}".into(),
+        ));
 
         self.loop_symbols.pop();
     }
@@ -784,9 +788,9 @@ impl<'src> Compiler<'src> {
                     _ => unreachable!("the analyzer guarantees equal types on both sides"),
                 }
 
-                self.function_body.push(Instruction::JCond(
-                    cond.negated(),
-                    Rc::clone(&else_block_symbol),
+                self.function_body.push(Instruction::Commented(
+                    Instruction::JCond(cond.negated(), Rc::clone(&else_block_symbol)).into(),
+                    "if .. {".into(),
                 ))
             }
             Err(expr) => {
@@ -796,15 +800,19 @@ impl<'src> Compiler<'src> {
 
                 match bool {
                     IntValue::Immediate(0) => {
-                        self.function_body
-                            .push(Instruction::Jmp(Rc::clone(&else_block_symbol)));
+                        self.function_body.push(Instruction::Commented(
+                            Instruction::Jmp(Rc::clone(&else_block_symbol)).into(),
+                            "if false {".into(),
+                        ));
                     }
                     IntValue::Immediate(_) => {}
                     val => {
+                        let comment = format!("if {val} {{");
                         self.function_body.push(Instruction::Cmp(val, 0.into()));
-                        self.function_body.push(Instruction::JCond(
-                            Condition::Equal,
-                            Rc::clone(&else_block_symbol),
+                        self.function_body.push(Instruction::Commented(
+                            Instruction::JCond(Condition::Equal, Rc::clone(&else_block_symbol))
+                                .into(),
+                            comment.into(),
                         ));
                     }
                 }
@@ -846,8 +854,10 @@ impl<'src> Compiler<'src> {
 
             self.function_body
                 .push(Instruction::Jmp(Rc::clone(&after_if_symbol)));
-            self.function_body
-                .push(Instruction::Symbol(else_block_symbol));
+            self.function_body.push(Instruction::Commented(
+                Instruction::Symbol(else_block_symbol, false).into(),
+                "} else {".into(),
+            ));
 
             match self.block_expr(block) {
                 Some(Value::Int(val)) => {
@@ -887,8 +897,10 @@ impl<'src> Compiler<'src> {
                 None => {}
             }
         }
-        self.function_body
-            .push(Instruction::Symbol(after_if_symbol));
+        self.function_body.push(Instruction::Commented(
+            Instruction::Symbol(after_if_symbol, false).into(),
+            "}".into(),
+        ));
 
         result_reg.map(|reg| reg.into())
     }
