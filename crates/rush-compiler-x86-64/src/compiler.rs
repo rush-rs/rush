@@ -188,7 +188,7 @@ impl<'src> Compiler<'src> {
         }
     }
 
-    pub(crate) fn new_block(&mut self) -> Rc<str> {
+    pub(crate) fn next_block_name(&mut self) -> Rc<str> {
         self.block_count = self.block_count.wrapping_add(1);
         format!(".block_{}", self.block_count).into()
     }
@@ -566,7 +566,7 @@ impl<'src> Compiler<'src> {
             AnalyzedStatement::Let(node) => self.let_stmt(node),
             AnalyzedStatement::Return(_) => todo!(),
             AnalyzedStatement::Loop(node) => self.loop_stmt(node),
-            AnalyzedStatement::While(_) => todo!(),
+            AnalyzedStatement::While(node) => self.while_stmt(node),
             AnalyzedStatement::For(_) => todo!(),
             AnalyzedStatement::Break => self.function_body.push(Instruction::Commented(
                 Instruction::Jmp(Rc::clone(
@@ -644,9 +644,8 @@ impl<'src> Compiler<'src> {
     }
 
     fn loop_stmt(&mut self, node: AnalyzedLoopStmt<'src>) {
-        let start_loop_symbol = self.new_block();
-        let end_loop_symbol = self.new_block();
-
+        let start_loop_symbol = self.next_block_name();
+        let end_loop_symbol = self.next_block_name();
         self.loop_symbols
             .push((Rc::clone(&start_loop_symbol), Rc::clone(&end_loop_symbol)));
 
@@ -667,6 +666,142 @@ impl<'src> Compiler<'src> {
         ));
 
         self.loop_symbols.pop();
+    }
+
+    fn while_stmt(&mut self, node: AnalyzedWhileStmt<'src>) {
+        let start_loop_symbol = self.next_block_name();
+        let end_loop_symbol = self.next_block_name();
+        self.loop_symbols
+            .push((Rc::clone(&start_loop_symbol), Rc::clone(&end_loop_symbol)));
+
+        self.function_body.push(Instruction::Commented(
+            Instruction::Symbol(Rc::clone(&start_loop_symbol), false).into(),
+            "while .. {".into(),
+        ));
+        match Condition::try_from_expr(node.cond) {
+            Ok((cond, lhs, rhs)) => {
+                match self.condition(cond, lhs, rhs, Rc::clone(&end_loop_symbol), None) {
+                    Some(()) => {}
+                    None => return,
+                }
+            }
+            Err(expr) => {
+                let bool = match self.tmp_expr(expr) {
+                    Some(val) => val.expect_int("the analyzer guarantees boolean conditions"),
+                    None => return,
+                };
+
+                match bool {
+                    IntValue::Immediate(0) => {
+                        self.function_body
+                            .push(Instruction::Jmp(Rc::clone(&end_loop_symbol)));
+                    }
+                    IntValue::Immediate(_) => {}
+                    val => {
+                        // jump to end of loop if condition is false
+                        self.function_body.push(Instruction::Test(val, 1));
+                        self.function_body.push(Instruction::JCond(
+                            Condition::Equal,
+                            Rc::clone(&end_loop_symbol),
+                        ));
+                    }
+                }
+            }
+        };
+
+        self.tmp_expr(AnalyzedExpression::Block(node.block.into()));
+        self.function_body.push(Instruction::Commented(
+            Instruction::Jmp(start_loop_symbol).into(),
+            "continue;".into(),
+        ));
+
+        self.function_body.push(Instruction::Commented(
+            Instruction::Symbol(end_loop_symbol, false).into(),
+            "}".into(),
+        ));
+
+        self.loop_symbols.pop();
+    }
+
+    fn condition(
+        &mut self,
+        cond: Condition,
+        lhs: AnalyzedExpression<'src>,
+        rhs: AnalyzedExpression<'src>,
+        false_symbol: Rc<str>,
+        comment: Option<Cow<'static, str>>,
+    ) -> Option<()> {
+        let lhs = self.expression(lhs)?;
+        let rhs = self.expression(rhs)?;
+        match (lhs, rhs) {
+            (Value::Int(lhs), Value::Int(rhs)) => {
+                if let IntValue::Register(_) = lhs {
+                    self.used_registers.pop();
+                }
+                if let IntValue::Register(_) = rhs {
+                    self.used_registers.pop();
+                }
+
+                let lhs = match (lhs, &rhs) {
+                    (lhs @ IntValue::Ptr(_), IntValue::Ptr(_))
+                    | (lhs @ IntValue::Immediate(_), _) => {
+                        let reg = self.get_tmp_register(if let IntValue::Ptr(ptr) = &lhs {
+                            ptr.size
+                        } else {
+                            Size::Qword
+                        });
+                        self.function_body.push(Instruction::Mov(reg.into(), lhs));
+                        reg.into()
+                    }
+                    (lhs, _) => lhs,
+                };
+
+                self.function_body.push(Instruction::Cmp(lhs, rhs));
+            }
+            (Value::Float(lhs), Value::Float(rhs)) => {
+                if let FloatValue::Register(_) = lhs {
+                    self.used_float_registers.pop();
+                }
+                if let FloatValue::Register(_) = rhs {
+                    self.used_float_registers.pop();
+                }
+
+                let lhs = match lhs {
+                    FloatValue::Ptr(ptr) => {
+                        let reg = self.get_tmp_float_register();
+                        self.function_body
+                            .push(Instruction::Movsd(reg.into(), ptr.into()));
+                        reg
+                    }
+                    FloatValue::Register(reg) => reg,
+                };
+                self.function_body.push(Instruction::Ucomisd(lhs, rhs));
+
+                if cond == Condition::Equal {
+                    // if floats should be equal but result is unordered, jump to end
+                    self.function_body.push(Instruction::JCond(
+                        Condition::Parity,
+                        Rc::clone(&false_symbol),
+                    ));
+                } else if cond == Condition::NotEqual {
+                    // if floats should not be equal and result is not unordered, jump to end
+                    self.function_body.push(Instruction::JCond(
+                        Condition::NotParity,
+                        Rc::clone(&false_symbol),
+                    ));
+                }
+            }
+            _ => unreachable!("the analyzer guarantees equal types on both sides"),
+        }
+
+        let jump_instr = Instruction::JCond(cond.negated(), false_symbol);
+
+        self.function_body.push(match comment {
+            Some(comment) => Instruction::Commented(jump_instr.into(), comment),
+            None => jump_instr,
+        });
+
+        Some(())
     }
 
     fn tmp_expr(&mut self, node: AnalyzedExpression<'src>) -> Option<Value> {
@@ -742,82 +877,18 @@ impl<'src> Compiler<'src> {
     }
 
     fn if_expr(&mut self, node: AnalyzedIfExpr<'src>) -> Option<Value> {
-        let else_block_symbol = node.else_block.as_ref().map(|_| self.new_block());
-        let after_if_symbol = self.new_block();
+        let else_block_symbol = node.else_block.as_ref().map(|_| self.next_block_name());
+        let after_if_symbol = self.next_block_name();
         let else_block_symbol = else_block_symbol.unwrap_or_else(|| Rc::clone(&after_if_symbol));
 
         match Condition::try_from_expr(node.cond) {
-            Ok((cond, lhs, rhs)) => {
-                let lhs = self.expression(lhs)?;
-                let rhs = self.expression(rhs)?;
-                match (lhs, rhs) {
-                    (Value::Int(lhs), Value::Int(rhs)) => {
-                        if let IntValue::Register(_) = lhs {
-                            self.used_registers.pop();
-                        }
-                        if let IntValue::Register(_) = rhs {
-                            self.used_registers.pop();
-                        }
-
-                        let lhs = match (lhs, &rhs) {
-                            (lhs @ IntValue::Ptr(_), IntValue::Ptr(_))
-                            | (lhs @ IntValue::Immediate(_), _) => {
-                                let reg = self.get_tmp_register(if let IntValue::Ptr(ptr) = &lhs {
-                                    ptr.size
-                                } else {
-                                    Size::Qword
-                                });
-                                self.function_body.push(Instruction::Mov(reg.into(), lhs));
-                                reg.into()
-                            }
-                            (lhs, _) => lhs,
-                        };
-
-                        self.function_body.push(Instruction::Cmp(lhs, rhs));
-                    }
-                    (Value::Float(lhs), Value::Float(rhs)) => {
-                        if let FloatValue::Register(_) = lhs {
-                            self.used_float_registers.pop();
-                        }
-                        if let FloatValue::Register(_) = rhs {
-                            self.used_float_registers.pop();
-                        }
-
-                        let lhs = match lhs {
-                            FloatValue::Ptr(ptr) => {
-                                let reg = self.get_tmp_float_register();
-                                self.function_body
-                                    .push(Instruction::Movsd(reg.into(), ptr.into()));
-                                reg
-                            }
-                            FloatValue::Register(reg) => reg,
-                        };
-                        self.function_body.push(Instruction::Ucomisd(lhs, rhs));
-
-                        if cond == Condition::Equal {
-                            // if floats should be equal but result is unordered, jump to
-                            // else block
-                            self.function_body.push(Instruction::JCond(
-                                Condition::Parity,
-                                Rc::clone(&else_block_symbol),
-                            ));
-                        } else if cond == Condition::NotEqual {
-                            // if floats should not be equal and result is not unordered, jump to
-                            // else block
-                            self.function_body.push(Instruction::JCond(
-                                Condition::NotParity,
-                                Rc::clone(&else_block_symbol),
-                            ));
-                        }
-                    }
-                    _ => unreachable!("the analyzer guarantees equal types on both sides"),
-                }
-
-                self.function_body.push(Instruction::Commented(
-                    Instruction::JCond(cond.negated(), Rc::clone(&else_block_symbol)).into(),
-                    "if .. {".into(),
-                ))
-            }
+            Ok((cond, lhs, rhs)) => self.condition(
+                cond,
+                lhs,
+                rhs,
+                Rc::clone(&else_block_symbol),
+                Some("if .. {".into()),
+            )?,
             Err(expr) => {
                 let bool = self
                     .tmp_expr(expr)?
@@ -833,7 +904,7 @@ impl<'src> Compiler<'src> {
                     IntValue::Immediate(_) => {}
                     val => {
                         let comment = format!("if {val} {{");
-                        self.function_body.push(Instruction::Cmp(val, 0.into()));
+                        self.function_body.push(Instruction::Test(val, 1));
                         self.function_body.push(Instruction::Commented(
                             Instruction::JCond(Condition::Equal, Rc::clone(&else_block_symbol))
                                 .into(),
@@ -1061,7 +1132,7 @@ impl<'src> Compiler<'src> {
                     }
                 };
                 debug_assert_eq!(result_reg.size(), Size::Byte);
-                let skip_symbol = self.new_block();
+                let skip_symbol = self.next_block_name();
 
                 // jump to end if result is clear
                 self.function_body
