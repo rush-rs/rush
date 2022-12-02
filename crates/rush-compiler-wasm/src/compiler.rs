@@ -362,15 +362,18 @@ impl<'src> Compiler<'src> {
             .params
             .iter()
             .filter_map(|param| {
-                param_names.push(
-                    [
-                        &param_names.len().to_uleb128()[..], // local index
-                        &param.name.len().to_uleb128(),      // string len
-                        param.name.as_bytes(),               // param name
-                    ]
-                    .concat(),
-                );
-                utils::type_to_byte(param.type_)
+                let wasm_type = utils::type_to_byte(param.type_);
+                if wasm_type.is_some() {
+                    param_names.push(
+                        [
+                            &param_names.len().to_uleb128()[..], // local index
+                            &param.name.len().to_uleb128(),      // string len
+                            param.name.as_bytes(),               // param name
+                        ]
+                        .concat(),
+                    );
+                }
+                wasm_type
             })
             .collect();
         params.len().write_uleb128(&mut buf);
@@ -414,12 +417,13 @@ impl<'src> Compiler<'src> {
 
         // add params to new scope
         let mut scope = HashMap::new();
-        for (idx, param) in node.params.into_iter().enumerate() {
+        for param in node.params.into_iter() {
             scope.insert(
                 param.name,
                 utils::type_to_byte(param.type_).map(|_| {
+                    let res = self.param_count.to_uleb128();
                     self.param_count += 1;
-                    idx.to_uleb128()
+                    res
                 }),
             );
         }
@@ -493,18 +497,22 @@ impl<'src> Compiler<'src> {
             .insert(node.name, wasm_type.map(|_| local_idx.clone()));
 
         self.expression(node.expr);
-        self.function_body.push(instructions::LOCAL_SET);
-        self.function_body.extend_from_slice(&local_idx);
+        if wasm_type.is_some() {
+            self.function_body.push(instructions::LOCAL_SET);
+            self.function_body.extend_from_slice(&local_idx);
+        }
 
         // add variable name to name section
-        self.local_names[self.curr_func_idx].1.push(
-            [
-                &local_idx[..],                // local index
-                &node.name.len().to_uleb128(), // string len
-                node.name.as_bytes(),
-            ]
-            .concat(),
-        );
+        if wasm_type.is_some() {
+            self.local_names[self.curr_func_idx].1.push(
+                [
+                    &local_idx[..],                // local index
+                    &node.name.len().to_uleb128(), // string len
+                    node.name.as_bytes(),
+                ]
+                .concat(),
+            );
+        }
     }
 
     fn return_stmt(&mut self, node: AnalyzedReturnStmt<'src>) {
@@ -584,14 +592,16 @@ impl<'src> Compiler<'src> {
         self.function_body.extend_from_slice(&local_idx);
 
         // add init variable name to name section
-        self.local_names[self.curr_func_idx].1.push(
-            [
-                &local_idx[..],                 // local index
-                &node.ident.len().to_uleb128(), // string len
-                node.ident.as_bytes(),
-            ]
-            .concat(),
-        );
+        if wasm_type.is_some() {
+            self.local_names[self.curr_func_idx].1.push(
+                [
+                    &local_idx[..],                 // local index
+                    &node.ident.len().to_uleb128(), // string len
+                    node.ident.as_bytes(),
+                ]
+                .concat(),
+            );
+        }
 
         self.function_body.push(instructions::BLOCK); // outer block to jump to with `break`
         self.function_body.push(types::VOID); // with result `()`
