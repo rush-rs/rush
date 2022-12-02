@@ -1,6 +1,6 @@
 // This file should test all features of the rush programming language.
 
-// expected exit-code: 100
+// expected exit-code: 50
 // if the exit-code is 99, there is an error
 fn main() {
         let int_ = 1;
@@ -8,16 +8,25 @@ fn main() {
         let char_ = 'a'; // 97
         let bool_ = true;
         let unit = produces_unit();
-        let mut res = sum_different_types(int_, float_, unit, char_, bool_); // 101
 
         call_exit(
-            assignments(res)
+            assignments(
+                sum_different_types( // 101
+                    int_,
+                    float_,
+                    unit,
+                    char_,
+                    bool_,
+                )
+            )
             + prefix_expr()
             + infix_arithmetic()
             + infix_logic()
             + casts()
-            + call_params(),
-            5
+            + call_params()
+            + loops()
+            - fib_rek(10),
+            fib_iter(5)
         )
 }
 
@@ -163,4 +172,51 @@ fn params(
     a - b as int + c as int - d as int
     + e - f + g - h + i - t + u
     + (j + k - l + m - n + o - p + q - r + s) as int
+}
+
+// expected return-value: 4
+fn loops() -> int {
+    let mut i = 0;
+    loop {
+        if i == 5 {
+            break;
+        }
+        i += 1;
+    }
+    // i = 5
+    while i > 1 {
+        i -= 1;
+    }
+    // i = 1
+    let mut j = 0;
+    for i = i; i < 6; i += 1 {
+        j += 1;
+    }
+    // j = 5
+    j
+}
+
+// fib_rek(10) = 55
+fn fib_rek(n: int) -> int {
+    if n < 2 {
+        n
+    } else {
+        fib_rek(n - 2) + fib_rek(n - 1)
+    }
+}
+
+fn fib_iter(mut n: int) -> int {
+    if n == 0 {
+        return 0;
+    }
+
+    let mut prev = 1;
+    let mut curr = 1;
+    while n > 2 {
+        n -= 1;
+        let tmp = curr + prev;
+        prev = curr;
+        curr = tmp;
+    }
+    curr
 }
