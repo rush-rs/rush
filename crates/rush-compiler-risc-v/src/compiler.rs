@@ -14,6 +14,8 @@ pub struct Compiler<'tree> {
 
     /// Labels and their basic blocks which contain instructions.
     pub(crate) blocks: Vec<Block>,
+    /// Maps the raw label to their count of occurrences.
+    pub(crate) label_count: HashMap<&'static str, usize>,
     /// Points to the current section which is inserted to.
     pub(crate) curr_block: usize,
 
@@ -25,7 +27,7 @@ pub struct Compiler<'tree> {
     /// Holds metadata about the current function
     pub(crate) curr_fn: Option<Function>,
     /// Holds metadata about the current loop
-    pub(crate) curr_loop: Option<Loop>,
+    pub(crate) loops: Vec<Loop>,
 
     /// The first element is the root scope, the last element is the current scope.
     pub(crate) scopes: Vec<HashMap<&'tree str, Variable>>,
@@ -41,6 +43,7 @@ impl<'tree> Compiler<'tree> {
     pub fn new() -> Self {
         Self {
             blocks: vec![],
+            label_count: HashMap::new(),
             exports: vec![],
             curr_block: 0,
             data_section: vec![],
@@ -48,7 +51,7 @@ impl<'tree> Compiler<'tree> {
             scopes: vec![],
             globals: HashMap::new(),
             curr_fn: None,
-            curr_loop: None,
+            loops: vec![],
             used_registers: vec![],
         }
     }
@@ -116,9 +119,9 @@ impl<'tree> Compiler<'tree> {
         globals: &'tree Vec<AnalyzedLetStmt>,
     ) {
         // create `_start` label
-        let start_label = self.append_block("_start");
+        self.blocks.push(Block::new("_start".to_string()));
         let fn_block = self.append_block("main..main");
-        self.exports.push(start_label);
+        self.exports.push("_start".to_string());
 
         // call the main function
         self.insert(Instruction::Call(fn_block.clone()));
@@ -204,7 +207,7 @@ impl<'tree> Compiler<'tree> {
     fn function_declaration(&mut self, node: &'tree AnalyzedFunctionDefinition) {
         // append block for the function
         let fn_block = format!("main..{}", node.name);
-        self.append_block(&fn_block);
+        self.blocks.push(Block::new(fn_block.clone()));
         self.insert_at(&fn_block);
 
         // add the epilogue label
@@ -413,12 +416,10 @@ impl<'tree> Compiler<'tree> {
             AnalyzedStatement::While(node) => self.while_stmt(node),
             AnalyzedStatement::For(node) => self.for_stmt(node),
             AnalyzedStatement::Break => {
-                #[cfg(debug_assertions)]
                 self.insert(Instruction::Comment("break".to_string()));
                 self.insert_jmp(self.curr_loop().after_loop.clone())
             }
             AnalyzedStatement::Continue => {
-                #[cfg(debug_assertions)]
                 self.insert(Instruction::Comment("continue".to_string()));
                 self.insert_jmp(self.curr_loop().loop_head.clone())
             }
@@ -452,10 +453,8 @@ impl<'tree> Compiler<'tree> {
     fn loop_stmt(&mut self, node: &'tree AnalyzedLoopStmt) {
         let loop_head = self.append_block("loop_head");
         let after_loop = self.gen_label("after_loop");
-        self.curr_loop = Some(Loop {
-            loop_head: loop_head.clone(),
-            after_loop: after_loop.clone(),
-        });
+        self.loops
+            .push(Loop::new(loop_head.clone(), after_loop.clone()));
 
         self.insert_at(&loop_head);
         self.block(&node.block);
@@ -463,6 +462,7 @@ impl<'tree> Compiler<'tree> {
 
         self.blocks.push(Block::new(after_loop.clone()));
         self.insert_at(&after_loop);
+        self.loops.pop();
     }
 
     /// Compiles an [`AnalyzedWhileStmt`].
@@ -474,10 +474,9 @@ impl<'tree> Compiler<'tree> {
         self.insert_at(&while_head);
 
         // compile the condition
-        #[cfg(debug_assertions)]
         self.insert(Instruction::Comment("while condition".to_string()));
-
         let expr_res = self.expression(&node.cond).expect("cond is not unit");
+
         // if the condition evaluates to `false`, break out of the loop
         self.insert(Instruction::BrCond(
             Condition::Eq,
@@ -486,23 +485,20 @@ impl<'tree> Compiler<'tree> {
             after_loop.clone(),
         ));
 
+        self.loops
+            .push(Loop::new(while_head.clone(), after_loop.clone()));
+
         // compile the body
-        self.curr_loop = Some(Loop {
-            loop_head: while_head.clone(),
-            after_loop: after_loop.clone(),
-        });
-
-        #[cfg(debug_assertions)]
         self.insert(Instruction::Comment("while body".to_string()));
-
         self.block(&node.block);
+
         // jump back to the loop head
         self.insert_jmp(while_head);
 
-        self.blocks.push(Block::new(after_loop.clone()));
-
         // place the cursor after the loop body
+        self.blocks.push(Block::new(after_loop.clone()));
         self.insert_at(&after_loop);
+        self.loops.pop();
     }
 
     /// Compiles an [`AnalyzedForStmt`].
@@ -512,11 +508,10 @@ impl<'tree> Compiler<'tree> {
     /// At the end of each iteration, the update expression is invoked, its value is omitted.
     fn for_stmt(&mut self, node: &'tree AnalyzedForStmt) {
         let for_head = self.append_block("for_head");
-        let after_loop = self.append_block("after_for");
+        let after_loop_label = self.gen_label("after_for");
 
         //// INIT ////
         self.insert(Instruction::Comment(format!("loop init: {}", node.ident)));
-
         let type_ = node.initializer.result_type();
         let res = self.expression(&node.initializer).map(|reg| {
             self.use_reg(reg, Size::from(type_));
@@ -550,30 +545,28 @@ impl<'tree> Compiler<'tree> {
             Condition::Eq,
             IntRegister::Zero,
             expr_res.into(),
-            after_loop.clone(),
+            after_loop_label.clone(),
         ));
 
         //// BODY ////
         self.insert(Instruction::Comment("loop body".to_string()));
+        let for_update_label = self.gen_label("for_update");
 
-        self.curr_loop = Some(Loop {
-            loop_head: for_head.clone(),
-            after_loop: after_loop.clone(),
-        });
+        self.loops.push(Loop::new(
+            for_update_label.clone(),
+            after_loop_label.clone(),
+        ));
 
         // compile the loop block: cannot use `self.block` due to scoping
         for stmt in &node.block.stmts {
             self.statement(stmt)
         }
         // compile optional expr
-        //node.block.expr.map(|e| self.expression(&e));
-
-        if let Some(expr) = &node.block.expr {
-            self.expression(expr);
-        };
+        node.block.expr.as_ref().map(|e| self.expression(e));
 
         //// UPDATE EXPR ////
-        self.insert(Instruction::Comment("loop update".to_string()));
+        self.blocks.push(Block::new(for_update_label.clone()));
+        self.insert_at(&for_update_label);
 
         self.expression(&node.update);
         self.pop_scope();
@@ -582,12 +575,14 @@ impl<'tree> Compiler<'tree> {
         self.insert_jmp(for_head);
 
         //// TAIL ////
-        self.insert_at(&after_loop);
+        self.blocks.push(Block::new(after_loop_label.clone()));
+        self.insert_at(&after_loop_label);
 
         // release induction register at the end
         if let Some(reg) = res.map(|r| r.1) {
             self.release_reg(reg)
         }
+        self.loops.pop();
     }
 
     /// Compiles an [`AnalyzedLetStmt`]

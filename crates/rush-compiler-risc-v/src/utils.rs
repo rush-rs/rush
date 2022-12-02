@@ -160,8 +160,17 @@ impl<'tree> Compiler<'tree> {
 
     /// Returns a reference to the current loop being compiled.
     pub(crate) fn curr_loop(&self) -> &Loop {
-        self.curr_loop.as_ref().expect("always called from loops")
+        self.loops
+            .last()
+            .as_ref()
+            .expect("always called from loops")
     }
+
+    /// Returns a mutable reference to the current loop being compiled.
+    /// TODO: remove this function
+    /* pub(crate) fn curr_loop_mut(&mut self) -> &mut Loop {
+        self.loops.last_mut().expect("always called from loops")
+    } */
 
     /// Returns a reference to the current function being compiled.
     pub(crate) fn curr_fn(&self) -> &Function {
@@ -220,7 +229,7 @@ impl<'tree> Compiler<'tree> {
     /// Appends a new basic block.
     /// The initial label might be modified by the gen_label function.
     /// The final label is then returned for later usage.
-    pub(crate) fn append_block(&mut self, label: &str) -> String {
+    pub(crate) fn append_block(&mut self, label: &'static str) -> String {
         let label = self.gen_label(label);
         self.blocks.push(Block::new(label.clone()));
         label
@@ -228,16 +237,17 @@ impl<'tree> Compiler<'tree> {
 
     /// Helperfunction for generating labels for basic blocks.
     /// If the specified label already exists, it gets a numeric suffix.
-    pub(crate) fn gen_label(&self, label: &str) -> String {
-        let mut count = 1;
-        let mut out = label.to_string();
-
-        while self.blocks.iter().any(|b| b.label == out) {
-            out = format!("{label}_{}", count);
-            count += 1;
+    pub(crate) fn gen_label(&mut self, label: &'static str) -> String {
+        match self.label_count.get_mut(label) {
+            Some(cnt) => {
+                *cnt += 1;
+                format!("{label}_{cnt}")
+            }
+            None => {
+                self.label_count.insert(label, 0);
+                format!("{label}_0")
+            }
         }
-
-        out
     }
 
     /// Helper function for resolving identifier names.
@@ -339,6 +349,15 @@ pub(crate) struct Loop {
     /// Specifies the `after_loop` label of the current loop.
     /// Used in the `break` statement.
     pub(crate) after_loop: String,
+}
+
+impl Loop {
+    pub(crate) fn new(loop_head: String, after_loop: String) -> Self {
+        Self {
+            loop_head,
+            after_loop,
+        }
+    }
 }
 
 ////////// Data Objects //////////
