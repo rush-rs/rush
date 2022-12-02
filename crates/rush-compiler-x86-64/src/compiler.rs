@@ -13,8 +13,11 @@ const BUILTIN_FUNCS: &[&str] = &["exit"];
 
 #[derive(Debug, Default)]
 pub struct Compiler<'src> {
+    /// The instructions for the current function body
     pub(crate) function_body: Vec<Instruction>,
+    /// The currently used [`IntRegister`]s
     pub(crate) used_registers: Vec<IntRegister>,
+    /// The currently used [`FloatRegister`]s
     pub(crate) used_float_registers: Vec<FloatRegister>,
     /// Whether the compiler is currently inside function args, `true` when not `0`. Stored as a
     /// counter for nested calls.
@@ -24,33 +27,44 @@ pub struct Compiler<'src> {
     /// Internal stack pointer, separate from `%rsp`, used for pushing and popping inside stack
     /// frame. Relative to `%rbp`, always positive.
     pub(crate) stack_pointer: i64,
+    /// Size of current stack frame, always `>= self.stack_pointer`
     pub(crate) frame_size: i64,
+    /// Whether the currently function requires a stack frame, regardless of having local variables
     pub(crate) requires_frame: bool,
+    /// The count of general purpose blocks
     pub(crate) block_count: usize,
+    /// The start and end symbols for the currently nested loops, used for `break` and `continue`
     pub(crate) loop_symbols: Vec<(Rc<str>, Rc<str>)>,
 
+    /// Global symbols of the current program
     pub(crate) exports: Vec<Instruction>,
+    /// The text section (aka code section)
     pub(crate) text_section: Vec<Instruction>,
 
     //////// .data section ////////
+    /// Globals with 64-bits
     pub(crate) quad_globals: Vec<(Rc<str>, u64)>,
+    /// Global floats with 64-bits
     pub(crate) quad_float_globals: Vec<(Rc<str>, f64)>,
+    /// Globals with 32-bits
     pub(crate) long_globals: Vec<(Rc<str>, u32)>,
+    /// Globals with 16-bits
     pub(crate) short_globals: Vec<(Rc<str>, u16)>,
+    /// Globals with 8-bits
     pub(crate) byte_globals: Vec<(Rc<str>, u8)>,
 
     //////// .rodata section ////////
-    /// Constants with 128-bits
+    /// Constants with 128-bits (maps value to name)
     pub(crate) octa_constants: HashMap<u128, Rc<str>>,
-    /// Constants with 64-bits
+    /// Constants with 64-bits (maps value to name)
     pub(crate) quad_constants: HashMap<u64, Rc<str>>,
-    /// Constant floats with 64-bits
+    /// Constant floats with 64-bits (maps value to name)
     pub(crate) quad_float_constants: HashMap<u64, Rc<str>>,
-    /// Constants with 32-bits
+    /// Constants with 32-bits (maps value to name)
     pub(crate) long_constants: HashMap<u32, Rc<str>>,
-    /// Constants with 16-bits
+    /// Constants with 16-bits (maps value to name)
     pub(crate) short_constants: HashMap<u16, Rc<str>>,
-    /// Constants with 8-bits
+    /// Constants with 8-bits (maps value to name)
     pub(crate) byte_constants: HashMap<u8, Rc<str>>,
 }
 

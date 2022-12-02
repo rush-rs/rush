@@ -46,11 +46,15 @@ pub enum Instruction {
     Add(IntValue, IntValue),
     Sub(IntValue, IntValue),
     Imul(IntValue, IntValue),
+    /// Divide the 128 bit integer in `%rdx:%rax` by the given value, store the result in `%rax`
+    /// and the remainder in `%rdx`
     Idiv(IntValue),
 
     Inc(IntValue),
     Dec(IntValue),
+    /// Negate a signed integer (two's complement)
     Neg(IntValue),
+    /// Flip all bits (one's complement)
     Not(IntValue),
 
     /// Logical shift left
@@ -58,15 +62,20 @@ pub enum Instruction {
     /// Arithmetic shift right
     Sar(IntValue, IntValue),
 
+    /// Bitwise AND
     And(IntValue, IntValue),
+    /// Bitwise OR
     Or(IntValue, IntValue),
+    /// Bitwise XOR
     Xor(IntValue, IntValue),
 
+    /// Compare two integers with subtraction
     Cmp(IntValue, IntValue),
+    /// Compare two integers with a bitwise AND
     Test(IntValue, i64),
     /// Convert int to float. (**c**on**v**er**t** **s**igned **i**nteger to **s**calar **d**ouble)
     Cvtsi2sd(FloatValue, IntValue),
-    /// Sign-extend 64-bit int in %rax to 128-bit int in %rdx:%rax (**c**onvert **q**uad to **o**cta)
+    /// Sign-extend 64-bit int in `%rax` to 128-bit int in `%rdx:%rax` (**c**onvert **q**uad to **o**cta)
     Cqo,
 
     ////////////////////////
