@@ -922,7 +922,7 @@ impl<'src> Compiler<'src> {
                 // return negated immediate
                 IntValue::Immediate(num) => Some(Value::Int(IntValue::Immediate(-num))),
             },
-            (Some(Value::Int(value)), Type::Int | Type::Char, PrefixOp::Not) => {
+            (Some(Value::Int(value)), Type::Int, PrefixOp::Not) => {
                 let reg = match value {
                     IntValue::Register(reg) => reg,
                     IntValue::Ptr(ptr) => {
@@ -1004,11 +1004,12 @@ impl<'src> Compiler<'src> {
         }
 
         // else compile the expressions
+        let is_char = node.lhs.result_type() == Type::Char;
         let lhs = self.expression(node.lhs);
         let rhs = self.expression(node.rhs);
 
         // and the operation on them
-        self.compile_infix(lhs, rhs, node.op)
+        self.compile_infix(lhs, rhs, node.op, is_char)
     }
 
     fn assign_expr(&mut self, node: AnalyzedAssignExpr<'src>) -> Option<Value> {
@@ -1033,6 +1034,7 @@ impl<'src> Compiler<'src> {
             return None;
         }
 
+        let is_char = node.expr.result_type() == Type::Char;
         let val = self.expression(node.expr)?;
 
         match (val, node.op) {
@@ -1079,13 +1081,17 @@ impl<'src> Compiler<'src> {
                     rhs => rhs,
                 };
                 self.function_body.push(match node.op {
-                    AssignOp::Plus => Instruction::Add(var.ptr.into(), rhs),
-                    AssignOp::Minus => Instruction::Sub(var.ptr.into(), rhs),
-                    AssignOp::BitOr => Instruction::Or(var.ptr.into(), rhs),
-                    AssignOp::BitAnd => Instruction::And(var.ptr.into(), rhs),
-                    AssignOp::BitXor => Instruction::Xor(var.ptr.into(), rhs),
+                    AssignOp::Plus => Instruction::Add(var.ptr.clone().into(), rhs),
+                    AssignOp::Minus => Instruction::Sub(var.ptr.clone().into(), rhs),
+                    AssignOp::BitOr => Instruction::Or(var.ptr.clone().into(), rhs),
+                    AssignOp::BitAnd => Instruction::And(var.ptr.clone().into(), rhs),
+                    AssignOp::BitXor => Instruction::Xor(var.ptr.clone().into(), rhs),
                     _ => unreachable!("this block is only entered with above ops"),
                 });
+                if is_char {
+                    self.function_body
+                        .push(Instruction::And(var.ptr.into(), 0x7f.into()));
+                }
             }
             // integer shifts
             (Value::Int(rhs), AssignOp::Shl | AssignOp::Shr) => {
@@ -1155,6 +1161,7 @@ impl<'src> Compiler<'src> {
                         AssignOp::BitAnd => InfixOp::BitAnd,
                         AssignOp::BitXor => InfixOp::BitXor,
                     },
+                    is_char,
                 );
                 match new_val? {
                     Value::Int(val) => match val {
