@@ -35,6 +35,8 @@ pub struct Compiler<'src> {
     pub(crate) block_count: usize,
     /// The start and end symbols for the currently nested loops, used for `break` and `continue`
     pub(crate) loop_symbols: Vec<(Rc<str>, Rc<str>)>,
+    /// The symbol for the current functions epilogue
+    pub(crate) func_return_symbol: Option<Rc<str>>,
 
     /// Global symbols of the current program
     pub(crate) exports: Vec<Instruction>,
@@ -418,6 +420,7 @@ impl<'src> Compiler<'src> {
     fn main_fn(&mut self, body: AnalyzedBlock<'src>) {
         let start_symbol = "_start".into();
         let main_fn_symbol = "main..main".into();
+        self.func_return_symbol = Some("main..main.return".into());
 
         self.exports
             .push(Instruction::Global(Rc::clone(&start_symbol)));
@@ -439,6 +442,7 @@ impl<'src> Compiler<'src> {
             format!("main..{}", node.name).into(),
             true,
         ));
+        self.func_return_symbol = Some(format!("main..{}.return", node.name).into());
 
         self.push_scope();
         let mut int_param_index = 0;
@@ -567,6 +571,12 @@ impl<'src> Compiler<'src> {
         self.text_section.append(&mut self.function_body);
 
         // epilogue
+        self.text_section.push(Instruction::Symbol(
+            self.func_return_symbol
+                .take()
+                .expect("a return symbol is set at the beginning of each function"),
+            false,
+        ));
         if self.requires_frame || frame_size != 0 {
             // deallocate space on stack and restore base pointer
             self.text_section.push(Instruction::Leave);
@@ -579,7 +589,7 @@ impl<'src> Compiler<'src> {
     fn statement(&mut self, node: AnalyzedStatement<'src>) {
         match node {
             AnalyzedStatement::Let(node) => self.let_stmt(node),
-            AnalyzedStatement::Return(_) => todo!(),
+            AnalyzedStatement::Return(node) => self.return_stmt(node),
             AnalyzedStatement::Loop(node) => self.loop_stmt(node),
             AnalyzedStatement::While(node) => self.while_stmt(node),
             AnalyzedStatement::For(_) => todo!(),
@@ -656,6 +666,41 @@ impl<'src> Compiler<'src> {
                 self.curr_scope().insert(node.name, None);
             }
         }
+    }
+
+    fn return_stmt(&mut self, node: AnalyzedReturnStmt<'src>) {
+        let comment;
+        match node.and_then(|expr| self.tmp_expr(expr)) {
+            Some(Value::Int(IntValue::Register(reg))) => {
+                debug_assert_eq!(reg.in_qword_size(), IntRegister::Rax);
+                comment = format!("return {reg};");
+            }
+            Some(Value::Int(val)) => {
+                let reg = match &val {
+                    IntValue::Ptr(ptr) => IntRegister::Rax.in_size(ptr.size),
+                    _ => IntRegister::Rax,
+                };
+                comment = format!("return {reg};");
+                self.function_body.push(Instruction::Mov(reg.into(), val));
+            }
+            Some(Value::Float(FloatValue::Register(reg))) => {
+                debug_assert_eq!(reg, FloatRegister::Xmm0);
+                comment = format!("return {reg};");
+            }
+            Some(Value::Float(val)) => {
+                self.function_body
+                    .push(Instruction::Movsd(FloatRegister::Xmm0.into(), val));
+                comment = "return %xmm0;".into();
+            }
+            None => {
+                comment = "return;".into();
+            }
+        }
+
+        self.function_body.push(Instruction::Commented(
+            Instruction::Jmp(Rc::clone(self.func_return_symbol.as_ref().expect("asd"))).into(),
+            comment.into(),
+        ));
     }
 
     fn loop_stmt(&mut self, node: AnalyzedLoopStmt<'src>) {
