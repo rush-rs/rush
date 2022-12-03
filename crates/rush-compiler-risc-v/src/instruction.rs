@@ -1,19 +1,19 @@
-use std::fmt::Display;
+use std::{borrow::Cow, fmt::Display, rc::Rc};
 
 use rush_analyzer::InfixOp;
 
 use crate::register::{FloatRegister, IntRegister};
 
-pub(crate) struct Block {
-    pub(crate) label: String,
+pub(crate) struct Block<'tree> {
+    pub(crate) label: Rc<str>,
     /// Holds the block's instructions.
     /// The first element of the tuple is the instruction, the second element is a optional comment.
-    pub(crate) instructions: Vec<(Instruction, Option<String>)>,
+    pub(crate) instructions: Vec<(Instruction, Option<Cow<'tree, str>>)>,
     /// Specifies whether the current block is terminated
     pub(crate) is_terminated: bool,
 }
 
-impl Display for Block {
+impl<'tree> Display for Block<'tree> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -34,8 +34,8 @@ impl Display for Block {
     }
 }
 
-impl Block {
-    pub(crate) fn new(label: String) -> Self {
+impl<'tree> Block<'tree> {
+    pub(crate) fn new(label: Rc<str>) -> Self {
         Self {
             label,
             instructions: vec![],
@@ -46,11 +46,11 @@ impl Block {
 
 pub enum Instruction {
     Ret,
-    Call(String),
-    Comment(String),
+    Call(Cow<'static, str>),
+    Comment(Cow<'static, str>),
 
-    Jmp(String),
-    BrCond(Condition, IntRegister, IntRegister, String),
+    Jmp(Rc<str>),
+    BrCond(Condition, IntRegister, IntRegister, Rc<str>),
 
     // base integer instructions
     SetIntCondition(Condition, IntRegister, IntRegister, IntRegister),
@@ -253,7 +253,7 @@ impl From<InfixOp> for Condition {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Pointer {
     Stack(IntRegister, i64),
-    Label(String),
+    Label(Rc<str>),
 }
 
 impl Display for Pointer {
@@ -288,12 +288,12 @@ mod tests {
                 "ld t0, 16(sp)",
             ),
             (
-                Instruction::Lb(IntRegister::T0, Pointer::Label("int".to_string())),
+                Instruction::Lb(IntRegister::T0, Pointer::Label("int".into())),
                 "lb t0, int",
             ),
             (
                 Instruction::Fld(FloatRegister::Ft0, Pointer::Label(
-                    "a".to_string(),
+                    "a".into(),
                 )),
                 "fld ft0, a, t6",
             ),

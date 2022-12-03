@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Display};
+use std::{borrow::Cow, collections::HashMap, fmt::Display, rc::Rc};
 
 use rush_analyzer::Type;
 
@@ -75,7 +75,7 @@ impl<'tree> Compiler<'tree> {
     /// Used before function calls in order to save currently used registers to memory.
     pub(crate) fn spill_reg(&mut self, reg: Register, size: Size) -> i64 {
         let offset = self.get_offset(size);
-        let comment = format!("{} byte spill: {reg}", size.byte_count());
+        let comment = format!("{} byte spill: {reg}", size.byte_count()).into();
 
         match reg {
             Register::Int(reg) => {
@@ -104,7 +104,7 @@ impl<'tree> Compiler<'tree> {
         regs: Vec<(Register, i64, Size)>,
     ) -> Option<Register> {
         for (reg, offset, size) in regs {
-            let comment = format!("{} byte reload: {reg}", size.byte_count());
+            let comment = format!("{} byte reload: {reg}", size.byte_count()).into();
             match reg {
                 Register::Int(reg) => {
                     // in this case, restoring `a0` would destroy the call return value.
@@ -166,12 +166,6 @@ impl<'tree> Compiler<'tree> {
             .expect("always called from loops")
     }
 
-    /// Returns a mutable reference to the current loop being compiled.
-    /// TODO: remove this function
-    /* pub(crate) fn curr_loop_mut(&mut self) -> &mut Loop {
-        self.loops.last_mut().expect("always called from loops")
-    } */
-
     /// Returns a reference to the current function being compiled.
     pub(crate) fn curr_fn(&self) -> &Function {
         self.curr_fn.as_ref().expect("always called from functions")
@@ -229,9 +223,9 @@ impl<'tree> Compiler<'tree> {
     /// Appends a new basic block.
     /// The initial label might be modified by the gen_label function.
     /// The final label is then returned for later usage.
-    pub(crate) fn append_block(&mut self, label: &'static str) -> String {
-        let label = self.gen_label(label);
-        self.blocks.push(Block::new(label.clone()));
+    pub(crate) fn append_block(&mut self, label: &'static str) -> Rc<str> {
+        let label = self.gen_label(label).into();
+        self.blocks.push(Block::new(Rc::clone(&label)));
         label
     }
 
@@ -266,7 +260,7 @@ impl<'tree> Compiler<'tree> {
 
     /// Inserts a jump at the current position.
     /// If the current block is already terminated, the insertion is omitted.
-    pub(crate) fn insert_jmp(&mut self, label: String) {
+    pub(crate) fn insert_jmp(&mut self, label: Rc<str>) {
         // only insert a jump if the current block is not already terminated
         if !self.curr_block().is_terminated {
             self.insert(Instruction::Jmp(label));
@@ -280,7 +274,7 @@ impl<'tree> Compiler<'tree> {
     }
 
     #[inline]
-    pub(crate) fn curr_block_mut(&mut self) -> &mut Block {
+    pub(crate) fn curr_block_mut(&mut self) -> &mut Block<'tree> {
         &mut self.blocks[self.curr_block]
     }
 
@@ -294,7 +288,7 @@ impl<'tree> Compiler<'tree> {
 
     /// Inserts an [`Instruction`] at the end of the current basic block.
     /// Also inserts the specified comment at the end of the instruction.
-    pub(crate) fn insert_w_comment(&mut self, instruction: Instruction, comment: String) {
+    pub(crate) fn insert_w_comment(&mut self, instruction: Instruction, comment: Cow<'tree, str>) {
         self.blocks[self.curr_block]
             .instructions
             .push((instruction, Some(comment)));
@@ -306,7 +300,7 @@ impl<'tree> Compiler<'tree> {
         self.curr_block = self
             .blocks
             .iter()
-            .position(|s| s.label == label)
+            .position(|s| *s.label == *label)
             .expect("cannot insert at invalid label: {label}")
     }
 
@@ -328,13 +322,13 @@ pub(crate) struct Function {
     /// Does not include the necessary allocations for `ra` or `fp`
     pub(crate) stack_allocs: i64,
     /// Holds the value of the label which contains the epilogue of the current function.
-    pub(crate) epilogue_label: String,
+    pub(crate) epilogue_label: Rc<str>,
 }
 
 impl Function {
     /// Creates a new [`Function`].
     /// The `stack_allocs` is initialized as 0.
-    pub(crate) fn new(epilogue_label: String) -> Self {
+    pub(crate) fn new(epilogue_label: Rc<str>) -> Self {
         Function {
             stack_allocs: 0,
             epilogue_label,
@@ -345,14 +339,14 @@ impl Function {
 pub(crate) struct Loop {
     /// Specifies the `loop_head` label of the current loop.
     /// Used in the `continue` statement.
-    pub(crate) loop_head: String,
+    pub(crate) loop_head: Rc<str>,
     /// Specifies the `after_loop` label of the current loop.
     /// Used in the `break` statement.
-    pub(crate) after_loop: String,
+    pub(crate) after_loop: Rc<str>,
 }
 
 impl Loop {
-    pub(crate) fn new(loop_head: String, after_loop: String) -> Self {
+    pub(crate) fn new(loop_head: Rc<str>, after_loop: Rc<str>) -> Self {
         Self {
             loop_head,
             after_loop,
@@ -365,7 +359,7 @@ impl Loop {
 /// A [`DataObj`] is part of the `.data` and `.rodata` sections of the final program.
 pub(crate) struct DataObj {
     /// The label / name of the data object.
-    pub(crate) label: String,
+    pub(crate) label: Rc<str>,
     /// Holds the actual contents of the data object whilst saving type information.
     pub(crate) data: DataObjType,
 }
@@ -396,7 +390,7 @@ impl Display for DataObjType {
                 zero = if inner.fract() == 0.0 { ".0" } else { "" }
             ),
             Self::Dword(inner) => write!(f, ".dword {inner:#018x}  # = {inner}"),
-            Self::Byte(inner) => write!(f, ".byte {inner:#04x}"),
+            Self::Byte(inner) => write!(f, ".byte {inner:#04x}  # = {inner}"),
         }
     }
 }

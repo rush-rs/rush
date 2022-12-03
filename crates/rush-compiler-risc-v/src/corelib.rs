@@ -15,6 +15,7 @@ impl<'tree> Compiler<'tree> {
     ) -> IntRegister {
         // before the function is called, all currently used registers are saved
         let mut regs_on_stack = vec![];
+        // TODO: maybe remove the need for clone
         for (reg, size) in self.used_registers.clone() {
             let offset = self.spill_reg(reg, size);
             if reg.is_caller_saved() {
@@ -31,7 +32,7 @@ impl<'tree> Compiler<'tree> {
         }
 
         // perform the function call
-        self.insert(Instruction::Call("__rush_internal_pow_int".to_string()));
+        self.insert(Instruction::Call("__rush_internal_pow_int".into()));
 
         // restore all saved registers
         self.restore_regs_after_call(Some(IntRegister::A0.to_reg()), regs_on_stack)
@@ -43,6 +44,7 @@ impl<'tree> Compiler<'tree> {
     pub(crate) fn __rush_internal_cast_int_to_char(&mut self, src: IntRegister) -> IntRegister {
         // before the function is called, all currently used registers are saved
         let mut regs_on_stack = vec![];
+        // TODO: maybe remove the need for clone
         for (reg, size) in self.used_registers.clone() {
             let offset = self.spill_reg(reg, size);
             if reg.is_caller_saved() {
@@ -56,9 +58,7 @@ impl<'tree> Compiler<'tree> {
         }
 
         // perform the function call
-        self.insert(Instruction::Call(
-            "__rush_internal_cast_int_to_char".to_string(),
-        ));
+        self.insert(Instruction::Call("__rush_internal_cast_int_to_char".into()));
 
         // restore all saved registers
         self.restore_regs_after_call(Some(IntRegister::A0.to_reg()), regs_on_stack)
@@ -70,6 +70,7 @@ impl<'tree> Compiler<'tree> {
     pub(crate) fn __rush_internal_cast_float_to_char(&mut self, src: FloatRegister) -> IntRegister {
         // before the function is called, all currently used registers are saved
         let mut regs_on_stack = vec![];
+        // TODO: maybe remove the need for clone
         for (reg, size) in self.used_registers.clone() {
             let offset = self.spill_reg(reg, size);
             if reg.is_caller_saved() {
@@ -84,7 +85,7 @@ impl<'tree> Compiler<'tree> {
 
         // perform the function call
         self.insert(Instruction::Call(
-            "__rush_internal_cast_float_to_char".to_string(),
+            "__rush_internal_cast_float_to_char".into(),
         ));
 
         // restore all saved registers

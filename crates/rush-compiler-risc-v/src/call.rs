@@ -1,4 +1,4 @@
-use std::{mem, vec};
+use std::{borrow::Cow, mem, rc::Rc, vec};
 
 use rush_analyzer::{ast::AnalyzedCallExpr, Type};
 
@@ -17,12 +17,12 @@ impl<'tree> Compiler<'tree> {
     /// Returns the instructions of a function prologue.
     /// Automatically sets up any stack allocations and saves `ra` and `fp`.
     /// Must be invoked after the fn body since the stack frame size must be known at this point.
-    pub(crate) fn prologue(&mut self) -> Vec<(Instruction, Option<String>)> {
+    pub(crate) fn prologue(&mut self) -> Vec<(Instruction, Option<Cow<'static, str>>)> {
         // align frame size to 16 bytes
         Self::align(&mut self.curr_fn_mut().stack_allocs, 16);
 
         vec![
-            (Instruction::Comment("begin prologue".to_string()), None),
+            (Instruction::Comment("begin prologue".into()), None),
             // allocate stack spacec
             (
                 Instruction::Addi(
@@ -57,14 +57,14 @@ impl<'tree> Compiler<'tree> {
                 ),
                 None,
             ),
-            (Instruction::Comment("end prologue".to_string()), None),
+            (Instruction::Comment("end prologue".into()), None),
         ]
     }
 
     /// Inserts the instructions for a function epilogue.
     /// Places the instructions at the end of the epilogue label of the current function.
     pub(crate) fn epilogue(&mut self) {
-        let epilogue_label = self.curr_fn().epilogue_label.clone();
+        let epilogue_label = Rc::clone(&self.curr_fn().epilogue_label);
         self.insert_at(&epilogue_label);
         // restore `fp` from the stack
         self.insert(Instruction::Ld(
@@ -89,7 +89,7 @@ impl<'tree> Compiler<'tree> {
     /// Compiles an [`AnalyzedCallExpr`].
     /// Prior to calling the target function, all currently used registers are saved on the stack.
     /// After the call has been performed, all previously saved registers are restored from memory.
-    pub(crate) fn call_expr(&mut self, node: &'tree AnalyzedCallExpr) -> Option<Register> {
+    pub(crate) fn call_expr(&mut self, node: AnalyzedCallExpr<'tree>) -> Option<Register> {
         // before the function is called, all currently used registers are saved
         let mut regs_on_stack = vec![];
 
@@ -104,7 +104,7 @@ impl<'tree> Compiler<'tree> {
         // save the previous state of the used registers
         let used_regs_prev = mem::take(&mut self.used_registers);
 
-        // specifies the place of the current register (relative to its type)
+        // specifies the count of occurrences of the current register relative to its type
         // `a0` would be `int_cnt = 0`, `fa0` would be `float_cnt = 0`
         let mut float_cnt = 0;
         let mut int_cnt = 0;
@@ -153,7 +153,7 @@ impl<'tree> Compiler<'tree> {
         // specifies the count of the current register spill
         let mut spill_count = 0;
 
-        for arg in &node.args {
+        for arg in node.args {
             match arg.result_type() {
                 Type::Unit | Type::Never => continue,
                 Type::Int | Type::Bool | Type::Char => {
@@ -186,7 +186,8 @@ impl<'tree> Compiler<'tree> {
                                     res_reg.into(),
                                     Pointer::Stack(IntRegister::Sp, spill_count * 8),
                                 ),
-                                format!("{} byte param spill", Size::from(type_).byte_count()),
+                                format!("{} byte param spill", Size::from(type_).byte_count())
+                                    .into(),
                             );
                             spill_count += 1;
                         }
@@ -221,7 +222,7 @@ impl<'tree> Compiler<'tree> {
                                     res_reg.into(),
                                     Pointer::Stack(IntRegister::Sp, spill_count * 8),
                                 ),
-                                format!("{} byte param spill", Size::Dword.byte_count()),
+                                format!("{} byte param spill", Size::Dword.byte_count()).into(),
                             );
                             spill_count += 1;
                         }
@@ -237,9 +238,9 @@ impl<'tree> Compiler<'tree> {
             "exit" => {
                 // mark the current block as terminated (avoid future useless jumps)
                 self.curr_block_mut().is_terminated = true;
-                "exit".to_string()
+                "exit".into()
             }
-            func => format!("main..{func}"),
+            func => format!("main..{func}").into(),
         };
         self.insert(Instruction::Call(func_label));
 
