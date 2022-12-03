@@ -507,6 +507,15 @@ impl<'src> Analyzer<'src> {
         // drop the scope when finished
         self.pop_scope();
 
+        // issue a warning if there are more than 6 parameters
+        if params.len() > 6 {
+            self.warn(
+                "function takes more than 6 parameters".to_string(),
+                vec!["using more than 6 parameters will be slower on some backends".into()],
+                node.params.span,
+            )
+        }
+
         AnalyzedFunctionDefinition {
             used: true, // is modified in Self::analyze()
             name: node.name.inner,
