@@ -542,11 +542,12 @@ impl<'src> Analyzer<'src> {
                 }
             }
             let stmt_span = stmt.span();
-            let stmt = self.statement(stmt);
-            if stmt.result_type() == Type::Never {
-                never_type_span = Some(stmt_span);
+            if let Some(stmt) = self.statement(stmt) {
+                if stmt.result_type() == Type::Never {
+                    never_type_span = Some(stmt_span);
+                }
+                stmts.push(stmt);
             }
-            stmts.push(stmt);
         }
 
         // possibly mark trailing expression as unreachable
@@ -571,17 +572,19 @@ impl<'src> Analyzer<'src> {
         }
     }
 
-    fn statement(&mut self, node: Statement<'src>) -> AnalyzedStatement<'src> {
-        match node {
+    /// Analuzes a [`Statement`].
+    /// Can return [`None`] if the statement is a `while` loop which never loops.
+    fn statement(&mut self, node: Statement<'src>) -> Option<AnalyzedStatement<'src>> {
+        Some(match node {
             Statement::Let(node) => self.let_stmt(node),
             Statement::Return(node) => self.return_stmt(node),
             Statement::Loop(node) => self.loop_stmt(node),
-            Statement::While(node) => self.while_stmt(node),
+            Statement::While(node) => return self.while_stmt(node),
             Statement::For(node) => self.for_stmt(node),
             Statement::Break(node) => self.break_stmt(node),
             Statement::Continue(node) => self.continue_stmt(node),
             Statement::Expr(node) => AnalyzedStatement::Expr(self.expression(node.expr)),
-        }
+        })
     }
 
     fn let_stmt(&mut self, node: LetStmt<'src>) -> AnalyzedStatement<'src> {
@@ -766,10 +769,14 @@ impl<'src> Analyzer<'src> {
         })
     }
 
-    fn while_stmt(&mut self, node: WhileStmt<'src>) -> AnalyzedStatement<'src> {
+    /// Analyzes a [`WhileStmt`].
+    /// Will return [`None`] if the loop never iterates (condition is const and `false`)
+    /// Can also return an [`AnalyzedLoopStmt`] if the expression is constant on `true`.
+    fn while_stmt(&mut self, node: WhileStmt<'src>) -> Option<AnalyzedStatement<'src>> {
         // save old `loop_termination_count`
         let old_loop_termination_count = self.loop_termination_count;
-        let mut never_terminates = false;
+        let mut condition_is_const_true = false;
+        let mut never_loops = false;
 
         let cond_span = node.cond.span();
         let cond = self.expression(node.cond);
@@ -790,10 +797,11 @@ impl<'src> Analyzer<'src> {
             if cond.constant() {
                 let cond_display = match cond {
                     AnalyzedExpression::Bool(true) => {
-                        never_terminates = true;
+                        condition_is_const_true = true;
                         "true"
                     }
                     AnalyzedExpression::Bool(false) => {
+                        never_loops = true;
                         self.warn(
                             "loop never actually loops",
                             vec![
@@ -808,7 +816,7 @@ impl<'src> Analyzer<'src> {
                 };
                 self.warn(
                     format!("redundant while-statement: condition is always {cond_display}",),
-                    vec!["for unconditional loops use a loop-statement".into()],
+                    vec!["for unconditional loops, use a loop-statement".into()],
                     cond_span,
                 )
             }
@@ -850,15 +858,25 @@ impl<'src> Analyzer<'src> {
         };
 
         // restore loop termination count
-        let never_terminates = never_terminates && self.loop_termination_count == 0;
+        let never_terminates = condition_is_const_true && self.loop_termination_count == 0;
         self.loop_termination_count = old_loop_termination_count;
 
-        AnalyzedStatement::While(AnalyzedWhileStmt {
-            cond,
-            block,
-            allocations,
-            never_terminates,
-        })
+        // if the condition is always `false`, return nothing
+        // if the condition is always `true`, return an `AnalyzedLoopStmt`.
+        match (never_loops, condition_is_const_true) {
+            (true, _) => None,
+            (false, true) => Some(AnalyzedStatement::Loop(AnalyzedLoopStmt {
+                block,
+                allocations,
+                never_terminates,
+            })),
+            (false, false) => Some(AnalyzedStatement::While(AnalyzedWhileStmt {
+                cond,
+                block,
+                allocations,
+                never_terminates,
+            })),
+        }
     }
 
     fn for_stmt(&mut self, node: ForStmt<'src>) -> AnalyzedStatement<'src> {
@@ -925,7 +943,7 @@ impl<'src> Analyzer<'src> {
                 };
                 self.warn(
                     format!("redundant for-statement: condition is always {cond_display}",),
-                    vec!["for unconditional loops use a loop-statement".into()],
+                    vec!["for unconditional loops, use a loop-statement".into()],
                     cond_span,
                 )
             }
