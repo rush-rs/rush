@@ -132,8 +132,6 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         // compile the main function
         self.compile_main_fn(&program.main_fn, main_fn);
 
-        self.module.print_to_stderr();
-
         // verify the LLVM module when using debug
         self.module.verify().unwrap();
 

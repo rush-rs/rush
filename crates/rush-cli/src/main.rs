@@ -2,11 +2,15 @@ use std::{fs, process};
 
 use clap::Parser;
 use cli::{Backend, Cli};
+use rush_interpreter_tree::Interpreter;
 
 mod analyzer;
 mod cli;
+
 mod llvm;
 mod riscv;
+mod wasm;
+mod x86;
 
 fn main() {
     match Cli::parse() {
@@ -21,14 +25,14 @@ fn main() {
 
             match args.backend {
                 Backend::Llvm => llvm::compile(ast, args),
-                Backend::Wasm => todo!(),
+                Backend::Wasm => wasm::compile(ast, args),
                 Backend::RiscV => riscv::compile(ast, args),
-                Backend::X86_64 => todo!(),
+                Backend::X86_64 => x86::compile(ast, args),
+                Backend::Vm => println!("{}", rush_interpreter_vm::compile(&ast)),
                 Backend::TreeWalking => {
                     eprintln!("cannot compile using an interpreted backend");
                     process::exit(1)
                 }
-                Backend::Vm => println!("{}", rush_interpreter_vm::compile(&ast)),
             }
         }
         Cli::Run(args) => {
@@ -42,19 +46,30 @@ fn main() {
 
             match args.backend {
                 Backend::Llvm => llvm::run(ast, args),
-                Backend::Wasm => todo!(),
-                Backend::RiscV | Backend::X86_64 => {
-                    eprintln!("cannot run rush using this backend: `{}`", args.backend);
+                Backend::RiscV | Backend::X86_64 | Backend::Wasm => {
+                    eprintln!(
+                        "backend `{}` can only be used for compilation",
+                        args.backend
+                    );
                     process::exit(1);
                 }
-                Backend::TreeWalking => todo!(),
-                Backend::Vm => match rush_interpreter_vm::run(&ast) {
+                Backend::TreeWalking => match Interpreter::new().run(ast) {
                     Ok(code) => {
-                        println!("VM exited with code {code}");
+                        println!("interpreter exited with code {code}");
                         process::exit(code as i32)
                     }
                     Err(err) => {
-                        println!("\x1b[1;31mVM crashed\x1b[1;0m: {err}");
+                        println!("\x1b[1;31minterpreter crashed\x1b[1;0m: {err}");
+                        process::exit(1)
+                    }
+                },
+                Backend::Vm => match rush_interpreter_vm::run(&ast) {
+                    Ok(code) => {
+                        println!("vm exited with code {code}");
+                        process::exit(code as i32)
+                    }
+                    Err(err) => {
+                        println!("\x1b[1;31mvm crashed\x1b[1;0m: {err}");
                         process::exit(1)
                     }
                 },

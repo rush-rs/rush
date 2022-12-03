@@ -526,6 +526,8 @@ dependencies = [
  "rush-compiler-llvm",
  "rush-compiler-risc-v",
  "rush-compiler-wasm",
+ "rush-compiler-x86-64",
+ "rush-interpreter-tree",
  "rush-interpreter-vm",
 ]
 
