@@ -24,12 +24,12 @@ pub struct Compiler<'src> {
     pub(crate) in_args: usize,
     /// Maps variable names to `Option<Pointer>`, or `None` when of type `()` or `!`
     pub(crate) scopes: Vec<HashMap<&'src str, Option<Variable>>>,
-    /// Internal stack pointer, separate from `%rsp`, used for pushing and popping inside stack
-    /// frame. Relative to `%rbp`, always positive.
+    /// Internal stack pointer, separate from `%rsp`, used for pushing and popping
+    /// inside the stack frame. Relative to `%rbp`, always positive.
     pub(crate) stack_pointer: i64,
     /// Size of current stack frame, always `>= self.stack_pointer`
     pub(crate) frame_size: i64,
-    /// Whether the currently function requires a stack frame, regardless of having local variables
+    /// Whether the current function requires a stack frame, regardless of having local variables
     pub(crate) requires_frame: bool,
     /// The count of general purpose blocks
     pub(crate) block_count: usize,
@@ -102,64 +102,79 @@ impl<'src> Compiler<'src> {
         buf.push(Instruction::Section(Section::Text));
         buf.append(&mut self.text_section);
 
-        // mutable globals
-        buf.push(Instruction::Section(Section::Data));
-        buf.extend(self.quad_globals.into_iter().flat_map(|(name, value)| {
-            [
-                Instruction::Symbol(name, false),
-                Instruction::QuadInt(value),
-            ]
-        }));
-        buf.extend(
-            self.quad_float_globals
-                .into_iter()
-                .flat_map(|(name, value)| {
-                    [
-                        Instruction::Symbol(name, false),
-                        Instruction::QuadFloat(value.to_bits()),
-                    ]
-                }),
-        );
-        buf.extend(self.long_globals.into_iter().flat_map(|(name, value)| {
-            [Instruction::Symbol(name, false), Instruction::Long(value)]
-        }));
-        buf.extend(self.short_globals.into_iter().flat_map(|(name, value)| {
-            [Instruction::Symbol(name, false), Instruction::Short(value)]
-        }));
-        buf.extend(self.byte_globals.into_iter().flat_map(|(name, value)| {
-            [Instruction::Symbol(name, false), Instruction::Byte(value)]
-        }));
+        // mutable globals (if there are any)
+        if !self.quad_globals.is_empty()
+            || !self.quad_float_globals.is_empty()
+            || !self.long_globals.is_empty()
+            || !self.short_globals.is_empty()
+            || !self.byte_globals.is_empty()
+        {
+            buf.push(Instruction::Section(Section::Data));
+            buf.extend(self.quad_globals.into_iter().flat_map(|(name, value)| {
+                [
+                    Instruction::Symbol(name, false),
+                    Instruction::QuadInt(value),
+                ]
+            }));
+            buf.extend(
+                self.quad_float_globals
+                    .into_iter()
+                    .flat_map(|(name, value)| {
+                        [
+                            Instruction::Symbol(name, false),
+                            Instruction::QuadFloat(value.to_bits()),
+                        ]
+                    }),
+            );
+            buf.extend(self.long_globals.into_iter().flat_map(|(name, value)| {
+                [Instruction::Symbol(name, false), Instruction::Long(value)]
+            }));
+            buf.extend(self.short_globals.into_iter().flat_map(|(name, value)| {
+                [Instruction::Symbol(name, false), Instruction::Short(value)]
+            }));
+            buf.extend(self.byte_globals.into_iter().flat_map(|(name, value)| {
+                [Instruction::Symbol(name, false), Instruction::Byte(value)]
+            }));
+        }
 
-        // constants
-        buf.push(Instruction::Section(Section::ReadOnlyData));
-        buf.extend(self.octa_constants.into_iter().flat_map(|(value, name)| {
-            [Instruction::Symbol(name, false), Instruction::Octa(value)]
-        }));
-        buf.extend(self.quad_constants.into_iter().flat_map(|(value, name)| {
-            [
-                Instruction::Symbol(name, false),
-                Instruction::QuadInt(value),
-            ]
-        }));
-        buf.extend(
-            self.quad_float_constants
-                .into_iter()
-                .flat_map(|(value, name)| {
-                    [
-                        Instruction::Symbol(name, false),
-                        Instruction::QuadFloat(value),
-                    ]
-                }),
-        );
-        buf.extend(self.long_constants.into_iter().flat_map(|(value, name)| {
-            [Instruction::Symbol(name, false), Instruction::Long(value)]
-        }));
-        buf.extend(self.short_constants.into_iter().flat_map(|(value, name)| {
-            [Instruction::Symbol(name, false), Instruction::Short(value)]
-        }));
-        buf.extend(self.byte_constants.into_iter().flat_map(|(value, name)| {
-            [Instruction::Symbol(name, false), Instruction::Byte(value)]
-        }));
+        // constants (if there are any)
+        if !self.octa_constants.is_empty()
+            || !self.quad_constants.is_empty()
+            || !self.quad_float_constants.is_empty()
+            || !self.long_constants.is_empty()
+            || !self.short_constants.is_empty()
+            || !self.byte_constants.is_empty()
+        {
+            buf.push(Instruction::Section(Section::ReadOnlyData));
+            buf.extend(self.octa_constants.into_iter().flat_map(|(value, name)| {
+                [Instruction::Symbol(name, false), Instruction::Octa(value)]
+            }));
+            buf.extend(self.quad_constants.into_iter().flat_map(|(value, name)| {
+                [
+                    Instruction::Symbol(name, false),
+                    Instruction::QuadInt(value),
+                ]
+            }));
+            buf.extend(
+                self.quad_float_constants
+                    .into_iter()
+                    .flat_map(|(value, name)| {
+                        [
+                            Instruction::Symbol(name, false),
+                            Instruction::QuadFloat(value),
+                        ]
+                    }),
+            );
+            buf.extend(self.long_constants.into_iter().flat_map(|(value, name)| {
+                [Instruction::Symbol(name, false), Instruction::Long(value)]
+            }));
+            buf.extend(self.short_constants.into_iter().flat_map(|(value, name)| {
+                [Instruction::Symbol(name, false), Instruction::Short(value)]
+            }));
+            buf.extend(self.byte_constants.into_iter().flat_map(|(value, name)| {
+                [Instruction::Symbol(name, false), Instruction::Byte(value)]
+            }));
+        }
 
         buf.into_iter().map(|instr| instr.to_string()).collect()
     }
@@ -179,7 +194,7 @@ impl<'src> Compiler<'src> {
         match map.get(&value) {
             // when a constant with the same value already exists, reuse it
             Some(name) => Rc::clone(name),
-            // else create a new one
+            // otherwise, create a new one
             None => {
                 let name = format!(".{size:#}_constant_{}", map.len() + extra_len).into();
                 map.insert(value, Rc::clone(&name));
