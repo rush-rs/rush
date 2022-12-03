@@ -10,16 +10,18 @@ use crate::{ast::*, Diagnostic, DiagnosticLevel, ErrorKind};
 #[derive(Default, Debug)]
 pub struct Analyzer<'src> {
     pub functions: HashMap<&'src str, Function<'src>>,
+    pub diagnostics: Vec<Diagnostic<'src>>,
     builtin_functions: HashMap<&'static str, BuiltinFunction>,
     scopes: Vec<HashMap<&'src str, Variable<'src>>>,
     curr_fn: &'src str,
     used_builtins: HashSet<&'src str>,
-    pub diagnostics: Vec<Diagnostic<'src>>,
+    /// Specifies the depth of loops.
     loop_count: usize,
-    // saves any allocations made by the `let` keywoard
-    // used to include allocations into the loop AST nodes (for the LLVM compiler) (for the LLVM
-    // compiler)
-    // only needed when examining loops
+    /// Counts the amount of `break` statements used inside the current loop.
+    loop_termination_count: usize,
+    /// Saves any allocations which are made inside loops.
+    /// Used to include allocations into the loop AST nodes (for the LLVM compiler).
+    /// Only needed when examining loops.
     allocations: Option<Vec<(&'src str, Type)>>,
     source: &'src str,
 }
@@ -715,6 +717,9 @@ impl<'src> Analyzer<'src> {
     }
 
     fn loop_stmt(&mut self, node: LoopStmt<'src>) -> AnalyzedStatement<'src> {
+        // save old `loop_termination_count`
+        let old_loop_termination_count = self.loop_termination_count;
+
         // begin tracking the allocations made by the loop
         // only track allocations if this is an outer loop (loop_count == 0)
         let is_outer_loop = self.loop_count == 0;
@@ -745,15 +750,27 @@ impl<'src> Analyzer<'src> {
         let allocations = if is_outer_loop {
             self.allocations
                 .take()
-                .expect("allocations is set to Some(_) above")
+                .expect("allocations is set to `Some(_)` above")
         } else {
             vec![]
         };
 
-        AnalyzedStatement::Loop(AnalyzedLoopStmt { block, allocations })
+        // restore loop termination count
+        let never_terminates = self.loop_termination_count == 0;
+        self.loop_termination_count = old_loop_termination_count;
+
+        AnalyzedStatement::Loop(AnalyzedLoopStmt {
+            block,
+            allocations,
+            never_terminates,
+        })
     }
 
     fn while_stmt(&mut self, node: WhileStmt<'src>) -> AnalyzedStatement<'src> {
+        // save old `loop_termination_count`
+        let old_loop_termination_count = self.loop_termination_count;
+        let mut never_terminates = false;
+
         let cond_span = node.cond.span();
         let cond = self.expression(node.cond);
 
@@ -771,15 +788,26 @@ impl<'src> Analyzer<'src> {
         } else {
             // check that the condition is non-constant
             if cond.constant() {
+                let cond_display = match cond {
+                    AnalyzedExpression::Bool(true) => {
+                        never_terminates = true;
+                        "true"
+                    }
+                    AnalyzedExpression::Bool(false) => {
+                        self.warn(
+                            "loop never actually loops",
+                            vec![
+                                "since the condition is `false`, the loop will never iterate"
+                                    .into(),
+                            ],
+                            node.span,
+                        );
+                        "false"
+                    }
+                    _ => unreachable!("type is checked above and expr is constant"),
+                };
                 self.warn(
-                    format!(
-                        "redundant while-statement: condition is always {}",
-                        match cond {
-                            AnalyzedExpression::Bool(true) => "true",
-                            AnalyzedExpression::Bool(false) => "false",
-                            _ => unreachable!("type is checked above and expr is constant"),
-                        }
-                    ),
+                    format!("redundant while-statement: condition is always {cond_display}",),
                     vec!["for unconditional loops use a loop-statement".into()],
                     cond_span,
                 )
@@ -816,19 +844,28 @@ impl<'src> Analyzer<'src> {
         let allocations = if is_outer_loop {
             self.allocations
                 .take()
-                .expect("allocations is set to Some(_) above")
+                .expect("allocations is set to `Some(_)` above")
         } else {
             vec![]
         };
+
+        // restore loop termination count
+        let never_terminates = never_terminates && self.loop_termination_count == 0;
+        self.loop_termination_count = old_loop_termination_count;
 
         AnalyzedStatement::While(AnalyzedWhileStmt {
             cond,
             block,
             allocations,
+            never_terminates,
         })
     }
 
     fn for_stmt(&mut self, node: ForStmt<'src>) -> AnalyzedStatement<'src> {
+        // save old `loop_termination_count`
+        let old_loop_termination_count = self.loop_termination_count;
+        let mut never_terminates = false;
+
         // push the scope here so that the initializer is in the new scope
         self.push_scope();
 
@@ -868,15 +905,26 @@ impl<'src> Analyzer<'src> {
         } else {
             // check that the condition is non-constant
             if cond.constant() {
+                let cond_display = match cond {
+                    AnalyzedExpression::Bool(true) => {
+                        never_terminates = true;
+                        "true"
+                    }
+                    AnalyzedExpression::Bool(false) => {
+                        self.warn(
+                            "loop never actually loops",
+                            vec![
+                                "since the condition is `false`, the loop will never iterate"
+                                    .into(),
+                            ],
+                            node.span,
+                        );
+                        "false"
+                    }
+                    _ => unreachable!("type is checked above and expr is constant"),
+                };
                 self.warn(
-                    format!(
-                        "redundant for-statement: condition is always {}",
-                        match cond {
-                            AnalyzedExpression::Bool(true) => "true",
-                            AnalyzedExpression::Bool(false) => "false",
-                            _ => unreachable!("type is checked above and expr is constant"),
-                        }
-                    ),
+                    format!("redundant for-statement: condition is always {cond_display}",),
                     vec!["for unconditional loops use a loop-statement".into()],
                     cond_span,
                 )
@@ -936,6 +984,10 @@ impl<'src> Analyzer<'src> {
             vec![]
         };
 
+        // restore loop termination count
+        let never_terminates = never_terminates && self.loop_termination_count == 0;
+        self.loop_termination_count = old_loop_termination_count;
+
         AnalyzedStatement::For(AnalyzedForStmt {
             ident: node.ident.inner,
             initializer,
@@ -943,6 +995,7 @@ impl<'src> Analyzer<'src> {
             update,
             block,
             allocations,
+            never_terminates,
         })
     }
 
@@ -955,7 +1008,7 @@ impl<'src> Analyzer<'src> {
                 node.span,
             );
         }
-
+        self.loop_termination_count += 1;
         AnalyzedStatement::Break
     }
 
@@ -973,7 +1026,7 @@ impl<'src> Analyzer<'src> {
     }
 
     fn expression(&mut self, node: Expression<'src>) -> AnalyzedExpression<'src> {
-        match node {
+        let res = match node {
             Expression::Block(node) => self.block_expr(*node),
             Expression::If(node) => self.if_expr(*node),
             Expression::Int(node) => AnalyzedExpression::Int(node.inner),
@@ -1006,7 +1059,14 @@ impl<'src> Analyzer<'src> {
                     None => AnalyzedExpression::Grouped(expr.into()),
                 }
             }
+        };
+
+        // if this is a `!` expression, count it like a loop termination
+        if res.result_type() == Type::Never {
+            self.loop_termination_count += 1;
         }
+
+        res
     }
 
     fn block_expr(&mut self, node: Block<'src>) -> AnalyzedExpression<'src> {
@@ -1553,7 +1613,7 @@ impl<'src> Analyzer<'src> {
     }
 
     fn call_expr(&mut self, node: CallExpr<'src>) -> AnalyzedExpression<'src> {
-        // saves the name of the current function (not the callee!)
+        // saves the name of the current function (NOT the callee)
         let func = match (
             self.functions.get_mut(node.func.inner),
             self.builtin_functions.get(node.func.inner),

@@ -50,9 +50,18 @@ impl AnalyzedStatement<'_> {
         match self {
             Self::Let(_) => Type::Unit,
             Self::Return(_) => Type::Never,
-            Self::Loop(_) => Type::Unit, // TODO: maybe detect when it's `!`
-            Self::While(_) => Type::Unit,
-            Self::For(_) => Type::Unit,
+            Self::Loop(node) => match node.never_terminates {
+                true => Type::Never,
+                false => Type::Unit,
+            }, // Used for detecting never-ending loops
+            Self::While(node) => match node.never_terminates {
+                true => Type::Never,
+                false => Type::Unit,
+            }, // Used for detecting never-ending loops
+            Self::For(node) => match node.never_terminates {
+                true => Type::Never,
+                false => Type::Unit,
+            }, // Used for detecting never-ending loops
             Self::Break => Type::Never,
             Self::Continue => Type::Never,
             Self::Expr(expr) => expr.result_type(),
@@ -81,6 +90,7 @@ pub struct AnalyzedLoopStmt<'src> {
     pub block: AnalyzedBlock<'src>,
     // specifies the allocations performed by the current loop
     pub allocations: Vec<(&'src str, Type)>,
+    pub never_terminates: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -89,6 +99,7 @@ pub struct AnalyzedWhileStmt<'src> {
     pub block: AnalyzedBlock<'src>,
     // specifies the allocations performed by the current loop
     pub allocations: Vec<(&'src str, Type)>,
+    pub never_terminates: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -100,6 +111,7 @@ pub struct AnalyzedForStmt<'src> {
     pub block: AnalyzedBlock<'src>,
     // specifies the allocations performed by the current loop
     pub allocations: Vec<(&'src str, Type)>,
+    pub never_terminates: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
