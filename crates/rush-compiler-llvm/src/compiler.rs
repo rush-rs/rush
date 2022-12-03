@@ -132,6 +132,8 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         // compile the main function
         self.compile_main_fn(&program.main_fn, main_fn);
 
+        self.module.print_to_stderr();
+
         // verify the LLVM module when using debug
         self.module.verify().unwrap();
 
@@ -322,6 +324,10 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
     fn compile_block(&mut self, node: &'src AnalyzedBlock) -> BasicValueEnum<'ctx> {
         for stmt in &node.stmts {
             self.compile_statement(stmt);
+            // when encountering `break`, `continue`, or `return` statements
+            if stmt.result_type() == Type::Never {
+                break;
+            }
         }
         // if there is an expression, return its value instead of `()`
         node.expr
@@ -413,11 +419,13 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
     /// Transforms a vector containing allocations tracked by the analyzer into a vector conainting
     /// allocated pointers. For each element, a new LLVM pointer allocation is made.
     /// Used in loop statements in order to perform allocations upfront.
+    /// Unit and never types are skipped.
     fn do_loop_allocations(
         &mut self,
         src: &[(&'src str, Type)],
     ) -> Vec<(String, Type, PointerValue<'ctx>)> {
         src.iter()
+            .filter(|(_, type_)| !matches!(type_, Type::Unit | Type::Never))
             .map(|(ident, type_)| {
                 let ptr = self.builder.build_alloca(self.to_llvm_type(*type_), ident);
                 self.scope_mut().insert(ident, Variable::Mut(ptr));
@@ -459,7 +467,9 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         self.compile_block(&node.block);
 
         // jump back to the loop head
-        self.builder.build_unconditional_branch(loop_head);
+        if !self.current_instruction_is_block_terminator() {
+            self.builder.build_unconditional_branch(loop_head);
+        }
 
         // drop the scope
         self.scopes.pop();
@@ -494,11 +504,6 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
 
         // set the loop metadata so that the inner block can use it
         let allocations = self.do_loop_allocations(&node.allocations);
-        self.loops.push(Loop {
-            loop_head: while_head,
-            after_loop: after_while,
-            allocations,
-        });
 
         // enter the loop from outside
         self.builder.build_unconditional_branch(while_head);
@@ -506,16 +511,27 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         // compile the condition check
         self.builder.position_at_end(while_head);
         let cond = self.compile_expression(&node.cond);
+
         // if the condition is true, jump into the while body, otherwise, quit the loop
-        self.builder
-            .build_conditional_branch(cond.into_int_value(), while_body, after_while);
+        if !self.current_instruction_is_block_terminator() {
+            self.builder
+                .build_conditional_branch(cond.into_int_value(), while_body, after_while);
+        }
+
+        self.loops.push(Loop {
+            loop_head: while_head,
+            after_loop: after_while,
+            allocations,
+        });
 
         // compile the loop body
         self.builder.position_at_end(while_body);
         self.compile_block(&node.block);
 
         // jump back to the loop head
-        self.builder.build_unconditional_branch(while_head);
+        if !self.current_instruction_is_block_terminator() {
+            self.builder.build_unconditional_branch(while_head);
+        }
 
         // drop the loop scope
         self.scopes.pop();
@@ -555,57 +571,72 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         // insert the induction variable into the current scope
         let induction_var = self.compile_expression(&node.initializer);
 
-        // allocate a pointer for the induction variable
-        let ptr = self.alloc_ptr(
-            node.ident,
-            node.initializer.result_type(),
-            induction_var.get_type(),
-        );
-
-        // store the value in the pointer
-        self.builder.build_store(ptr, induction_var);
-
         // push a new scope for the loop
         self.scopes.push(HashMap::new());
 
+        // allocate a pointer for the induction variable (if not unit or never)
+        if !matches!(node.initializer.result_type(), Type::Unit | Type::Never) {
+            let ptr = self.alloc_ptr(
+                node.ident,
+                node.initializer.result_type(),
+                induction_var.get_type(),
+            );
+
+            // store the value in the pointer
+            self.builder.build_store(ptr, induction_var);
+
+            // add the init variable to the loop's scope
+            self.scope_mut().insert(node.ident, Variable::Mut(ptr));
+        } else {
+            // TODO: add dummy variable?
+        }
+
         // set the loop metadata so that the inner block can use it
         let allocations = self.do_loop_allocations(&node.allocations);
-        self.loops.push(Loop {
-            loop_head: for_head,
-            after_loop: after_for,
-            allocations,
-        });
-
-        // add the pointer to the loop's scope
-        self.scope_mut().insert(node.ident, Variable::Mut(ptr));
 
         // enter the loop from outside
-        self.builder.build_unconditional_branch(for_head);
+        if !self.current_instruction_is_block_terminator() {
+            self.builder.build_unconditional_branch(for_head);
+        }
 
         // compile the condition check
         self.builder.position_at_end(for_head);
         let cond = self.compile_expression(&node.cond);
+
         // if the condition is true, jump into the for body, otherwise, quit the loop
-        self.builder
-            .build_conditional_branch(cond.into_int_value(), for_body, after_for);
+        if !self.current_instruction_is_block_terminator() {
+            self.builder
+                .build_conditional_branch(cond.into_int_value(), for_body, after_for);
+        }
 
         // compile the loop body
+        self.loops.push(Loop {
+            loop_head: for_update,
+            after_loop: after_for,
+            allocations,
+        });
         self.builder.position_at_end(for_body);
         self.compile_block(&node.block);
+
         // jump to the update block
-        self.builder.build_unconditional_branch(for_update);
+        if !self.current_instruction_is_block_terminator() {
+            self.builder.build_unconditional_branch(for_update);
+        }
+
+        // remove the loop from `loops`
+        self.loops.pop();
 
         // compile the update expression
         self.builder.position_at_end(for_update);
         self.compile_expression(&node.update);
+
         // jump back to the loop head
-        self.builder.build_unconditional_branch(for_head);
+        if !self.current_instruction_is_block_terminator() {
+            self.builder.build_unconditional_branch(for_head);
+        }
 
         // drop the scope
         self.scopes.pop();
-
-        // remove the loop from `loops`
-        self.loops.pop();
 
         // place the builder cursor at the end of the `after_loop`
         self.builder.position_at_end(after_for);
