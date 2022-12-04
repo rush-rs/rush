@@ -1,6 +1,16 @@
 // This file should test all features of the rush programming language.
 
-// expected exit-code: 50
+let const_int = 42;
+let const_float = 3f;
+let const_bool = true;
+let const_char = 'a';
+
+let mut mut_int = 0;
+let mut mut_float = 0f;
+let mut mut_bool = false;
+let mut mut_char = 0 as char;
+
+// expected exit-code: 40
 // if the exit-code is 99, there is an error
 fn main() {
         let int_ = 1;
@@ -25,9 +35,26 @@ fn main() {
             + casts()
             + call_params()
             + loops()
-            - fib_rek(10),
+            - ( fib_rec(10) + ( if_else() - scopes() ) + globals() ),
             fib_iter(5)
         )
+}
+
+// expected return-value: 10
+fn globals() -> int {
+    let fifty = ( const_char - (const_int + const_float as int + const_bool as int) as char ) as int - 1;
+
+    mut_int += 10;
+    mut_float += 20.0;
+    mut_bool = true;
+    mut_char += 4 as char;
+
+    fifty - ( get_globals() + 5)
+}
+
+// expected return-value: 35
+fn get_globals() -> int {
+    mut_int + mut_float as int + mut_bool as int + mut_char as int
 }
 
 fn call_exit(a: int, b: int) {
@@ -174,7 +201,7 @@ fn params(
     + (j + k - l + m - n + o - p + q - r + s) as int
 }
 
-// expected return-value: 4
+// expected return-value: 15
 fn loops() -> int {
     let mut i = 0;
     loop {
@@ -185,23 +212,115 @@ fn loops() -> int {
     }
     // i = 5
     while i > 1 {
-        i -= 1;
+        let true_ = true;
+        let false_ = false;
+
+        while false_ {
+            continue;
+        }
+        while true_ {
+            i -= 1;
+            break;
+        }
+        loop {
+            loop {
+                loop {
+                    loop {
+                        loop {
+                            break;
+                        }
+                        break;
+                    }
+                    break;
+                }
+                break;
+            }
+            break;
+        }
     }
     // i = 1
     let mut j = 0;
     for i = i; i < 6; i += 1 {
-        j += 1;
+        for k = 0; k < 3; k += 1 {
+            loop {
+                loop {
+                    j += 1;
+                    break;
+                }
+                break;
+            }
+            continue;
+        }
+        continue;
     }
-    // j = 5
+    // j = 15
     j
 }
 
-// fib_rek(10) = 55
-fn fib_rek(n: int) -> int {
+// expected return-value: 20
+fn if_else() -> int {
+    let true_ = true;
+    let false_ = false;
+
+    let res = if (true_ && !false_) && (true_ || false_) && !(false_ && true_) {
+        let res = if (true_ && true_ && !false_) && true_ && (false_ || true_) {
+            5 + if (true_ && false_) { 1000 } else { 5 }
+        } else {
+            0
+        };
+        if !true_ {
+            0
+        } else {
+            res * 2
+        }
+    } else {
+        0
+    };
+
+    res
+}
+
+// expected return-value: 10
+fn scopes() -> int {
+    let mut outer = 2.5;
+
+    {
+        {
+            {
+                {
+                    {
+                        {
+                            outer *= 2.0;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let outer2 = {
+        let mut inner = 1;
+        let mut outer = 1.0;
+        outer = 9999.0;
+
+        {
+            {
+                inner *= 2;
+            }
+        };
+
+        inner
+    };
+
+    outer as int * outer2
+}
+
+// fib_rec(10) = 55
+fn fib_rec(n: int) -> int {
     if n < 2 {
         n
     } else {
-        fib_rek(n - 2) + fib_rek(n - 1)
+        fib_rec(n - 2) + fib_rec(n - 1)
     }
 }
 
