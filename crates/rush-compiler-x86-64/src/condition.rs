@@ -1,6 +1,9 @@
 use std::fmt::{self, Display, Formatter};
 
-use rush_analyzer::{ast::AnalyzedExpression, InfixOp, PrefixOp, Type};
+use rush_analyzer::{
+    ast::{AnalyzedExpression, AnalyzedPrefixExpr},
+    InfixOp, PrefixOp, Type,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Condition {
@@ -62,7 +65,19 @@ impl Condition {
                         None => Err(AnalyzedExpression::Infix(infix_expr)),
                     };
                 }
-                expr => return Err(expr),
+                expr => {
+                    return Err(match negate {
+                        true => AnalyzedExpression::Prefix(
+                            AnalyzedPrefixExpr {
+                                result_type: Type::Bool,
+                                op: PrefixOp::Not,
+                                expr,
+                            }
+                            .into(),
+                        ),
+                        false => expr,
+                    })
+                }
             }
         }
     }
