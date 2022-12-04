@@ -31,7 +31,7 @@ pub struct Compiler<'ctx, 'src> {
     // the scope stack (first is the root / function scope, last is the current scope)
     pub(crate) scopes: Vec<HashMap<&'src str, Variable<'ctx>>>,
     // global variables
-    pub(crate) globals: HashMap<&'src str, PointerValue<'ctx>>,
+    pub(crate) globals: HashMap<&'src str, Variable<'ctx>>,
     // a set of all builtin functions already declared (`imported`) so far
     pub(crate) declared_builtins: HashSet<&'ctx str>,
     // specifies the target machine
@@ -56,12 +56,41 @@ pub(crate) struct Function<'ctx, 'src> {
     llvm_value: FunctionValue<'ctx>,
 }
 
-#[derive(Clone, Copy)]
-pub(crate) enum Variable<'ctx> {
-    /// A mutable variable which is assigned to
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Variable<'ctx> {
+    value: VariableValue<'ctx>,
+    type_: Type,
+}
+
+impl<'ctx> Variable<'ctx> {
+    pub(crate) fn new_mut(ptr: PointerValue<'ctx>, type_: Type) -> Self {
+        Self {
+            value: VariableValue::Mut(ptr),
+            type_,
+        }
+    }
+    pub(crate) fn new_const(value: BasicValueEnum<'ctx>, type_: Type) -> Self {
+        Self {
+            value: VariableValue::Const(value),
+            type_,
+        }
+    }
+    pub(crate) fn new_unit() -> Self {
+        Self {
+            value: VariableValue::Unit,
+            type_: Type::Unit,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum VariableValue<'ctx> {
+    /// A mutable variable which can be assigned to later.
     Mut(PointerValue<'ctx>),
-    /// A static variable which is only declared and used
+    /// A static variable which is only declared and used.
     Const(BasicValueEnum<'ctx>),
+    /// Unit values (placeholders).
+    Unit,
 }
 
 impl<'ctx, 'src> Compiler<'ctx, 'src> {
@@ -212,7 +241,10 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         let global = self.module.add_global(init_value.get_type(), None, ident);
         global.set_initializer(&init_value);
         // store the global variable in the globals vec
-        self.globals.insert(ident, global.as_pointer_value());
+        self.globals.insert(
+            ident,
+            Variable::new_mut(global.as_pointer_value(), expression.result_type()),
+        );
     }
 
     fn compile_fn_signature(&mut self, node: &AnalyzedFunctionDefinition) {
@@ -296,7 +328,8 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                     // store the param value in the pointer
                     self.builder.build_store(ptr, value);
                     // insert the pointer / parameter into the current scope
-                    self.scope_mut().insert(param.name, Variable::Mut(ptr));
+                    self.scope_mut()
+                        .insert(param.name, Variable::new_mut(ptr, param.type_));
                 }
                 false => {
                     // get the param's value from the function
@@ -304,7 +337,8 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                         .get_nth_param(i as u32)
                         .expect("this parameter exists");
                     // insert the pointer / parameter into the current scope
-                    self.scope_mut().insert(param.name, Variable::Const(value));
+                    self.scope_mut()
+                        .insert(param.name, Variable::new_const(value, param.type_));
                 }
             }
         }
@@ -318,7 +352,8 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         self.build_return(Some(return_value));
     }
 
-    /// Compiles a block and returns its result value
+    /// Compiles a block and returns its result value.
+    /// Does not push a scope.
     fn compile_block(&mut self, node: &'src AnalyzedBlock) -> BasicValueEnum<'ctx> {
         for stmt in &node.stmts {
             self.compile_statement(stmt);
@@ -365,10 +400,12 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                 self.builder.build_store(ptr, rhs);
 
                 // insert the pointer into the current scope (for later reference)
-                self.scope_mut().insert(node.name, Variable::Mut(ptr));
+                self.scope_mut()
+                    .insert(node.name, Variable::new_mut(ptr, node.expr.result_type()));
             }
             false => {
-                self.scope_mut().insert(node.name, Variable::Const(rhs));
+                self.scope_mut()
+                    .insert(node.name, Variable::new_const(rhs, node.expr.result_type()));
             }
         };
     }
@@ -426,7 +463,8 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
             .filter(|(_, type_)| !matches!(type_, Type::Unit | Type::Never))
             .map(|(ident, type_)| {
                 let ptr = self.builder.build_alloca(self.to_llvm_type(*type_), ident);
-                self.scope_mut().insert(ident, Variable::Mut(ptr));
+                self.scope_mut()
+                    .insert(ident, Variable::new_mut(ptr, *type_));
                 (ident.to_string(), *type_, ptr)
             })
             .collect()
@@ -584,9 +622,12 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
             self.builder.build_store(ptr, induction_var);
 
             // add the init variable to the loop's scope
-            self.scope_mut().insert(node.ident, Variable::Mut(ptr));
+            self.scope_mut().insert(
+                node.ident,
+                Variable::new_mut(ptr, node.initializer.result_type()),
+            );
         } else {
-            // TODO: add dummy variable?
+            self.scope_mut().insert(node.ident, Variable::new_unit());
         }
 
         // set the loop metadata so that the inner block can use it
@@ -697,14 +738,20 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
             }
             AnalyzedExpression::Ident(name) => {
                 let variable = self.resolve_name(name.ident);
-                match variable {
-                    Variable::Const(value) => value,
-                    Variable::Mut(ptr) => self.builder.build_load(ptr, name.ident),
+                match variable.value {
+                    VariableValue::Const(value) => value,
+                    VariableValue::Mut(ptr) => self.builder.build_load(ptr, name.ident),
+                    VariableValue::Unit => self.unit_value(),
                 }
             }
             AnalyzedExpression::Call(node) => self.compile_call_expression(node),
             AnalyzedExpression::Grouped(node) => self.compile_expression(node),
-            AnalyzedExpression::Block(node) => self.compile_block(node),
+            AnalyzedExpression::Block(node) => {
+                self.scopes.push(HashMap::new());
+                let res = self.compile_block(node);
+                self.scopes.pop();
+                res
+            }
             AnalyzedExpression::Infix(node) => self.compile_infix_expression(node),
             AnalyzedExpression::Prefix(node) => self.compile_prefix_expression(node),
             AnalyzedExpression::Cast(node) => self.compile_cast_expression(node),
@@ -726,8 +773,14 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
             }
         }
         match self.module.get_global(name) {
-            Some(global) => Variable::Mut(global.as_pointer_value()),
-            None => unreachable!("every name used is either a var or global: {name}"),
+            Some(global) => Variable::new_mut(
+                global.as_pointer_value(),
+                self.globals
+                    .get(name)
+                    .expect("the analyzer guarantees valid variable references")
+                    .type_,
+            ),
+            None => unreachable!("the analyzer guarantees valid variable references"),
         }
     }
 
@@ -1138,9 +1191,10 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
     /// Compiles an [`AnalyzedAssignExpr`] by performing its operation and assignment.
     fn compile_assign_expression(&mut self, node: &'src AnalyzedAssignExpr) {
         // get the pointer of the assignee
-        let ptr = match self.resolve_name(node.assignee) {
-            Variable::Mut(ptr) => ptr,
-            Variable::Const(_) => unreachable!("can only assign to mutable variables"),
+        let assignee = self.resolve_name(node.assignee);
+        let ptr = match assignee.value {
+            VariableValue::Mut(ptr) => ptr,
+            _ => unreachable!("can only assign to mutable variables"),
         };
 
         match (node.op, node.expr.result_type()) {
@@ -1149,13 +1203,13 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                 // store the rhs value in the pointer
                 self.builder.build_store(ptr, rhs);
             }
-            (op, Type::Int | Type::Float | Type::Bool) => {
+            (op, Type::Int | Type::Float | Type::Bool | Type::Char) => {
                 // compile the value of the rhs for later use
                 let rhs = self.compile_expression(&node.expr);
                 // load the value from the pointer
-                let assignee = self.builder.build_load(ptr, node.assignee);
+                let assignee_value = self.builder.build_load(ptr, node.assignee);
                 // perform the assign op operation on the pointer value and the rhs
-                let res = self.infix_helper(Type::Int, InfixOp::from(op), assignee, rhs);
+                let res = self.infix_helper(assignee.type_, InfixOp::from(op), assignee_value, rhs);
                 // store the resulting value in the pointer
                 self.builder.build_store(ptr, res);
             }

@@ -1,4 +1,4 @@
-src := ../../samples/test.rush
+src := ../../samples/complete.rush
 out := test
 
 run: $(src) src
