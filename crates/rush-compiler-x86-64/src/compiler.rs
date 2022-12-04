@@ -592,7 +592,7 @@ impl<'src> Compiler<'src> {
             AnalyzedStatement::Return(node) => self.return_stmt(node),
             AnalyzedStatement::Loop(node) => self.loop_stmt(node),
             AnalyzedStatement::While(node) => self.while_stmt(node),
-            AnalyzedStatement::For(_) => todo!(),
+            AnalyzedStatement::For(node) => self.for_stmt(node),
             AnalyzedStatement::Break => self.function_body.push(Instruction::Commented(
                 Instruction::Jmp(Rc::clone(
                     &self
@@ -767,7 +767,7 @@ impl<'src> Compiler<'src> {
                     }
                 }
             }
-        };
+        }
 
         self.tmp_expr(AnalyzedExpression::Block(node.block.into()));
         self.function_body.push(Instruction::Commented(
@@ -781,6 +781,96 @@ impl<'src> Compiler<'src> {
         ));
 
         self.loop_symbols.pop();
+    }
+
+    fn for_stmt(&mut self, node: AnalyzedForStmt<'src>) {
+        let start_loop_symbol = self.next_block_name();
+        let update_symbol = self.next_block_name();
+        let end_loop_symbol = self.next_block_name();
+        self.push_scope();
+        self.loop_symbols
+            .push((Rc::clone(&update_symbol), Rc::clone(&end_loop_symbol)));
+
+        // initializer
+        let init_val_size = match node.initializer.result_type().try_into() {
+            Ok(size) => size,
+            // value set here does not matter, as it never used when `init_val` is `None`
+            Err(()) => Size::Qword,
+        };
+        let init_val = self.tmp_expr(node.initializer);
+        if let Some(value) = init_val {
+            let value = match value {
+                Value::Int(IntValue::Register(_)) => value,
+                Value::Float(FloatValue::Register(_)) => value,
+                Value::Int(val) => {
+                    let reg = self.get_tmp_register(init_val_size);
+                    self.function_body.push(Instruction::Mov(reg.into(), val));
+                    Value::Int(IntValue::Register(reg))
+                }
+                Value::Float(val) => {
+                    let reg = self.get_tmp_float_register();
+                    self.function_body.push(Instruction::Movsd(reg.into(), val));
+                    Value::Float(FloatValue::Register(reg))
+                }
+            };
+            self.add_var(node.ident, init_val_size, value, false);
+        }
+
+        // loop start
+        self.function_body.push(Instruction::Commented(
+            Instruction::Symbol(Rc::clone(&start_loop_symbol), false).into(),
+            format!("for {} .. {{", node.ident).into(),
+        ));
+
+        // condition
+        match Condition::try_from_expr(node.cond) {
+            Ok((cond, lhs, rhs)) => {
+                match self.condition(cond, lhs, rhs, Rc::clone(&end_loop_symbol), None) {
+                    Some(()) => {}
+                    None => return,
+                }
+            }
+            Err(expr) => {
+                let bool = match self.tmp_expr(expr) {
+                    Some(val) => val.expect_int("the analyzer guarantees boolean conditions"),
+                    None => return,
+                };
+
+                match bool {
+                    IntValue::Immediate(0) => {
+                        self.function_body
+                            .push(Instruction::Jmp(Rc::clone(&end_loop_symbol)));
+                    }
+                    IntValue::Immediate(_) => {}
+                    val => {
+                        // jump to end of loop if condition is false
+                        self.function_body.push(Instruction::Test(val, 1));
+                        self.function_body.push(Instruction::JCond(
+                            Condition::Equal,
+                            Rc::clone(&end_loop_symbol),
+                        ));
+                    }
+                }
+            }
+        }
+
+        // loop body
+        self.tmp_expr(AnalyzedExpression::Block(node.block.into()));
+
+        // update expr
+        self.function_body
+            .push(Instruction::Symbol(update_symbol, false));
+        self.tmp_expr(node.update);
+
+        // loop end
+        self.function_body.push(Instruction::Jmp(start_loop_symbol));
+        self.function_body.push(Instruction::Commented(
+            Instruction::Symbol(end_loop_symbol, false).into(),
+            "}".into(),
+        ));
+
+        self.loop_symbols.pop();
+        self.pop_scope();
     }
 
     fn condition(
