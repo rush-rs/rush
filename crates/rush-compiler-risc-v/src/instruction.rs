@@ -69,8 +69,10 @@ pub enum Instruction {
     Xor(IntRegister, IntRegister, IntRegister),
     Or(IntRegister, IntRegister, IntRegister),
     And(IntRegister, IntRegister, IntRegister),
-    Sl(IntRegister, IntRegister, IntRegister),
-    Sr(IntRegister, IntRegister, IntRegister),
+    Sll(IntRegister, IntRegister, IntRegister),
+    Slli(IntRegister, IntRegister, i64),
+    Sra(IntRegister, IntRegister, IntRegister),
+    Srai(IntRegister, IntRegister, i64),
 
     // load / store operations
     Lb(IntRegister, Pointer),
@@ -148,8 +150,10 @@ impl Display for Instruction {
             Instruction::Xor(dest, lhs, rhs) => write!(f, "xor {dest}, {lhs}, {rhs}"),
             Instruction::Or(dest, lhs, rhs) => write!(f, "or {dest}, {lhs}, {rhs}"),
             Instruction::And(dest, lhs, rhs) => write!(f, "and {dest}, {lhs}, {rhs}"),
-            Instruction::Sl(dest, lhs, rhs) => write!(f, "sll {dest}, {lhs}, {rhs}"),
-            Instruction::Sr(dest, lhs, rhs) => write!(f, "sra {dest}, {lhs},{rhs}"),
+            Instruction::Sll(dest, lhs, rhs) => write!(f, "sll {dest}, {lhs}, {rhs}"),
+            Instruction::Slli(dest, lhs, amount) => write!(f, "slli {dest}, {lhs}, {amount}"),
+            Instruction::Sra(dest, lhs, rhs) => write!(f, "sra {dest}, {lhs},{rhs}"),
+            Instruction::Srai(dest, lhs, amount) => write!(f, "srai {dest}, {lhs}, {amount}"),
             Instruction::Lb(dest, ptr) => write!(f, "lb {dest}, {ptr}"),
             Instruction::Ld(dest, ptr) => write!(f, "ld {dest}, {ptr}"),
             Instruction::Sb(src, ptr) => match ptr {

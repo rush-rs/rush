@@ -145,7 +145,7 @@ impl<'tree> Compiler<'tree> {
         // compile the function body
         self.push_scope();
         self.insert_at(fn_label);
-        self.function_body(node, Rc::clone(&epilogue_label));
+        self.function_body(node);
         self.pop_scope();
 
         // prologue is inserted after the body (because it now knows about the frame size)
@@ -336,7 +336,7 @@ impl<'tree> Compiler<'tree> {
         }
 
         // compile the function body
-        self.function_body(node.block, Rc::clone(&epilogue_label));
+        self.function_body(node.block);
         self.pop_scope();
 
         // compile prologue
@@ -354,7 +354,7 @@ impl<'tree> Compiler<'tree> {
     }
 
     /// Compiles the body of a function.
-    fn function_body(&mut self, node: AnalyzedBlock<'tree>, epilogue_label: Rc<str>) {
+    fn function_body(&mut self, node: AnalyzedBlock<'tree>) {
         self.insert(Instruction::Comment("begin body".into()));
 
         // compile each statement
@@ -377,13 +377,7 @@ impl<'tree> Compiler<'tree> {
                 None => {} // do nothing with unit values
             }
         }
-
-        // add debugging comment
-        #[cfg(debug_assertions)]
         self.insert(Instruction::Comment("end body".into()));
-
-        // jump to the epilogue
-        self.insert_jmp(epilogue_label);
     }
 
     /// Compiles an [`AnalyzedBlock`].
@@ -963,28 +957,88 @@ impl<'tree> Compiler<'tree> {
                 Some(lhs_cond)
             }
             _ => {
-                let lhs_type = node.lhs.result_type();
+                match (node.lhs, node.rhs, node.op) {
+                    (AnalyzedExpression::Int(value), expr, InfixOp::Plus)
+                    | (expr, AnalyzedExpression::Int(value), InfixOp::Plus) => {
+                        let rhs_reg = self.expression(expr)?;
+                        self.insert(Instruction::Addi(rhs_reg.into(), rhs_reg.into(), value));
+                        Some(rhs_reg)
+                    }
+                    (AnalyzedExpression::Int(value), expr, InfixOp::Minus) => {
+                        let rhs_reg = self.expression(expr)?;
+                        self.insert(Instruction::Addi(rhs_reg.into(), rhs_reg.into(), -value));
+                        Some(rhs_reg)
+                    }
+                    (AnalyzedExpression::Ident(_), AnalyzedExpression::Int(0), InfixOp::Mul)
+                    | (AnalyzedExpression::Int(0), AnalyzedExpression::Int(_), InfixOp::Mul) => {
+                        let res_reg = self.alloc_ireg();
+                        self.insert(Instruction::Li(res_reg, 0));
+                        Some(res_reg.to_reg())
+                    }
+                    (AnalyzedExpression::Int(0), expr, InfixOp::Mul)
+                    | (expr, AnalyzedExpression::Int(0), InfixOp::Mul) => {
+                        let res_reg = self
+                            .expression(expr)
+                            .expect("operand is always int register");
+                        self.insert(Instruction::Li(res_reg.into(), 0));
+                        Some(res_reg)
+                    }
+                    (AnalyzedExpression::Int(1), expr, InfixOp::Mul)
+                    | (expr, AnalyzedExpression::Int(1), InfixOp::Mul) => self.expression(expr),
+                    (expr, AnalyzedExpression::Int(value), InfixOp::Div)
+                        if value.count_ones() == 1 =>
+                    // checks if the divisor is a power of 2
+                    {
+                        let rhs_reg = self.expression(expr)?;
+                        self.insert(Instruction::Srai(
+                            rhs_reg.into(),
+                            rhs_reg.into(),
+                            (value - 1).count_ones() as i64,
+                        ));
+                        Some(rhs_reg)
+                    }
+                    (AnalyzedExpression::Int(value), expr, InfixOp::Mul)
+                    | (expr, AnalyzedExpression::Int(value), InfixOp::Mul)
+                        if value.count_ones() == 1 =>
+                    // checks if the factor is a power of 2
+                    {
+                        let rhs_reg = self.expression(expr)?;
+                        self.insert(Instruction::Slli(
+                            rhs_reg.into(),
+                            rhs_reg.into(),
+                            // 2 0b0010 -> shift by 1 (2 - 1 = 1 0b0001 -> one 1)
+                            // 4 0b0100 -> shift by 2 (4 - 1 = 3 0b0011 -> two 1s)
+                            // 8 0b1000 -> shift by 3 (8 - 1 = 7 0b0111 -> three 1s)
+                            (value - 1).count_ones() as i64,
+                        ));
+                        Some(rhs_reg)
+                    }
+                    (lhs, rhs, op) => {
+                        let lhs_type = lhs.result_type();
 
-                let lhs_reg = self.expression(node.lhs)?;
-                // mark the lhs register as used
-                self.use_reg(lhs_reg, Size::from(lhs_type));
+                        let lhs_reg = self.expression(lhs)?;
+                        // mark the lhs register as used
+                        self.use_reg(lhs_reg, Size::from(lhs_type));
 
-                let rhs_type = node.rhs.result_type();
-                let rhs_reg = self.expression(node.rhs)?;
-                // mark the rhs register as used
-                self.use_reg(rhs_reg, Size::from(rhs_type));
+                        //let rhs_type = rhs.result_type();
+                        let rhs_reg = self.expression(rhs)?;
 
-                // release the usage block of the operands
-                self.release_reg(lhs_reg);
-                self.release_reg(rhs_reg);
+                        // mark the rhs register as used
+                        //self.use_reg(rhs_reg, Size::from(rhs_type));
 
-                let res = self.infix_helper(lhs_reg, rhs_reg, node.op, lhs_type);
+                        // release the usage block of the operands
+                        self.release_reg(lhs_reg);
+                        // self.release_reg(rhs_reg);
 
-                // TODO: if the above is broken, release the operands here
-                // self.release_reg(lhs_reg);
-                // self.release_reg(rhs_reg);
+                        let res = self.infix_helper(lhs_reg, rhs_reg, op, lhs_type);
 
-                Some(res)
+                        // TODO: if the above is broken, release the operands here
+                        // self.release_reg(lhs_reg);
+                        // self.release_reg(rhs_reg);
+
+                        Some(res)
+                    }
+                }
             }
         }
     }
@@ -1045,11 +1099,11 @@ impl<'tree> Compiler<'tree> {
                 .__rush_internal_pow_int(lhs.into(), rhs.into())
                 .to_reg(),
             (Type::Int, InfixOp::Shl) => {
-                self.insert(Instruction::Sl(dest_regi, lhs.into(), rhs.into()));
+                self.insert(Instruction::Sll(dest_regi, lhs.into(), rhs.into()));
                 dest_regi.into()
             }
             (Type::Int, InfixOp::Shr) => {
-                self.insert(Instruction::Sr(dest_regi, lhs.into(), rhs.into()));
+                self.insert(Instruction::Sra(dest_regi, lhs.into(), rhs.into()));
                 dest_regi.into()
             }
             (Type::Int | Type::Bool, InfixOp::BitOr | InfixOp::Or) => {
