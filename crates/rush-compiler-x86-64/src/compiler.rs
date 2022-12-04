@@ -375,6 +375,79 @@ impl<'src> Compiler<'src> {
         }
     }
 
+    pub(crate) fn value_to_reg(
+        &mut self,
+        type_: Type,
+        value: Option<Value>,
+        tmp: bool,
+        pop_existing: bool,
+    ) -> Option<Register> {
+        match value {
+            Some(Value::Int(val)) => Some(Register::Int(self.int_value_to_reg(
+                type_,
+                val,
+                tmp,
+                pop_existing,
+            ))),
+            Some(Value::Float(val)) => Some(Register::Float(self.float_value_to_reg(
+                val,
+                tmp,
+                pop_existing,
+            ))),
+            None => None,
+        }
+    }
+
+    pub(crate) fn int_value_to_reg(
+        &mut self,
+        type_: Type,
+        value: IntValue,
+        tmp: bool,
+        pop_existing: bool,
+    ) -> IntRegister {
+        let size = type_.try_into().expect("value is `int`, not `()` or `!`");
+        match value {
+            IntValue::Register(reg) => {
+                if tmp && pop_existing {
+                    self.used_registers.pop();
+                }
+                reg
+            }
+            val => {
+                let reg = match tmp {
+                    true => self.get_tmp_register(size),
+                    false => self.get_free_register(size),
+                };
+                self.function_body.push(Instruction::Mov(reg.into(), val));
+                reg
+            }
+        }
+    }
+
+    pub(crate) fn float_value_to_reg(
+        &mut self,
+        value: FloatValue,
+        tmp: bool,
+        pop_existing: bool,
+    ) -> FloatRegister {
+        match value {
+            FloatValue::Register(reg) => {
+                if tmp && pop_existing {
+                    self.used_float_registers.pop();
+                }
+                reg
+            }
+            val => {
+                let reg = match tmp {
+                    true => self.get_tmp_float_register(),
+                    false => self.get_free_float_register(),
+                };
+                self.function_body.push(Instruction::Movsd(reg.into(), val));
+                reg
+            }
+        }
+    }
+
     /////////////////////////////////////////
 
     fn program(&mut self, node: AnalyzedProgram<'src>) {
@@ -792,28 +865,18 @@ impl<'src> Compiler<'src> {
             .push((Rc::clone(&update_symbol), Rc::clone(&end_loop_symbol)));
 
         // initializer
-        let init_val_size = match node.initializer.result_type().try_into() {
-            Ok(size) => size,
-            // value set here does not matter, as it never used when `init_val` is `None`
-            Err(()) => Size::Qword,
-        };
+        let init_type = node.initializer.result_type();
         let init_val = self.tmp_expr(node.initializer);
-        if let Some(value) = init_val {
-            let value = match value {
-                Value::Int(IntValue::Register(_)) => value,
-                Value::Float(FloatValue::Register(_)) => value,
-                Value::Int(val) => {
-                    let reg = self.get_tmp_register(init_val_size);
-                    self.function_body.push(Instruction::Mov(reg.into(), val));
-                    Value::Int(IntValue::Register(reg))
-                }
-                Value::Float(val) => {
-                    let reg = self.get_tmp_float_register();
-                    self.function_body.push(Instruction::Movsd(reg.into(), val));
-                    Value::Float(FloatValue::Register(reg))
-                }
-            };
-            self.add_var(node.ident, init_val_size, value, false);
+        let init_reg = self.value_to_reg(init_type, init_val, true, false);
+        if let Some(reg) = init_reg {
+            self.add_var(
+                node.ident,
+                init_type
+                    .try_into()
+                    .expect("the value is not `None`, so the type must have a size"),
+                reg.into(),
+                false,
+            );
         }
 
         // loop start
@@ -1065,28 +1128,9 @@ impl<'src> Compiler<'src> {
             }
         }
 
-        let result_reg = match self.block_expr(node.then_block) {
-            Some(Value::Int(val)) => match val {
-                IntValue::Register(reg) => Some(Register::Int(reg)),
-                _ => {
-                    let reg = self.get_free_register(match &val {
-                        IntValue::Ptr(ptr) => ptr.size,
-                        _ => Size::Qword,
-                    });
-                    self.function_body.push(Instruction::Mov(reg.into(), val));
-                    Some(Register::Int(reg))
-                }
-            },
-            Some(Value::Float(val)) => match val {
-                FloatValue::Register(reg) => Some(Register::Float(reg)),
-                FloatValue::Ptr(_) => {
-                    let reg = self.get_free_float_register();
-                    self.function_body.push(Instruction::Movsd(reg.into(), val));
-                    Some(Register::Float(reg))
-                }
-            },
-            None => None,
-        };
+        let block_type = node.then_block.result_type;
+        let block_val = self.block_expr(node.then_block);
+        let result_reg = self.value_to_reg(block_type, block_val, false, false);
         if let Some(block) = node.else_block {
             match result_reg {
                 Some(Register::Int(_)) => {
@@ -1192,24 +1236,10 @@ impl<'src> Compiler<'src> {
                 IntValue::Immediate(num) => Some(Value::Int(IntValue::Immediate(-num))),
             },
             (Some(Value::Int(value)), Type::Int, PrefixOp::Not) => {
-                let reg = match value {
-                    IntValue::Register(reg) => reg,
-                    IntValue::Ptr(ptr) => {
-                        let reg = self.get_free_register(ptr.size);
-                        self.function_body
-                            .push(Instruction::Mov(reg.into(), ptr.into()));
-                        reg
-                    }
-                    IntValue::Immediate(num) => {
-                        return Some(Value::Int(IntValue::Immediate(
-                            match expr_type == Type::Int {
-                                true => !num,
-                                false => !num & 0x7F,
-                            },
-                        )))
-                    }
-                };
-
+                if let IntValue::Immediate(num) = value {
+                    return Some(Value::Int(IntValue::Immediate(!num)));
+                }
+                let reg = self.int_value_to_reg(expr_type, value, false, false);
                 self.function_body.push(Instruction::Not(reg.into()));
                 Some(Value::Int(reg.into()))
             }
@@ -1233,15 +1263,7 @@ impl<'src> Compiler<'src> {
                 IntValue::Immediate(num) => Some(Value::Int(IntValue::Immediate(num ^ 1))),
             },
             (Some(Value::Float(value)), Type::Float, PrefixOp::Neg) => {
-                let reg = match value {
-                    FloatValue::Register(reg) => reg,
-                    FloatValue::Ptr(ptr) => {
-                        let reg = self.get_free_float_register();
-                        self.function_body
-                            .push(Instruction::Movsd(reg.into(), ptr.into()));
-                        reg
-                    }
-                };
+                let reg = self.float_value_to_reg(value, false, false);
                 let negate_symbol =
                     Self::add_constant(&mut self.octa_constants, 1_u128 << 63, Size::Oword, 0);
                 let negate_ptr =
@@ -1454,18 +1476,7 @@ impl<'src> Compiler<'src> {
                 self.reload_int_if_used(spilled_rcx);
             }
             (Value::Float(val), AssignOp::Basic) => {
-                let reg = match val {
-                    FloatValue::Register(reg) => {
-                        self.used_float_registers.pop();
-                        reg
-                    }
-                    FloatValue::Ptr(ptr) => {
-                        let reg = self.get_tmp_float_register();
-                        self.function_body
-                            .push(Instruction::Movsd(reg.into(), ptr.into()));
-                        reg
-                    }
-                };
+                let reg = self.float_value_to_reg(val, true, true);
                 self.function_body
                     .push(Instruction::Movsd(var.ptr.into(), reg.into()));
             }
@@ -1659,15 +1670,7 @@ impl<'src> Compiler<'src> {
             }
             (Some(Value::Float(val)), Type::Float, Type::Bool) => {
                 // move the value into a register
-                let reg = match val {
-                    FloatValue::Register(reg) => reg,
-                    FloatValue::Ptr(ptr) => {
-                        let reg = self.get_free_float_register();
-                        self.function_body
-                            .push(Instruction::Movsd(reg.into(), ptr.into()));
-                        reg
-                    }
-                };
+                let reg = self.float_value_to_reg(val, false, false);
 
                 // get a constant zero to compare against
                 let float_zero_symbol = Self::add_constant(
@@ -1699,22 +1702,15 @@ impl<'src> Compiler<'src> {
 
                 Some(Value::Int(IntValue::Register(reg)))
             }
-            (Some(Value::Int(val)), Type::Bool | Type::Char, Type::Int) => match val {
-                IntValue::Ptr(ptr) => {
-                    let reg = self.get_free_register(Size::Qword);
-                    self.function_body
-                        .push(Instruction::Mov(reg.in_size(ptr.size).into(), ptr.into()));
-                    self.function_body
-                        .push(Instruction::And(reg.into(), 0xff.into()));
-                    Some(Value::Int(reg.into()))
+            (Some(Value::Int(val)), Type::Bool | Type::Char, Type::Int) => {
+                if let IntValue::Immediate(_) = val {
+                    return Some(Value::Int(val));
                 }
-                IntValue::Register(reg) => {
-                    self.function_body
-                        .push(Instruction::And(reg.in_qword_size().into(), 0xff.into()));
-                    Some(Value::Int(reg.in_qword_size().into()))
-                }
-                IntValue::Immediate(value) => Some(Value::Int((value as i64).into())),
-            },
+                let reg = self.int_value_to_reg(expr_type, val, false, false);
+                self.function_body
+                    .push(Instruction::And(reg.in_qword_size().into(), 0xff.into()));
+                Some(Value::Int(reg.in_qword_size().into()))
+            }
             (Some(Value::Int(val)), Type::Bool, Type::Char) => Some(Value::Int(val)),
             _ => unreachable!("the analyzer guarantees one of the above to match"),
         }
