@@ -139,7 +139,7 @@ impl<'tree> Compiler<'tree> {
         }
 
         // add the epilogue label
-        let epilogue_label = self.gen_label("epilogue").into();
+        let epilogue_label = self.gen_label("epilogue");
         self.curr_fn = Some(Function::new(Rc::clone(&epilogue_label)));
 
         // compile the function body
@@ -214,7 +214,7 @@ impl<'tree> Compiler<'tree> {
         self.insert_at(&fn_block);
 
         // add the epilogue label
-        let epilogue_label = self.gen_label("epilogue").into();
+        let epilogue_label = self.gen_label("epilogue");
         self.curr_fn = Some(Function::new(Rc::clone(&epilogue_label)));
 
         // push a new scope for the function
@@ -451,7 +451,7 @@ impl<'tree> Compiler<'tree> {
     /// In this looping construct, manual control flow like `break` is mandatory.
     fn loop_stmt(&mut self, node: AnalyzedLoopStmt<'tree>) {
         let loop_head = self.append_block("loop_head");
-        let after_loop = self.gen_label("after_loop").into();
+        let after_loop = self.gen_label("after_loop");
         self.loops
             .push(Loop::new(Rc::clone(&loop_head), Rc::clone(&after_loop)));
 
@@ -469,7 +469,7 @@ impl<'tree> Compiler<'tree> {
     /// If the result is `false`, there is a jump to the basic block after the loop (i.e. `break`).
     fn while_stmt(&mut self, node: AnalyzedWhileStmt<'tree>) {
         let while_head = self.append_block("while_head");
-        let after_loop = self.gen_label("after_while").into();
+        let after_loop = self.gen_label("after_while");
         self.insert_at(&while_head);
 
         // compile the condition
@@ -507,7 +507,7 @@ impl<'tree> Compiler<'tree> {
     /// At the end of each iteration, the update expression is invoked, its value is omitted.
     fn for_stmt(&mut self, node: AnalyzedForStmt<'tree>) {
         let for_head = self.append_block("for_head");
-        let after_loop_label = self.gen_label("after_for").into();
+        let after_loop_label = self.gen_label("after_for");
 
         //// INIT ////
         self.insert(Instruction::Comment(
@@ -551,7 +551,7 @@ impl<'tree> Compiler<'tree> {
 
         //// BODY ////
         self.insert(Instruction::Comment("loop body".into()));
-        let for_update_label = self.gen_label("for_update").into();
+        let for_update_label = self.gen_label("for_update");
 
         self.loops.push(Loop::new(
             Rc::clone(&for_update_label),
@@ -825,7 +825,7 @@ impl<'tree> Compiler<'tree> {
         };
 
         let then_block = self.append_block("then");
-        let merge_block = self.append_block("merge");
+        let merge_block = self.gen_label("merge");
 
         // if the condition evaluated to `1` / `true`, the `then` block is entered
         self.insert(Instruction::BrCond(
@@ -838,7 +838,7 @@ impl<'tree> Compiler<'tree> {
         // if there is an `else` block, compile it
         if let Some(else_block) = node.else_block {
             let else_block_label = self.append_block("else");
-            // stands directly below the conditional branch
+            // directly below the conditional branch
             self.insert_jmp(Rc::clone(&else_block_label));
             self.insert_at(&else_block_label);
             let else_reg = self.block(else_block);
@@ -876,6 +876,7 @@ impl<'tree> Compiler<'tree> {
         self.insert_jmp(Rc::clone(&merge_block));
 
         // set the cursor position to the end of the `merge` block
+        self.blocks.push(Block::new(Rc::clone(&merge_block)));
         self.insert_at(&merge_block);
 
         res_reg
@@ -954,6 +955,8 @@ impl<'tree> Compiler<'tree> {
                     }
                     _ => unreachable!("lhs and rhs are always the same type"),
                 } */
+
+                self.insert(Instruction::Jmp(Rc::clone(&merge_block)));
 
                 self.insert_at(&merge_block);
 

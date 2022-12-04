@@ -224,14 +224,14 @@ impl<'tree> Compiler<'tree> {
     /// The initial label might be modified by the gen_label function.
     /// The final label is then returned for later usage.
     pub(crate) fn append_block(&mut self, label: &'static str) -> Rc<str> {
-        let label = self.gen_label(label).into();
+        let label = self.gen_label(label);
         self.blocks.push(Block::new(Rc::clone(&label)));
         label
     }
 
     /// Helperfunction for generating labels for basic blocks.
     /// If the specified label already exists, it gets a numeric suffix.
-    pub(crate) fn gen_label(&mut self, label: &'static str) -> String {
+    pub(crate) fn gen_label(&mut self, label: &'static str) -> Rc<str> {
         match self.label_count.get_mut(label) {
             Some(cnt) => {
                 *cnt += 1;
@@ -242,6 +242,7 @@ impl<'tree> Compiler<'tree> {
                 format!("{label}_0")
             }
         }
+        .into()
     }
 
     /// Helper function for resolving identifier names.
