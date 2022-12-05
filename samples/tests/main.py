@@ -13,8 +13,8 @@ backends = {
     #'rush-compiler-wasm': 'wasmer output.wasm',
     'rush-compiler-llvm': 'gcc output.o -o test && ./test',
     'rush-compiler-x86-64': """
-        gcc output.s -L corelib/ -lcore -nostdlib -o test \
-        && ./test
+        gcc output.s -L corelib/ -lcore -nostdlib -o output \
+        && ./output
     """,
     'rush-compiler-risc-v': """
         riscv64-linux-gnu-as output.s -o output.o \
