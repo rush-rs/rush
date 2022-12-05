@@ -81,6 +81,7 @@ pub struct AnalyzedLetStmt<'src> {
     pub name: &'src str,
     pub expr: AnalyzedExpression<'src>,
     pub mutable: bool,
+    pub used: bool,
 }
 
 pub type AnalyzedReturnStmt<'src> = Option<AnalyzedExpression<'src>>;

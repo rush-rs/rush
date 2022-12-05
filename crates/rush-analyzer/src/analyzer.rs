@@ -165,7 +165,8 @@ impl<'src> Analyzer<'src> {
         }
 
         // analyze global let stmts
-        let globals = program
+        #[allow(clippy::needless_collect)] // TODO: remove this
+        let globals: Vec<AnalyzedLetStmt> = program
             .globals
             .into_iter()
             .map(|node| self.global(node))
@@ -185,7 +186,15 @@ impl<'src> Analyzer<'src> {
         }
 
         // pop the global scope
-        self.pop_scope();
+        let (unused_globs, non_mut_globs) = self.pop_scope();
+        let globals: Vec<AnalyzedLetStmt> = globals
+            .into_iter()
+            .map(|g| AnalyzedLetStmt {
+                used: !unused_globs.contains(&g.name),
+                mutable: g.mutable && !non_mut_globs.contains(&g.name),
+                ..g
+            })
+            .collect();
 
         // check if there are any unused functions
         let unused_funcs: Vec<_> = self
@@ -251,14 +260,19 @@ impl<'src> Analyzer<'src> {
 
     /// Removes the current scope of the function and checks whether the
     /// variables in the scope have been used.
-    fn pop_scope(&mut self) {
+    /// Returns the variables which are unused and those which do not need to be mutable.
+    fn pop_scope(&mut self) -> (Vec<&'src str>, Vec<&'src str>) {
         // consume / drop the scope
         let scope = self.scopes.pop().expect("is only called after a scope");
+
+        let mut unused = vec![];
+        let mut non_mut = vec![];
 
         // analyze its values for their use
         for (name, var) in scope {
             // allow unused values if they start with `_`
             if !name.starts_with('_') && !var.used {
+                unused.push(name);
                 self.warn(
                     format!("unused variable `{}`", name),
                     vec![format!(
@@ -268,6 +282,7 @@ impl<'src> Analyzer<'src> {
                     var.span,
                 );
             } else if var.mutable && !var.mutated {
+                non_mut.push(name);
                 self.info(
                     format!("variable `{name}` does not need to be mutable"),
                     vec![],
@@ -275,6 +290,8 @@ impl<'src> Analyzer<'src> {
                 );
             }
         }
+
+        (unused, non_mut)
     }
 
     // Returns a mutable reference to the current scope
@@ -371,6 +388,7 @@ impl<'src> Analyzer<'src> {
             name: node.name.inner,
             expr,
             mutable: node.mutable,
+            used: false,
         }
     }
 
@@ -668,6 +686,7 @@ impl<'src> Analyzer<'src> {
             name: node.name.inner,
             expr,
             mutable: node.mutable,
+            used: true,
         })
     }
 
