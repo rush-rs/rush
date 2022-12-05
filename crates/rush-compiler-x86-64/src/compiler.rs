@@ -451,7 +451,7 @@ impl<'src> Compiler<'src> {
     /////////////////////////////////////////
 
     fn program(&mut self, node: AnalyzedProgram<'src>) {
-        for global in node.globals {
+        for global in node.globals.into_iter().filter(|g|g.used) {
             self.global(global);
         }
 

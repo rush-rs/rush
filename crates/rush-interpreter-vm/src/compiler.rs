@@ -144,7 +144,7 @@ impl<'src> Compiler<'src> {
         }
 
         // add global variables
-        for var in &ast.globals {
+        for var in ast.globals.iter().filter(|g| g.used) {
             self.declare_global(var);
         }
 

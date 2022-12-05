@@ -25,7 +25,7 @@ impl<'src> Interpreter<'src> {
         }
 
         let mut global_scope = HashMap::new();
-        for global in tree.globals {
+        for global in tree.globals.iter().filter(|g| g.used) {
             global_scope.insert(
                 global.name,
                 match global.expr {

@@ -144,7 +144,7 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         main_fn: bool,
     ) -> Result<(MemoryBuffer, String)> {
         // declare all global variables
-        for global in &program.globals {
+        for global in program.globals.iter().filter(|g| g.used) {
             self.declare_global(global.name, &global.expr);
         }
 

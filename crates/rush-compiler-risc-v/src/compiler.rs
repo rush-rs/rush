@@ -134,7 +134,7 @@ impl<'tree> Compiler<'tree> {
 
         // declare global variables
         // can be declared before the prologue: exprs are all constant (require no stack)
-        for var in globals {
+        for var in globals.into_iter().filter(|g| g.used) {
             self.declare_global(var.name, var.mutable, var.expr)
         }
 
