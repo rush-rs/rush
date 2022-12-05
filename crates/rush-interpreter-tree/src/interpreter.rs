@@ -51,7 +51,7 @@ impl<'src> Interpreter<'src> {
             .into(),
         );
 
-        // ignore interruptions (e.g. break, return)
+        // ignore interrupts (e.g. break, return)
         match self.call_func("main", vec![]) {
             Err(InterruptKind::Error(msg)) => Err(msg),
             Err(InterruptKind::Exit(code)) => Ok(code),
@@ -158,8 +158,9 @@ impl<'src> Interpreter<'src> {
     }
 
     fn visit_for_stmt(&mut self, node: &AnalyzedForStmt<'src>) -> StmtResult {
-        let mut scope = HashMap::new();
         let init_val = self.visit_expression(&node.initializer)?;
+
+        let mut scope = HashMap::new();
         scope.insert(node.ident, init_val);
         self.scopes.push(scope);
 
@@ -170,13 +171,16 @@ impl<'src> Interpreter<'src> {
 
             let res = self.visit_block(&node.block, true);
 
-            self.visit_expression(&node.update)?;
-
             match res {
                 Err(InterruptKind::Break) => break,
-                Err(InterruptKind::Continue) => continue,
+                Err(InterruptKind::Continue) => {
+                    self.visit_expression(&node.update)?;
+                    continue;
+                }
                 res => res?,
             };
+
+            self.visit_expression(&node.update)?;
         }
 
         self.scopes.pop();
