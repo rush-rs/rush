@@ -673,12 +673,12 @@ impl<'src> Analyzer<'src> {
                     old.span,
                 );
             }
-        } else {
-            // if the variable was not shadowed and is mutable, create an allocation
-            if node.mutable {
-                if let Some(allocations) = self.allocations.as_mut() {
-                    allocations.push((node.name.inner, expr.result_type()));
-                }
+        }
+
+        // even if the variable is shadowed, an allocation is required
+        if node.mutable {
+            if let Some(allocations) = self.allocations.as_mut() {
+                allocations.push((node.name.inner, expr.result_type()));
             }
         }
 
@@ -1025,7 +1025,7 @@ impl<'src> Analyzer<'src> {
         let allocations = if is_outer_loop {
             self.allocations
                 .take()
-                .expect("allocations is set to Some(_) above")
+                .expect("allocations is set to `Some(_)` above")
         } else {
             vec![]
         };
