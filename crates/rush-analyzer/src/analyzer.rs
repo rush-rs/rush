@@ -832,9 +832,18 @@ impl<'src> Analyzer<'src> {
         self.loop_count += 1;
         self.push_scope();
         let block_result_span = node.block.result_span();
+        let body_is_empty = node.block.stmts.is_empty() && node.block.expr.is_none();
         let block = self.block(node.block);
         self.pop_scope();
         self.loop_count -= 1;
+
+        if body_is_empty {
+            self.warn(
+                "empty loop body",
+                vec!["empty loop wastes CPU cycles".into()],
+                node.span,
+            )
+        }
 
         if !matches!(block.result_type, Type::Unit | Type::Never | Type::Unknown) {
             self.error(
