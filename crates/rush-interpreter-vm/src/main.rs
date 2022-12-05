@@ -16,7 +16,10 @@ fn main() {
     let (ast, _) = rush_analyzer::analyze(&code, &path).unwrap();
 
     let out = rush_interpreter_vm::compile(&ast).to_string();
-    println!("{out}");
+
+    if debug {
+        println!("{out}");
+    }
     fs::write("output.s", out).unwrap();
 
     let code = match debug {

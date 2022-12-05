@@ -10,7 +10,7 @@ let mut mut_float = 0f;
 let mut mut_bool = false;
 let mut mut_char = 0 as char;
 
-// expected exit-code: 40
+// expected exit-code: 50
 // if the exit-code is 99, there is an error
 fn main() {
         let int_ = 1;
@@ -36,8 +36,9 @@ fn main() {
             + call_params()
             + loops()
             - ( fib_rec(10) + ( if_else() - scopes() ) + globals() ),
-            fib_iter(5)
-        )
+            fib_iter(5) + return_()
+        );
+        return;
 }
 
 // expected return-value: 10
@@ -324,6 +325,7 @@ fn fib_rec(n: int) -> int {
     }
 }
 
+// fib_rec(10) = 55
 fn fib_iter(mut n: int) -> int {
     if n == 0 {
         return 0;
@@ -338,4 +340,22 @@ fn fib_iter(mut n: int) -> int {
         curr = tmp;
     }
     curr
+}
+
+fn return_() -> int {
+    let true_ = true;
+    if true_ || true_ {
+        while true {
+            loop {
+                for i = 0; i < 10; i += 1 {
+
+                }
+                break;
+                return 99;
+            }
+            let five = (2.5 * 2.0) as int;
+            return five * 2;
+        }
+    }
+    return 99;
 }
