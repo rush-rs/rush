@@ -71,7 +71,7 @@ impl<'tree> Compiler<'tree> {
         -self.curr_fn().stack_allocs as i64 - 16
     }
 
-    /// Saves a register to memory and returns its fp-offset.
+    /// Saves a [`Register`] to memory and returns its fp-offset.
     /// Used before function calls in order to save currently used registers to memory.
     pub(crate) fn spill_reg(&mut self, reg: Register, size: Size) -> i64 {
         let offset = self.get_offset(size);
@@ -96,7 +96,7 @@ impl<'tree> Compiler<'tree> {
     }
 
     /// Helper function which is invoked after a function call.
-    /// Iterates through the given registers in order to load their original value from the stack.
+    /// Iterates through the given [`Register`]s in order to load their original value from the stack.
     /// Returns a possible register which contains the function's return value.
     pub(crate) fn restore_regs_after_call(
         &mut self,
@@ -176,7 +176,8 @@ impl<'tree> Compiler<'tree> {
         self.curr_fn.as_mut().expect("always called from functions")
     }
 
-    /// Allocates and returns the next unused, general purpose int register.
+    /// Allocates and returns the next unused int register.
+    /// Does not mark the register as used.
     pub(crate) fn alloc_ireg(&self) -> IntRegister {
         for reg in INT_REGISTERS {
             if !self
@@ -190,7 +191,8 @@ impl<'tree> Compiler<'tree> {
         unreachable!("out of registers!")
     }
 
-    /// Allocates and returns the next unused, general purpose float register.
+    /// Allocates and returns the next unused float register.
+    /// Does not mark the register as used.
     pub(crate) fn alloc_freg(&self) -> FloatRegister {
         for reg in FLOAT_REGISTERS {
             if !self
@@ -246,7 +248,7 @@ impl<'tree> Compiler<'tree> {
     }
 
     /// Helper function for resolving identifier names.
-    /// Searches the scopes first. If no match was found, the fitting global variable is returned.
+    /// Searches the scopes first. If no match was found, the matching global variable is returned.
     /// Panics if the variable does not exist.
     pub(crate) fn resolve_name(&self, name: &str) -> &Variable {
         // look for normal variables first
@@ -256,15 +258,51 @@ impl<'tree> Compiler<'tree> {
             }
         }
         // return reference to global variable
-        self.globals.get(name).expect("every variable exists")
+        self.globals
+            .get(name)
+            .expect("the analyzer guarantees valid variable references")
+    }
+
+    /// Loads the specified variable into a register.
+    /// Decides which load operation is to be used as it depends on the data size.
+    pub(crate) fn load_value_from_variable(
+        &mut self,
+        var: Variable,
+        ident: &'tree str,
+    ) -> Option<Register> {
+        match var.value {
+            VariableValue::Pointer(ptr) => match var.type_ {
+                Type::Bool | Type::Char => {
+                    let dest_reg = self.alloc_ireg();
+                    self.insert_w_comment(Instruction::Lb(dest_reg, ptr), ident.into());
+                    Some(Register::Int(dest_reg))
+                }
+                Type::Int => {
+                    let dest_reg = self.alloc_ireg();
+                    self.insert_w_comment(Instruction::Ld(dest_reg, ptr), ident.into());
+                    Some(Register::Int(dest_reg))
+                }
+                Type::Float => {
+                    let dest_reg = self.alloc_freg();
+                    self.insert_w_comment(Instruction::Fld(dest_reg, ptr), ident.into());
+                    Some(Register::Float(dest_reg))
+                }
+                _ => unreachable!("either filtered or impossible"),
+            },
+            VariableValue::Register(reg) => Some(reg),
+            VariableValue::Unit => None,
+        }
     }
 
     /// Inserts a jump at the current position.
     /// If the current block is already terminated, the insertion is omitted.
-    pub(crate) fn insert_jmp(&mut self, label: Rc<str>) {
+    pub(crate) fn insert_jmp(&mut self, label: Rc<str>, comment: Option<Cow<'tree, str>>) {
         // only insert a jump if the current block is not already terminated
         if !self.curr_block().is_terminated {
-            self.insert(Instruction::Jmp(label));
+            match comment {
+                Some(comment) => self.insert_w_comment(Instruction::Jmp(label), comment),
+                None => self.insert(Instruction::Jmp(label)),
+            }
             self.curr_block_mut().is_terminated = true;
         }
     }
