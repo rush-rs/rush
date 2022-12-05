@@ -56,7 +56,7 @@ pub(crate) struct Function<'ctx, 'src> {
     llvm_value: FunctionValue<'ctx>,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub(crate) struct Variable<'ctx> {
     value: VariableValue<'ctx>,
     type_: Type,
@@ -123,8 +123,7 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
     // Returns a mutable reference to the current scope
     /// Panics if there are no scopes.
     fn scope_mut(&mut self) -> &mut HashMap<&'src str, Variable<'ctx>> {
-        let len = self.scopes.len();
-        &mut self.scopes[len - 1]
+        self.scopes.last_mut().expect("always called from scopes")
     }
 
     /// Helper function for accessing the current function
@@ -222,14 +221,8 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
             llvm_value: main_fn,
         });
 
-        // create a new scope for the main function
-        self.scopes.push(HashMap::new());
-
         // compile the function's body
-        self.compile_block(node);
-
-        // drop the function's scope
-        self.scopes.pop();
+        self.compile_block(node, true);
 
         // return exit-code 0
         self.build_return(None);
@@ -344,7 +337,7 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         }
 
         // build the result value of the function's body
-        let return_value = self.compile_block(&node.block);
+        let return_value = self.compile_block(&node.block, false);
 
         // drop the function's scope
         self.scopes.pop();
@@ -353,8 +346,12 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
     }
 
     /// Compiles a block and returns its result value.
-    /// Does not push a scope.
-    fn compile_block(&mut self, node: &'src AnalyzedBlock) -> BasicValueEnum<'ctx> {
+    /// Also automatically pushes a new scope for the block if the `scoping` parater is `true`.
+    fn compile_block(&mut self, node: &'src AnalyzedBlock, scoping: bool) -> BasicValueEnum<'ctx> {
+        if scoping {
+            self.scopes.push(HashMap::new());
+        }
+
         for stmt in &node.stmts {
             self.compile_statement(stmt);
             // when encountering `break`, `continue`, or `return` statements
@@ -362,10 +359,18 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                 break;
             }
         }
+
         // if there is an expression, return its value instead of `()`
-        node.expr
+        let res = node
+            .expr
             .as_ref()
-            .map_or(self.unit_value(), |expr| self.compile_expression(expr))
+            .map_or(self.unit_value(), |expr| self.compile_expression(expr));
+
+        if scoping {
+            self.scopes.pop();
+        }
+
+        res
     }
 
     /// Compiles a [`AnalyzedStatement`] without returning a value (statement: `()`).
@@ -427,6 +432,7 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                         ptr = Some(*alloc_ptr);
                         // remove this allocation from the vec
                         curr_loop.allocations.remove(idx);
+                        println!("used loop alloc");
                         break;
                     }
                 }
@@ -463,8 +469,6 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
             .filter(|(_, type_)| !matches!(type_, Type::Unit | Type::Never))
             .map(|(ident, type_)| {
                 let ptr = self.builder.build_alloca(self.to_llvm_type(*type_), ident);
-                self.scope_mut()
-                    .insert(ident, Variable::new_mut(ptr, *type_));
                 (ident.to_string(), *type_, ptr)
             })
             .collect()
@@ -484,9 +488,6 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
             .context
             .append_basic_block(self.curr_fn().llvm_value, "after_loop");
 
-        // push a new scope for the loop
-        self.scopes.push(HashMap::new());
-
         // set the loop metadata so that the inner block can use it
         let allocations = self.do_loop_allocations(&node.allocations);
         self.loops.push(Loop {
@@ -500,15 +501,12 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
 
         // compile the loop body
         self.builder.position_at_end(loop_head);
-        self.compile_block(&node.block);
+        self.compile_block(&node.block, true);
 
         // jump back to the loop head
         if !self.current_instruction_is_block_terminator() {
             self.builder.build_unconditional_branch(loop_head);
         }
-
-        // drop the scope
-        self.scopes.pop();
 
         // remove the loop from `loops`
         self.loops.pop();
@@ -535,9 +533,6 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
             .context
             .append_basic_block(self.curr_fn().llvm_value, "after_while");
 
-        // push a new scope for the loop
-        self.scopes.push(HashMap::new());
-
         // set the loop metadata so that the inner block can use it
         let allocations = self.do_loop_allocations(&node.allocations);
 
@@ -562,15 +557,12 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
 
         // compile the loop body
         self.builder.position_at_end(while_body);
-        self.compile_block(&node.block);
+        self.compile_block(&node.block, true);
 
         // jump back to the loop head
         if !self.current_instruction_is_block_terminator() {
             self.builder.build_unconditional_branch(while_head);
         }
-
-        // drop the loop scope
-        self.scopes.pop();
 
         // remove the loop from `loops`
         self.loops.pop();
@@ -633,6 +625,13 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         // set the loop metadata so that the inner block can use it
         let allocations = self.do_loop_allocations(&node.allocations);
 
+        // compile the loop body
+        self.loops.push(Loop {
+            loop_head: for_update,
+            after_loop: after_for,
+            allocations,
+        });
+
         // enter the loop from outside
         if !self.current_instruction_is_block_terminator() {
             self.builder.build_unconditional_branch(for_head);
@@ -642,28 +641,22 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         self.builder.position_at_end(for_head);
         let cond = self.compile_expression(&node.cond);
 
+        // TODO: maybe push the loop after the condition (if there is continue in the condition?)
+
         // if the condition is true, jump into the for body, otherwise, quit the loop
         if !self.current_instruction_is_block_terminator() {
             self.builder
                 .build_conditional_branch(cond.into_int_value(), for_body, after_for);
         }
 
-        // compile the loop body
-        self.loops.push(Loop {
-            loop_head: for_update,
-            after_loop: after_for,
-            allocations,
-        });
         self.builder.position_at_end(for_body);
-        self.compile_block(&node.block);
+
+        self.compile_block(&node.block, true);
 
         // jump to the update block
         if !self.current_instruction_is_block_terminator() {
             self.builder.build_unconditional_branch(for_update);
         }
-
-        // remove the loop from `loops`
-        self.loops.pop();
 
         // compile the update expression
         self.builder.position_at_end(for_update);
@@ -673,6 +666,9 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         if !self.current_instruction_is_block_terminator() {
             self.builder.build_unconditional_branch(for_head);
         }
+
+        // remove the loop from `loops`
+        self.loops.pop();
 
         // drop the scope
         self.scopes.pop();
@@ -746,12 +742,7 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
             }
             AnalyzedExpression::Call(node) => self.compile_call_expression(node),
             AnalyzedExpression::Grouped(node) => self.compile_expression(node),
-            AnalyzedExpression::Block(node) => {
-                self.scopes.push(HashMap::new());
-                let res = self.compile_block(node);
-                self.scopes.pop();
-                res
-            }
+            AnalyzedExpression::Block(node) => self.compile_block(node, true),
             AnalyzedExpression::Infix(node) => self.compile_infix_expression(node),
             AnalyzedExpression::Prefix(node) => self.compile_prefix_expression(node),
             AnalyzedExpression::Cast(node) => self.compile_cast_expression(node),
@@ -1302,14 +1293,8 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         BasicTypeEnum<'ctx>,
         Option<(BasicValueEnum<'ctx>, BasicBlock<'ctx>)>,
     ) {
-        // push a new scope for the branch
-        self.scopes.push(HashMap::new());
-
         // compile the block
-        let branch_value = self.compile_block(node);
-
-        // pop the branch scope
-        self.scopes.pop();
+        let branch_value = self.compile_block(node, true);
 
         // if the block was terminated prior, do not return the branch block
         if self.current_instruction_is_block_terminator() {
