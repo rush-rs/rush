@@ -19,6 +19,9 @@ pub struct Compiler<'src> {
     pub(crate) builtins_code: Vec<Vec<u8>>,
     /// The count of currently nested blocks since the last loop
     pub(crate) block_count: usize,
+    /// The labels for `break` statements in the current loop. For `loop` and `while` loops
+    /// this is `1` and for `for` loops it is `2`.
+    pub(crate) break_labels: Vec<usize>,
 
     /// Maps variable names to `Option<local_idx>`, or `None` when of type `()`
     pub(crate) scopes: Vec<HashMap<&'src str, Option<Vec<u8>>>>,
@@ -471,7 +474,12 @@ impl<'src> Compiler<'src> {
             AnalyzedStatement::For(node) => self.for_stmt(node),
             AnalyzedStatement::Break => {
                 self.function_body.push(instructions::BR); // jump
-                (self.block_count + 1).write_uleb128(&mut self.function_body); // to end of block around loop
+                (self.block_count
+                    + self
+                        .break_labels
+                        .last()
+                        .expect("the analyzer guarantees loops around break-statements"))
+                .write_uleb128(&mut self.function_body); // to end of block around loop
             }
             AnalyzedStatement::Continue => {
                 self.function_body.push(instructions::BR); // jump
@@ -523,9 +531,10 @@ impl<'src> Compiler<'src> {
     }
 
     fn loop_stmt(&mut self, node: AnalyzedLoopStmt<'src>) {
-        // store current block count
+        // store current block count and set break label
         let prev_block_count = self.block_count;
         self.block_count = 0;
+        self.break_labels.push(1);
 
         self.function_body.push(instructions::BLOCK); // outer block to jump to with `break`
         self.function_body.push(types::VOID); // with result `()`
@@ -539,14 +548,16 @@ impl<'src> Compiler<'src> {
         self.function_body.push(instructions::END); // end of loop
         self.function_body.push(instructions::END); // end of block
 
-        // restore block count
+        // restore block count and loop labels
         self.block_count = prev_block_count;
+        self.break_labels.pop();
     }
 
     fn while_stmt(&mut self, node: AnalyzedWhileStmt<'src>) {
-        // store current block count
+        // store current block count and set break label
         let prev_block_count = self.block_count;
         self.block_count = 0;
+        self.break_labels.push(1);
 
         self.function_body.push(instructions::BLOCK); // outer block to jump to with `break`
         self.function_body.push(types::VOID); // with result `()`
@@ -565,14 +576,16 @@ impl<'src> Compiler<'src> {
         self.function_body.push(instructions::END); // end of loop
         self.function_body.push(instructions::END); // end of block
 
-        // restore block count
+        // restore block count and loop labels
         self.block_count = prev_block_count;
+        self.break_labels.pop();
     }
 
     fn for_stmt(&mut self, node: AnalyzedForStmt<'src>) {
-        // store current block count
+        // store current block count and set break label
         let prev_block_count = self.block_count;
         self.block_count = 0;
+        self.break_labels.push(2);
 
         // compile the initializer
         let wasm_type = utils::type_to_byte(node.initializer.result_type());
@@ -605,15 +618,20 @@ impl<'src> Compiler<'src> {
 
         self.function_body.push(instructions::BLOCK); // outer block to jump to with `break`
         self.function_body.push(types::VOID); // with result `()`
-        self.function_body.push(instructions::LOOP); // loop to jump to with `continue`
+        self.function_body.push(instructions::LOOP); // loop to jump to at end of iteration
+        self.function_body.push(types::VOID); // with result `()`
+        self.function_body.push(instructions::BLOCK); // block to jump to with continue
         self.function_body.push(types::VOID); // with result `()`
 
         self.expression(node.cond); // compile condition
         self.function_body.push(instructions::I32_EQZ); // negate result
         self.function_body.push(instructions::BR_IF); // jump if cond is not true
-        self.function_body.push(1); // to end of outer block
+        self.function_body.push(2); // to end of outer block
 
         self.block_expr(node.block, false); // the loop body
+
+        self.function_body.push(instructions::END); // end of block
+
         self.expression(node.update); // loop update expression
 
         self.function_body.push(instructions::BR); // jump
@@ -622,8 +640,9 @@ impl<'src> Compiler<'src> {
         self.function_body.push(instructions::END); // end of loop
         self.function_body.push(instructions::END); // end of block
 
-        // restore block count
+        // restore block count and loop labels
         self.block_count = prev_block_count;
+        self.break_labels.pop();
 
         // pop scope
         self.pop_scope();
