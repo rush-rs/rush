@@ -496,12 +496,6 @@ impl<'src> Compiler<'src> {
         self.curr_scope()
             .insert(node.name, wasm_type.map(|_| local_idx.clone()));
 
-        self.expression(node.expr);
-        if wasm_type.is_some() {
-            self.function_body.push(instructions::LOCAL_SET);
-            self.function_body.extend_from_slice(&local_idx);
-        }
-
         // add variable name to name section
         if wasm_type.is_some() {
             self.local_names[self.curr_func_idx].1.push(
@@ -512,6 +506,12 @@ impl<'src> Compiler<'src> {
                 ]
                 .concat(),
             );
+        }
+
+        self.expression(node.expr);
+        if wasm_type.is_some() {
+            self.function_body.push(instructions::LOCAL_SET);
+            self.function_body.extend_from_slice(&local_idx);
         }
     }
 
@@ -581,16 +581,6 @@ impl<'src> Compiler<'src> {
             self.locals.push(vec![1, byte]);
         }
 
-        // create new scope with induction variable
-        self.scopes.push(HashMap::from([(
-            node.ident,
-            wasm_type.map(|_| local_idx.clone()),
-        )]));
-
-        self.expression(node.initializer);
-        self.function_body.push(instructions::LOCAL_SET);
-        self.function_body.extend_from_slice(&local_idx);
-
         // add init variable name to name section
         if wasm_type.is_some() {
             self.local_names[self.curr_func_idx].1.push(
@@ -602,6 +592,16 @@ impl<'src> Compiler<'src> {
                 .concat(),
             );
         }
+
+        // create new scope with induction variable
+        self.scopes.push(HashMap::from([(
+            node.ident,
+            wasm_type.map(|_| local_idx.clone()),
+        )]));
+
+        self.expression(node.initializer);
+        self.function_body.push(instructions::LOCAL_SET);
+        self.function_body.extend_from_slice(&local_idx);
 
         self.function_body.push(instructions::BLOCK); // outer block to jump to with `break`
         self.function_body.push(types::VOID); // with result `()`
