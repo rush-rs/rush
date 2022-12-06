@@ -75,7 +75,7 @@ fn sum_different_types(
     int_ + float_ as int + char_ as int + bool_ as int + takes_unit(unit)
 }
 
-// expected return-value: 1
+// expected return-value: 2
 fn prefix_expr() -> int {
     let one = -----1;
     let three = 3;
