@@ -968,7 +968,7 @@ impl<'src> Compiler<'src> {
             }
             None => match node.func {
                 "exit" => self.__wasi_exit(true),
-                _ => unreachable!("the analyzer guarantees one of the above to match"),
+                name => unreachable!("invalid builtin function: {name}"),
             },
         }
     }
