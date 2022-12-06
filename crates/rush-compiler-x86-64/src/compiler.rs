@@ -451,7 +451,7 @@ impl<'src> Compiler<'src> {
     /////////////////////////////////////////
 
     fn program(&mut self, node: AnalyzedProgram<'src>) {
-        for global in node.globals.into_iter().filter(|g|g.used) {
+        for global in node.globals.into_iter().filter(|g| g.used) {
             self.global(global);
         }
 
@@ -811,36 +811,13 @@ impl<'src> Compiler<'src> {
             Instruction::Symbol(Rc::clone(&start_loop_symbol), false).into(),
             "while .. {".into(),
         ));
-        match Condition::try_from_expr(node.cond) {
-            Ok((cond, lhs, rhs)) => {
-                match self.condition(cond, lhs, rhs, Rc::clone(&end_loop_symbol), None) {
-                    Some(()) => {}
-                    None => return,
-                }
-            }
-            Err(expr) => {
-                let bool = match self.tmp_expr(expr) {
-                    Some(val) => val.expect_int("the analyzer guarantees boolean conditions"),
-                    None => return,
-                };
 
-                match bool {
-                    IntValue::Immediate(0) => {
-                        self.function_body
-                            .push(Instruction::Jmp(Rc::clone(&end_loop_symbol)));
-                    }
-                    IntValue::Immediate(_) => {}
-                    val => {
-                        // jump to end of loop if condition is false
-                        self.function_body.push(Instruction::Test(val, 1));
-                        self.function_body.push(Instruction::JCond(
-                            Condition::Equal,
-                            Rc::clone(&end_loop_symbol),
-                        ));
-                    }
-                }
-            }
-        }
+        if self
+            .condition(node.cond, Rc::clone(&end_loop_symbol), |_| None)
+            .is_none()
+        {
+            return;
+        };
 
         self.tmp_expr(AnalyzedExpression::Block(node.block.into()));
         self.function_body.push(Instruction::Commented(
@@ -886,35 +863,11 @@ impl<'src> Compiler<'src> {
         ));
 
         // condition
-        match Condition::try_from_expr(node.cond) {
-            Ok((cond, lhs, rhs)) => {
-                match self.condition(cond, lhs, rhs, Rc::clone(&end_loop_symbol), None) {
-                    Some(()) => {}
-                    None => return,
-                }
-            }
-            Err(expr) => {
-                let bool = match self.tmp_expr(expr) {
-                    Some(val) => val.expect_int("the analyzer guarantees boolean conditions"),
-                    None => return,
-                };
-
-                match bool {
-                    IntValue::Immediate(0) => {
-                        self.function_body
-                            .push(Instruction::Jmp(Rc::clone(&end_loop_symbol)));
-                    }
-                    IntValue::Immediate(_) => {}
-                    val => {
-                        // jump to end of loop if condition is false
-                        self.function_body.push(Instruction::Test(val, 1));
-                        self.function_body.push(Instruction::JCond(
-                            Condition::Equal,
-                            Rc::clone(&end_loop_symbol),
-                        ));
-                    }
-                }
-            }
+        if self
+            .condition(node.cond, Rc::clone(&end_loop_symbol), |_| None)
+            .is_none()
+        {
+            return;
         }
 
         // loop body
@@ -938,82 +891,109 @@ impl<'src> Compiler<'src> {
 
     fn condition(
         &mut self,
-        cond: Condition,
-        lhs: AnalyzedExpression<'src>,
-        rhs: AnalyzedExpression<'src>,
+        cond_expr: AnalyzedExpression<'src>,
         false_symbol: Rc<str>,
-        comment: Option<Cow<'static, str>>,
+        commenter: impl Fn(Option<&IntValue>) -> Option<Cow<'static, str>>,
     ) -> Option<()> {
-        let lhs = self.expression(lhs)?;
-        let rhs = self.expression(rhs)?;
-        match (lhs, rhs) {
-            (Value::Int(lhs), Value::Int(rhs)) => {
-                if let IntValue::Register(_) = lhs {
-                    self.used_registers.pop();
-                }
-                if let IntValue::Register(_) = rhs {
-                    self.used_registers.pop();
-                }
+        match Condition::try_from_expr(cond_expr) {
+            Ok((cond, lhs, rhs)) => {
+                let lhs = self.expression(lhs)?;
+                let rhs = self.expression(rhs)?;
+                match (lhs, rhs) {
+                    (Value::Int(lhs), Value::Int(rhs)) => {
+                        if let IntValue::Register(_) = lhs {
+                            self.used_registers.pop();
+                        }
+                        if let IntValue::Register(_) = rhs {
+                            self.used_registers.pop();
+                        }
 
-                let lhs = match (lhs, &rhs) {
-                    (lhs @ IntValue::Ptr(_), IntValue::Ptr(_))
-                    | (lhs @ IntValue::Immediate(_), _) => {
-                        let reg = self.get_tmp_register(if let IntValue::Ptr(ptr) = &lhs {
-                            ptr.size
-                        } else {
-                            Size::Qword
-                        });
-                        self.function_body.push(Instruction::Mov(reg.into(), lhs));
-                        reg.into()
+                        let lhs = match (lhs, &rhs) {
+                            (lhs @ IntValue::Ptr(_), IntValue::Ptr(_))
+                            | (lhs @ IntValue::Immediate(_), _) => {
+                                let reg = self.get_tmp_register(if let IntValue::Ptr(ptr) = &lhs {
+                                    ptr.size
+                                } else {
+                                    Size::Qword
+                                });
+                                self.function_body.push(Instruction::Mov(reg.into(), lhs));
+                                reg.into()
+                            }
+                            (lhs, _) => lhs,
+                        };
+
+                        self.function_body.push(Instruction::Cmp(lhs, rhs));
                     }
-                    (lhs, _) => lhs,
-                };
+                    (Value::Float(lhs), Value::Float(rhs)) => {
+                        if let FloatValue::Register(_) = lhs {
+                            self.used_float_registers.pop();
+                        }
+                        if let FloatValue::Register(_) = rhs {
+                            self.used_float_registers.pop();
+                        }
 
-                self.function_body.push(Instruction::Cmp(lhs, rhs));
+                        let lhs = match lhs {
+                            FloatValue::Ptr(ptr) => {
+                                let reg = self.get_tmp_float_register();
+                                self.function_body
+                                    .push(Instruction::Movsd(reg.into(), ptr.into()));
+                                reg
+                            }
+                            FloatValue::Register(reg) => reg,
+                        };
+                        self.function_body.push(Instruction::Ucomisd(lhs, rhs));
+
+                        if cond == Condition::Equal {
+                            // if floats should be equal but result is unordered, jump to end
+                            self.function_body.push(Instruction::JCond(
+                                Condition::Parity,
+                                Rc::clone(&false_symbol),
+                            ));
+                        } else if cond == Condition::NotEqual {
+                            // if floats should not be equal and result is not unordered, jump to end
+                            self.function_body.push(Instruction::JCond(
+                                Condition::NotParity,
+                                Rc::clone(&false_symbol),
+                            ));
+                        }
+                    }
+                    _ => unreachable!("the analyzer guarantees equal types on both sides"),
+                }
+
+                let jump_instr = Instruction::JCond(cond.negated(), false_symbol);
+
+                self.function_body.push(match commenter(None) {
+                    Some(comment) => Instruction::Commented(jump_instr.into(), comment),
+                    None => jump_instr,
+                });
             }
-            (Value::Float(lhs), Value::Float(rhs)) => {
-                if let FloatValue::Register(_) = lhs {
-                    self.used_float_registers.pop();
-                }
-                if let FloatValue::Register(_) = rhs {
-                    self.used_float_registers.pop();
-                }
+            Err(expr) => {
+                let bool = self
+                    .tmp_expr(expr)?
+                    .expect_int("the analyzer guarantees boolean conditions");
 
-                let lhs = match lhs {
-                    FloatValue::Ptr(ptr) => {
-                        let reg = self.get_tmp_float_register();
+                match bool {
+                    IntValue::Immediate(0) => {
+                        let instr = Instruction::Jmp(false_symbol);
                         self.function_body
-                            .push(Instruction::Movsd(reg.into(), ptr.into()));
-                        reg
+                            .push(match commenter(Some(&IntValue::Immediate(0))) {
+                                Some(comment) => Instruction::Commented(instr.into(), comment),
+                                None => instr,
+                            });
                     }
-                    FloatValue::Register(reg) => reg,
-                };
-                self.function_body.push(Instruction::Ucomisd(lhs, rhs));
-
-                if cond == Condition::Equal {
-                    // if floats should be equal but result is unordered, jump to end
-                    self.function_body.push(Instruction::JCond(
-                        Condition::Parity,
-                        Rc::clone(&false_symbol),
-                    ));
-                } else if cond == Condition::NotEqual {
-                    // if floats should not be equal and result is not unordered, jump to end
-                    self.function_body.push(Instruction::JCond(
-                        Condition::NotParity,
-                        Rc::clone(&false_symbol),
-                    ));
+                    IntValue::Immediate(_) => {}
+                    val => {
+                        let comment = commenter(Some(&val));
+                        self.function_body.push(Instruction::Test(val, 1));
+                        let instr = Instruction::JCond(Condition::Equal, false_symbol);
+                        self.function_body.push(match comment {
+                            Some(comment) => Instruction::Commented(instr.into(), comment),
+                            None => instr,
+                        });
+                    }
                 }
             }
-            _ => unreachable!("the analyzer guarantees equal types on both sides"),
         }
-
-        let jump_instr = Instruction::JCond(cond.negated(), false_symbol);
-
-        self.function_body.push(match comment {
-            Some(comment) => Instruction::Commented(jump_instr.into(), comment),
-            None => jump_instr,
-        });
-
         Some(())
     }
 
@@ -1094,39 +1074,10 @@ impl<'src> Compiler<'src> {
         let after_if_symbol = self.next_block_name();
         let else_block_symbol = else_block_symbol.unwrap_or_else(|| Rc::clone(&after_if_symbol));
 
-        match Condition::try_from_expr(node.cond) {
-            Ok((cond, lhs, rhs)) => self.condition(
-                cond,
-                lhs,
-                rhs,
-                Rc::clone(&else_block_symbol),
-                Some("if .. {".into()),
-            )?,
-            Err(expr) => {
-                let bool = self
-                    .tmp_expr(expr)?
-                    .expect_int("the analyzer guarantees boolean conditions");
-
-                match bool {
-                    IntValue::Immediate(0) => {
-                        self.function_body.push(Instruction::Commented(
-                            Instruction::Jmp(Rc::clone(&else_block_symbol)).into(),
-                            "if false {".into(),
-                        ));
-                    }
-                    IntValue::Immediate(_) => {}
-                    val => {
-                        let comment = format!("if {val} {{");
-                        self.function_body.push(Instruction::Test(val, 1));
-                        self.function_body.push(Instruction::Commented(
-                            Instruction::JCond(Condition::Equal, Rc::clone(&else_block_symbol))
-                                .into(),
-                            comment.into(),
-                        ));
-                    }
-                }
-            }
-        }
+        self.condition(node.cond, Rc::clone(&else_block_symbol), |val| match val {
+            Some(val) => Some(format!("if {val} {{").into()),
+            None => Some("if .. {".into()),
+        })?;
 
         let block_type = node.then_block.result_type;
         let block_val = self.block_expr(node.then_block);
