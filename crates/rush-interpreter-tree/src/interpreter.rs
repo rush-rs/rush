@@ -169,7 +169,7 @@ impl<'src> Interpreter<'src> {
                 break;
             }
 
-            let res = self.visit_block(&node.block, true);
+            let res = self.visit_block(&node.block, false);
 
             match res {
                 Err(InterruptKind::Break) => break,
