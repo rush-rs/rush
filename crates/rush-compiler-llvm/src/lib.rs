@@ -16,9 +16,9 @@ pub fn compile(
     ast: AnalyzedProgram,
     target: TargetTriple,
     optimization: OptimizationLevel,
-    main_fn: bool,
+    compile_main_fn: bool,
 ) -> Result<(MemoryBuffer, String)> {
     let context = Context::create();
-    let mut compiler = Compiler::new(&context, target, optimization);
-    compiler.compile(&ast, main_fn)
+    let mut compiler = Compiler::new(&context, target, optimization, compile_main_fn);
+    compiler.compile(&ast)
 }

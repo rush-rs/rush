@@ -25,19 +25,21 @@ pub struct Compiler<'ctx, 'src> {
     pub(crate) builder: Builder<'ctx>,
     // contains information about the current function
     pub(crate) curr_fn: Option<Function<'ctx, 'src>>,
-    // contains necessary metadata about current loops
-    // the last element is the most inner loop
+    // Contains necessary metadata about current loops.
+    // The last element is the most inner loop.
     pub(crate) loops: Vec<Loop<'ctx>>,
-    // the scope stack (first is the root / function scope, last is the current scope)
+    // The scope stack (first is the root / function scope, last is the current scope)
     pub(crate) scopes: Vec<HashMap<&'src str, Variable<'ctx>>>,
-    // global variables
+    // Global variables
     pub(crate) globals: HashMap<&'src str, Variable<'ctx>>,
-    // a set of all builtin functions already declared (`imported`) so far
+    /// A set of all builtin functions already declared (`imported`) so far.
     pub(crate) declared_builtins: HashSet<&'ctx str>,
-    // specifies the target machine
+    /// Specifies the target machine.
     pub(crate) target_triple: TargetTriple,
-    // specifies the optimization level
+    /// Specifies the optimization level.
     pub(crate) optimization: OptimizationLevel,
+    /// Specifies whether the entry symbol is `main` or `_start`.
+    pub(crate) compile_main_fn: bool,
 }
 
 pub(crate) struct Loop<'ctx> {
@@ -102,6 +104,7 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         context: &'ctx Context,
         target_triple: TargetTriple,
         optimization: OptimizationLevel,
+        compile_main_fn: bool,
     ) -> Compiler<'ctx, 'src> {
         let module = context.create_module("main");
         // setup target machine triple
@@ -117,6 +120,7 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
             declared_builtins: HashSet::new(),
             target_triple,
             optimization,
+            compile_main_fn,
         }
     }
 
@@ -137,11 +141,7 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
     /// Compiles the given [`AnalyzedProgram`] to object code and the LLVM IR.
     /// Errors can occur if the target triple is invalid or the code generation fails
     /// The `main_fn` param specifies whether the entry is the main function or `_start`.
-    pub fn compile(
-        &mut self,
-        program: &'src AnalyzedProgram,
-        main_fn: bool,
-    ) -> Result<(MemoryBuffer, String)> {
+    pub fn compile(&mut self, program: &'src AnalyzedProgram) -> Result<(MemoryBuffer, String)> {
         // declare all global variables
         for global in program.globals.iter().filter(|g| g.used) {
             self.declare_global(global.name, &global.expr);
@@ -158,7 +158,7 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         }
 
         // compile the main function
-        self.compile_main_fn(&program.main_fn, main_fn);
+        self.compile_main_fn(&program.main_fn);
 
         // verify the LLVM module when using debug
         self.module.verify().unwrap();
@@ -202,30 +202,50 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         link_time_optimizations.run_on(&self.module);
     }
 
-    fn compile_main_fn(&mut self, node: &'src AnalyzedBlock, main_fn: bool) {
+    fn compile_main_fn(&mut self, node: &'src AnalyzedBlock) {
         // main fn takes no arguments but returns an i8 (exit-code)
-        let fn_type = self.context.i32_type().fn_type(&[], false);
-        let main_fn = self.module.add_function(
-            if main_fn { "main" } else { "_start" },
+        let fn_type = if self.compile_main_fn {
+            self.context.i32_type().fn_type(&[], false)
+        } else {
+            self.context.void_type().fn_type(&[], false)
+        };
+        let fn_type = self.module.add_function(
+            if self.compile_main_fn {
+                "main"
+            } else {
+                "_start"
+            },
             fn_type,
             Some(Linkage::External),
         );
 
         // create basic block for the main function
-        let main_basic_block = self.context.append_basic_block(main_fn, "entry");
+        let main_basic_block = self.context.append_basic_block(fn_type, "entry");
         self.builder.position_at_end(main_basic_block);
 
         // set the current function to `main`
         self.curr_fn = Some(Function {
             name: "main",
-            llvm_value: main_fn,
+            llvm_value: fn_type,
         });
 
         // compile the function's body
         self.compile_block(node, true);
 
-        // return exit-code 0
-        self.build_return(None);
+        if self.compile_main_fn {
+            // return exit-code 0
+            self.build_return(Some(self.context.i64_type().const_zero().into()));
+        } else {
+            let exit_func = self.get_exit();
+            self.builder
+                .build_call(
+                    exit_func,
+                    &[self.context.i64_type().const_zero().into()],
+                    "",
+                )
+                .try_as_basic_value();
+            self.builder.build_unreachable();
+        }
     }
 
     /// Defines a new global variable with the given name and initializes it using the expression
@@ -775,28 +795,32 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         }
     }
 
+    /// Returns the exit function.
+    /// If there is no exit function currently defined, it is declared here.
+    fn get_exit(&mut self) -> FunctionValue<'ctx> {
+        // the exit function requires 1 i64 and returns void
+        let exit_type = self.context.void_type().fn_type(
+            &[BasicMetadataTypeEnum::IntType(self.context.i64_type())],
+            false,
+        );
+        // either get the function from the module or declare it just-in-time
+        match self.declared_builtins.insert("exit") {
+            true => self
+                .module
+                .add_function("exit", exit_type, Some(Linkage::External)),
+            false => self
+                .module
+                .get_function("exit")
+                .expect("exit was previously declared"),
+        }
+    }
+
     /// Compiles an [`AnalyzedCallExpr`] and returns the result of the call.
     /// If a builtin is called, it is declared just-in-time to avoid redundant declarations.
     fn compile_call_expression(&mut self, node: &'src AnalyzedCallExpr) -> BasicValueEnum<'ctx> {
         // handle any builtin functions
         let func = match node.func {
-            "exit" => {
-                // the exit function requires 1 i64 and returns void
-                let exit_type = self.context.void_type().fn_type(
-                    &[BasicMetadataTypeEnum::IntType(self.context.i64_type())],
-                    false,
-                );
-                // either get the function from the module or declare it just-in-time
-                match self.declared_builtins.insert("exit") {
-                    true => self
-                        .module
-                        .add_function("exit", exit_type, Some(Linkage::External)),
-                    false => self
-                        .module
-                        .get_function("exit")
-                        .expect("exit was previously declared"),
-                }
-            }
+            "exit" => self.get_exit(),
             "main" => self
                 .module
                 .get_function("_start")
@@ -1330,12 +1354,30 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
     fn build_return(&mut self, return_value: Option<BasicValueEnum<'ctx>>) {
         if !self.current_instruction_is_block_terminator() {
             match (return_value, self.curr_fn().name) {
-                (_, "main") => {
-                    let success = self.context.i32_type().const_zero();
-                    self.builder.build_return(Some(&success))
+                (_, "main") => match self.compile_main_fn {
+                    true => {
+                        let success = self.context.i32_type().const_zero();
+                        self.builder.build_return(Some(&success));
+                    }
+                    // TODO: aa
+                    false => {
+                        // perform the `exit` function call
+                        let exit_func = self.get_exit();
+                        self.builder
+                            .build_call(
+                                exit_func,
+                                &[self.context.i64_type().const_zero().into()],
+                                "",
+                            )
+                            .try_as_basic_value();
+                    }
+                },
+                (Some(value), _) => {
+                    self.builder.build_return(Some(&value));
                 }
-                (Some(value), _) => self.builder.build_return(Some(&value)),
-                (None, _) => self.builder.build_return(None),
+                (None, _) => {
+                    self.builder.build_return(None);
+                }
             };
         }
     }

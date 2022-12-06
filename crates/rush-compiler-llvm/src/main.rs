@@ -26,9 +26,10 @@ fn main() {
         &context,
         TargetMachine::get_default_triple(),
         inkwell::OptimizationLevel::None,
+        true,
     );
 
-    let (obj, ir) = compiler.compile(&ast, true).unwrap();
+    let (obj, ir) = compiler.compile(&ast).unwrap();
     fs::write("./output.ll", &ir).unwrap();
     fs::write("./output.o", obj.as_slice()).unwrap();
 }
