@@ -501,8 +501,6 @@ impl<'src> Compiler<'src> {
         if let Some(byte) = wasm_type {
             self.locals.push(vec![1, byte]);
         }
-        self.curr_scope()
-            .insert(node.name, wasm_type.map(|_| local_idx.clone()));
 
         // add variable name to name section
         if wasm_type.is_some() {
@@ -517,6 +515,10 @@ impl<'src> Compiler<'src> {
         }
 
         self.expression(node.expr);
+
+        self.curr_scope()
+            .insert(node.name, wasm_type.map(|_| local_idx.clone()));
+
         if wasm_type.is_some() {
             self.function_body.push(instructions::LOCAL_SET);
             self.function_body.extend_from_slice(&local_idx);
