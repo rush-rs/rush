@@ -801,8 +801,22 @@ impl<'src> Compiler<'src> {
         let instruction = match (node.op, lhs_type) {
             (InfixOp::Plus, Type::Int) => instructions::I64_ADD,
             (InfixOp::Plus, Type::Float) => instructions::F64_ADD,
+            (InfixOp::Plus, Type::Char) => {
+                self.function_body.push(instructions::I32_ADD);
+                self.function_body.push(instructions::I32_CONST);
+                0x7f.write_sleb128(&mut self.function_body);
+                self.function_body.push(instructions::I32_AND);
+                return;
+            }
             (InfixOp::Minus, Type::Int) => instructions::I64_SUB,
             (InfixOp::Minus, Type::Float) => instructions::F64_SUB,
+            (InfixOp::Minus, Type::Char) => {
+                self.function_body.push(instructions::I32_SUB);
+                self.function_body.push(instructions::I32_CONST);
+                0x7f.write_sleb128(&mut self.function_body);
+                self.function_body.push(instructions::I32_AND);
+                return;
+            }
             (InfixOp::Mul, Type::Int) => instructions::I64_MUL,
             (InfixOp::Mul, Type::Float) => instructions::F64_MUL,
             (InfixOp::Div, Type::Int) => instructions::I64_DIV_S,
@@ -875,8 +889,22 @@ impl<'src> Compiler<'src> {
                 let instruction = match (node.op, expr_type) {
                     (AssignOp::Plus, Type::Int) => instructions::I64_ADD,
                     (AssignOp::Plus, Type::Float) => instructions::F64_ADD,
+                    (AssignOp::Plus, Type::Char) => {
+                        self.function_body.push(instructions::I32_ADD);
+                        self.function_body.push(instructions::I32_CONST);
+                        0x7f.write_sleb128(&mut self.function_body);
+                        self.function_body.push(instructions::I32_AND);
+                        break 'op;
+                    }
                     (AssignOp::Minus, Type::Int) => instructions::I64_SUB,
                     (AssignOp::Minus, Type::Float) => instructions::F64_SUB,
+                    (AssignOp::Minus, Type::Char) => {
+                        self.function_body.push(instructions::I32_SUB);
+                        self.function_body.push(instructions::I32_CONST);
+                        0x7f.write_sleb128(&mut self.function_body);
+                        self.function_body.push(instructions::I32_AND);
+                        break 'op;
+                    }
                     (AssignOp::Mul, Type::Int) => instructions::I64_MUL,
                     (AssignOp::Mul, Type::Float) => instructions::F64_MUL,
                     (AssignOp::Div, Type::Int) => instructions::I64_DIV_S,
