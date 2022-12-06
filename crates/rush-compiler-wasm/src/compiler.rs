@@ -606,15 +606,15 @@ impl<'src> Compiler<'src> {
             );
         }
 
+        self.expression(node.initializer);
+        self.function_body.push(instructions::LOCAL_SET);
+        self.function_body.extend_from_slice(&local_idx);
+
         // create new scope with induction variable
         self.scopes.push(HashMap::from([(
             node.ident,
             wasm_type.map(|_| local_idx.clone()),
         )]));
-
-        self.expression(node.initializer);
-        self.function_body.push(instructions::LOCAL_SET);
-        self.function_body.extend_from_slice(&local_idx);
 
         self.function_body.push(instructions::BLOCK); // outer block to jump to with `break`
         self.function_body.push(types::VOID); // with result `()`
