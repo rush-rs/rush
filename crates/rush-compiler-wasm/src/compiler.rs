@@ -739,6 +739,7 @@ impl<'src> Compiler<'src> {
     fn prefix_expr(&mut self, node: AnalyzedPrefixExpr<'src>) {
         // match op and expr type
         match (node.op, node.expr.result_type()) {
+            (_, Type::Never) => self.expression(node.expr),
             (PrefixOp::Not, Type::Bool) => {
                 // compile expression
                 self.expression(node.expr);
@@ -809,8 +810,9 @@ impl<'src> Compiler<'src> {
             _ => {}
         }
 
-        // save type of lhs
+        // save type of exprs
         let lhs_type = node.lhs.result_type();
+        let rhs_type = node.rhs.result_type();
 
         // compile left and right expression
         self.expression(node.lhs);
@@ -818,6 +820,7 @@ impl<'src> Compiler<'src> {
 
         // match on op and type (analyzer guarantees same type for lhs and rhs)
         let instruction = match (node.op, lhs_type) {
+            _ if lhs_type == Type::Never || rhs_type == Type::Never => return,
             (InfixOp::Plus, Type::Int) => instructions::I64_ADD,
             (InfixOp::Plus, Type::Float) => instructions::F64_ADD,
             (InfixOp::Plus, Type::Char) => {
@@ -906,6 +909,7 @@ impl<'src> Compiler<'src> {
             if node.op != AssignOp::Basic {
                 // match on op and type (analyzer guarantees same type for variable and expr)
                 let instruction = match (node.op, expr_type) {
+                    (_, Type::Never) => break 'op,
                     (AssignOp::Plus, Type::Int) => instructions::I64_ADD,
                     (AssignOp::Plus, Type::Float) => instructions::F64_ADD,
                     (AssignOp::Plus, Type::Char) => {
@@ -978,6 +982,8 @@ impl<'src> Compiler<'src> {
 
         // match source and dest types
         match (expr_type, node.type_) {
+            // expression diverges at runtime: do nothing
+            (Type::Never, _) => {}
             // type does not change: do nothing
             (source, dest) if source == dest => {}
             (Type::Bool, Type::Char) => {}
