@@ -158,17 +158,16 @@ impl<'src> Interpreter<'src> {
     }
 
     fn visit_for_stmt(&mut self, node: &AnalyzedForStmt<'src>) -> StmtResult {
-        let mut scope = HashMap::new();
+        // new scope just for the induction variable
         let init_val = self.visit_expression(&node.initializer)?;
-        scope.insert(node.ident, init_val);
-        self.scopes.push(scope);
+        self.scopes.push(HashMap::from([(node.ident, init_val)]));
 
         loop {
             if !self.visit_expression(&node.cond)?.unwrap_bool() {
                 break;
             }
 
-            let res = self.visit_block(&node.block, false);
+            let res = self.visit_block(&node.block, true);
 
             self.visit_expression(&node.update)?;
 
