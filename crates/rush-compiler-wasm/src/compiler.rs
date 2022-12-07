@@ -612,7 +612,7 @@ impl<'src> Compiler<'src> {
         self.function_body.push(instructions::LOCAL_SET);
         self.function_body.extend_from_slice(&local_idx);
 
-        // create new scope with induction variable
+        // create new scope just for induction variable
         self.scopes.push(HashMap::from([(
             node.ident,
             wasm_type.map(|_| local_idx.clone()),
@@ -630,7 +630,7 @@ impl<'src> Compiler<'src> {
         self.function_body.push(instructions::BR_IF); // jump if cond is not true
         self.function_body.push(2); // to end of outer block
 
-        self.block_expr(node.block, false); // the loop body
+        self.block_expr(node.block, true); // the loop body
 
         self.function_body.push(instructions::END); // end of block
 
