@@ -72,6 +72,13 @@ impl<'src> Interpreter<'src> {
 
     //////////////////////////////////
 
+    fn scoped<T>(&mut self, scope: Scope<'src>, callback: impl FnOnce(&mut Self) -> T) -> T {
+        self.scopes.push(scope);
+        let res = callback(self);
+        self.scopes.pop();
+        res
+    }
+
     fn call_func(&mut self, func_name: &'src str, args: Vec<Value>) -> ExprResult {
         if func_name == "exit" {
             return Err(InterruptKind::Exit(args[0].unwrap_int()));
@@ -84,30 +91,26 @@ impl<'src> Interpreter<'src> {
             scope.insert(param.name, arg);
         }
 
-        self.scopes.push(scope);
-        let res = match self.visit_block(&func.block, false) {
-            Ok(val) => val,
-            Err(interrupt) => interrupt.into_value()?,
-        };
-        self.scopes.pop();
-        Ok(res)
+        self.scoped(scope, |self_| match self_.visit_block(&func.block, false) {
+            Ok(val) => Ok(val),
+            Err(interrupt) => Ok(interrupt.into_value()?),
+        })
     }
 
     fn visit_block(&mut self, node: &AnalyzedBlock<'src>, new_scope: bool) -> ExprResult {
-        if new_scope {
-            self.scopes.push(HashMap::new());
+        let callback = |self_: &mut Self| {
+            for stmt in &node.stmts {
+                self_.visit_statement(stmt)?;
+            }
+            node.expr
+                .as_ref()
+                .map_or(Ok(Value::Unit), |expr| self_.visit_expression(expr))
+        };
+
+        match new_scope {
+            true => self.scoped(HashMap::new(), callback),
+            false => callback(self),
         }
-        for stmt in &node.stmts {
-            self.visit_statement(stmt)?;
-        }
-        let res = node
-            .expr
-            .as_ref()
-            .map_or(Ok(Value::Unit), |expr| self.visit_expression(expr));
-        if new_scope {
-            self.scopes.pop();
-        }
-        res
     }
 
     fn visit_statement(&mut self, node: &AnalyzedStatement<'src>) -> StmtResult {
@@ -160,26 +163,28 @@ impl<'src> Interpreter<'src> {
     fn visit_for_stmt(&mut self, node: &AnalyzedForStmt<'src>) -> StmtResult {
         // new scope just for the induction variable
         let init_val = self.visit_expression(&node.initializer)?;
-        self.scopes.push(HashMap::from([(node.ident, init_val)]));
 
-        loop {
-            if !self.visit_expression(&node.cond)?.unwrap_bool() {
-                break;
-            }
+        self.scoped(
+            HashMap::from([(node.ident, init_val)]),
+            |self_| -> StmtResult {
+                loop {
+                    if !self_.visit_expression(&node.cond)?.unwrap_bool() {
+                        break;
+                    }
 
-            let res = self.visit_block(&node.block, true);
+                    let res = self_.visit_block(&node.block, true);
 
-            self.visit_expression(&node.update)?;
+                    self_.visit_expression(&node.update)?;
 
-            match res {
-                Err(InterruptKind::Break) => break,
-                Err(InterruptKind::Continue) => continue,
-                res => res?,
-            };
-        }
-
-        self.scopes.pop();
-        Ok(())
+                    match res {
+                        Err(InterruptKind::Break) => break,
+                        Err(InterruptKind::Continue) => continue,
+                        res => res?,
+                    };
+                }
+                Ok(())
+            },
+        )
     }
 
     //////////////////////////////////
