@@ -13,7 +13,8 @@ pub struct Analyzer<'src> {
     diagnostics: Vec<Diagnostic<'src>>,
     builtin_functions: HashMap<&'static str, BuiltinFunction>,
     scopes: Vec<HashMap<&'src str, Variable<'src>>>,
-    curr_fn: &'src str,
+    curr_func_name: &'src str,
+    /// The names of all used builtin functions
     used_builtins: HashSet<&'src str>,
     /// Specifies the depth of loops.
     loop_count: usize,
@@ -23,6 +24,7 @@ pub struct Analyzer<'src> {
     /// Used to include allocations into the loop AST nodes (for the LLVM compiler).
     /// Only needed when examining loops.
     allocations: Option<Vec<(&'src str, Type)>>,
+    /// The source code of the program to be analyzed
     source: &'src str,
 }
 
@@ -72,7 +74,7 @@ impl<'src> Analyzer<'src> {
         }
     }
 
-    /// Adds a new diagnostic with the `Hint` level
+    /// Adds a new diagnostic with the `Hint` level.
     fn hint(&mut self, message: impl Into<Cow<'static, str>>, span: Span<'src>) {
         self.diagnostics.push(Diagnostic::new(
             DiagnosticLevel::Hint,
@@ -83,7 +85,7 @@ impl<'src> Analyzer<'src> {
         ))
     }
 
-    /// Adds a new diagnostic with the `Info` level
+    /// Adds a new diagnostic with the `Info` level.
     fn info(
         &mut self,
         message: impl Into<Cow<'static, str>>,
@@ -99,7 +101,7 @@ impl<'src> Analyzer<'src> {
         ))
     }
 
-    /// Adds a new diagnostic with the `Warning` level
+    /// Adds a new diagnostic with the `Warning` level.
     fn warn(
         &mut self,
         message: impl Into<Cow<'static, str>>,
@@ -115,7 +117,7 @@ impl<'src> Analyzer<'src> {
         ))
     }
 
-    /// Adds a new diagnostic with the `Error` level using the specified error kind
+    /// Adds a new diagnostic with the `Error` level using the specified error kind.
     fn error(
         &mut self,
         kind: ErrorKind,
@@ -132,7 +134,7 @@ impl<'src> Analyzer<'src> {
         ))
     }
 
-    /// Analyzes a parsed AST and returns an analyzed AST whilst emitting diagnostics
+    /// Analyzes a parsed AST and returns an analyzed AST whilst emitting diagnostics.
     pub fn analyze(
         mut self,
         program: Program<'src>,
@@ -165,7 +167,8 @@ impl<'src> Analyzer<'src> {
         }
 
         // analyze global let stmts
-        #[allow(clippy::needless_collect)] // TODO: remove this
+        // `self.global(node)` has side effects that have to happen here
+        #[allow(clippy::needless_collect)]
         let globals: Vec<AnalyzedLetStmt> = program
             .globals
             .into_iter()
@@ -186,12 +189,12 @@ impl<'src> Analyzer<'src> {
         }
 
         // pop the global scope
-        let (unused_globs, non_mut_globs) = self.pop_scope();
+        let (unused_globals, non_mut_globals) = self.pop_scope();
         let globals: Vec<AnalyzedLetStmt> = globals
             .into_iter()
             .map(|g| AnalyzedLetStmt {
-                used: !unused_globs.contains(&g.name),
-                mutable: g.mutable && !non_mut_globs.contains(&g.name),
+                used: !unused_globals.contains(&g.name),
+                mutable: g.mutable && !non_mut_globals.contains(&g.name),
                 ..g
             })
             .collect();
@@ -259,8 +262,9 @@ impl<'src> Analyzer<'src> {
     }
 
     /// Removes the current scope of the function and checks whether the
-    /// variables in the scope have been used.
-    /// Returns the variables which are unused and those which do not need to be mutable.
+    /// variables in the scope have been used and/or mutated.
+    /// Returns the names of variables which are unused and those which do
+    /// not need to be mutable.
     fn pop_scope(&mut self) -> (Vec<&'src str>, Vec<&'src str>) {
         // consume / drop the scope
         let scope = self.scopes.pop().expect("is only called after a scope");
@@ -396,13 +400,10 @@ impl<'src> Analyzer<'src> {
         &mut self,
         node: FunctionDefinition<'src>,
     ) -> AnalyzedFunctionDefinition<'src> {
-        // check if the function is the main function
-        let is_main_fn = node.name.inner == "main";
-
         // set the function name
-        self.curr_fn = node.name.inner;
+        self.curr_func_name = node.name.inner;
 
-        if is_main_fn {
+        if node.name.inner == "main" {
             // the main function must have 0 parameters
             if !node.params.inner.is_empty() {
                 self.error(
@@ -460,38 +461,36 @@ impl<'src> Analyzer<'src> {
         let mut param_names = HashSet::new();
 
         // only analyze parameters if this is not the main function
-        if !is_main_fn {
-            for param in node.params.inner {
-                // check for duplicate function parameters
-                if !param_names.insert(param.name.inner) {
-                    self.error(
-                        ErrorKind::Semantic,
-                        format!("duplicate parameter name `{}`", param.name.inner),
-                        vec![],
-                        param.name.span,
-                    );
-                }
-                self.scope_mut().insert(
-                    param.name.inner,
-                    Variable {
-                        type_: param.type_.inner,
-                        span: param.name.span,
-                        used: false,
-                        mutable: param.mutable,
-                        mutated: false,
-                    },
+        for param in node.params.inner {
+            // check for duplicate function parameters
+            if !param_names.insert(param.name.inner) && node.name.inner != "main" {
+                self.error(
+                    ErrorKind::Semantic,
+                    format!("duplicate parameter name `{}`", param.name.inner),
+                    vec![],
+                    param.name.span,
                 );
-                params.push(AnalyzedParameter {
-                    mutable: param.mutable,
-                    name: param.name.inner,
-                    type_: param.type_.inner,
-                });
             }
+            self.scope_mut().insert(
+                param.name.inner,
+                Variable {
+                    type_: param.type_.inner,
+                    span: param.name.span,
+                    used: false,
+                    mutable: param.mutable,
+                    mutated: false,
+                },
+            );
+            params.push(AnalyzedParameter {
+                mutable: param.mutable,
+                name: param.name.inner,
+                type_: param.type_.inner,
+            });
         }
 
         // analyze the function body
         let block_result_span = node.block.result_span();
-        let block = self.block(node.block);
+        let block = self.block(node.block, false);
 
         // check that the block results in the expected type
         if block.result_type != node.return_type.inner.unwrap_or(Type::Unit)
@@ -545,7 +544,11 @@ impl<'src> Analyzer<'src> {
         }
     }
 
-    fn block(&mut self, node: Block<'src>) -> AnalyzedBlock<'src> {
+    fn block(&mut self, node: Block<'src>, new_scope: bool) -> AnalyzedBlock<'src> {
+        if new_scope {
+            self.push_scope();
+        }
+
         let mut stmts = vec![];
 
         let mut never_type_span = None;
@@ -583,6 +586,10 @@ impl<'src> Analyzer<'src> {
             None => expr.as_ref().map_or(Type::Unit, |expr| expr.result_type()),
         };
 
+        if new_scope {
+            self.pop_scope();
+        }
+
         AnalyzedBlock {
             result_type,
             stmts,
@@ -590,7 +597,7 @@ impl<'src> Analyzer<'src> {
         }
     }
 
-    /// Analuzes a [`Statement`].
+    /// Analyzes a [`Statement`].
     /// Can return [`None`] if the statement is a `while` loop which never loops.
     fn statement(&mut self, node: Statement<'src>) -> Option<AnalyzedStatement<'src>> {
         Some(match node {
@@ -696,9 +703,9 @@ impl<'src> Analyzer<'src> {
         let expr = node.expr.map(|expr| self.expression(expr));
 
         // get the return type based on the expr (Unit as fallback)
-        let return_type = expr.as_ref().map_or(Type::Unit, |expr| expr.result_type());
+        let expr_type = expr.as_ref().map_or(Type::Unit, |expr| expr.result_type());
 
-        if return_type == Type::Never {
+        if expr_type == Type::Never {
             self.warn_unreachable(
                 node.span,
                 expr_span.expect("the never type was caused by an expression"),
@@ -706,12 +713,12 @@ impl<'src> Analyzer<'src> {
             );
         }
 
-        let curr_fn = &self.functions[self.curr_fn];
+        let curr_fn = &self.functions[self.curr_func_name];
 
         // test if the return type is correct
-        if curr_fn.return_type.inner.unwrap_or(Type::Unit) != return_type
+        if curr_fn.return_type.inner.unwrap_or(Type::Unit) != expr_type
             // unknown and never types are tolerated
-            && !matches!(return_type, Type::Unknown | Type::Never)
+            && !matches!(expr_type, Type::Unknown | Type::Never)
         {
             let fn_type_span = curr_fn.return_type.span;
             let fn_type_explicit = curr_fn.return_type.inner.is_some();
@@ -721,7 +728,7 @@ impl<'src> Analyzer<'src> {
                 format!(
                     "mismatched types: expected `{}`, found `{}`",
                     curr_fn.return_type.inner.unwrap_or(Type::Unit),
-                    return_type
+                    expr_type
                 ),
                 vec![],
                 node.span,
@@ -739,7 +746,6 @@ impl<'src> Analyzer<'src> {
     }
 
     fn loop_stmt(&mut self, node: LoopStmt<'src>) -> AnalyzedStatement<'src> {
-        // save old `loop_termination_count`
         let old_loop_is_terminated = self.current_loop_is_terminated;
 
         // begin tracking the allocations made by the loop
@@ -750,10 +756,8 @@ impl<'src> Analyzer<'src> {
         }
 
         self.loop_count += 1;
-        self.push_scope();
         let block_result_span = node.block.result_span();
-        let block = self.block(node.block);
-        self.pop_scope();
+        let block = self.block(node.block, true);
         self.loop_count -= 1;
 
         if !matches!(block.result_type, Type::Unit | Type::Never | Type::Unknown) {
@@ -789,10 +793,9 @@ impl<'src> Analyzer<'src> {
     }
 
     /// Analyzes a [`WhileStmt`].
-    /// Will return [`None`] if the loop never iterates (condition is const and `false`)
-    /// Can also return an [`AnalyzedLoopStmt`] if the expression is constant on `true`.
+    /// Will return [`None`] if the loop never iterates (condition is constant `false`)
+    /// Can also return an [`AnalyzedLoopStmt`] if the expression is constant `true`.
     fn while_stmt(&mut self, node: WhileStmt<'src>) -> Option<AnalyzedStatement<'src>> {
-        // save old `loop_termination_count`
         let old_loop_is_terminated = self.current_loop_is_terminated;
         let mut condition_is_const_true = false;
         let mut never_loops = false;
@@ -814,28 +817,25 @@ impl<'src> Analyzer<'src> {
         } else {
             // check that the condition is non-constant
             if cond.constant() {
-                let cond_display = match cond {
+                let cond_val = match cond {
                     AnalyzedExpression::Bool(true) => {
                         condition_is_const_true = true;
-                        "true"
+                        true
                     }
                     AnalyzedExpression::Bool(false) => {
                         never_loops = true;
-                        self.warn(
-                            "loop never actually loops",
-                            vec![
-                                "since the condition is `false`, the loop will never iterate"
-                                    .into(),
-                            ],
-                            node.span,
-                        );
-                        "false"
+                        false
                     }
                     _ => unreachable!("type is checked above and expr is constant"),
                 };
                 self.warn(
-                    format!("redundant while-statement: condition is always {cond_display}",),
-                    vec!["for unconditional loops, use a loop-statement".into()],
+                    format!("redundant while-statement: condition is always {cond_val}"),
+                    match cond_val {
+                        true => vec!["for unconditional loops, use a loop-statement".into()],
+                        false => vec![
+                            "since the condition is `false`, the loop will never iterate".into(),
+                        ],
+                    },
                     cond_span,
                 )
             }
@@ -849,11 +849,9 @@ impl<'src> Analyzer<'src> {
         }
 
         self.loop_count += 1;
-        self.push_scope();
         let block_result_span = node.block.result_span();
         let body_is_empty = node.block.stmts.is_empty() && node.block.expr.is_none();
-        let block = self.block(node.block);
-        self.pop_scope();
+        let block = self.block(node.block, true);
         self.loop_count -= 1;
 
         if body_is_empty {
@@ -889,15 +887,16 @@ impl<'src> Analyzer<'src> {
         let never_terminates = condition_is_const_true && !self.current_loop_is_terminated;
         self.current_loop_is_terminated = old_loop_is_terminated;
 
-        // if the condition is always `false`, return nothing
-        // if the condition is always `true`, return an `AnalyzedLoopStmt`.
         match (never_loops, condition_is_const_true) {
+            // if the condition is always `false`, return nothing
             (true, _) => None,
+            // else if the condition is always `true`, return an `AnalyzedLoopStmt`
             (false, true) => Some(AnalyzedStatement::Loop(AnalyzedLoopStmt {
                 block,
                 allocations,
                 never_terminates,
             })),
+            // else return an `AnalyzedWhileStmt`
             (false, false) => Some(AnalyzedStatement::While(AnalyzedWhileStmt {
                 cond,
                 block,
@@ -908,14 +907,13 @@ impl<'src> Analyzer<'src> {
     }
 
     fn for_stmt(&mut self, node: ForStmt<'src>) -> AnalyzedStatement<'src> {
-        // save old `loop_termination_count`
         let old_loop_is_terminated = self.current_loop_is_terminated;
         let mut never_terminates = false;
 
         // push the scope here so that the initializer is in the new scope
         self.push_scope();
 
-        // analyze the type of the init variable
+        // analyze the initializer
         let initializer = self.expression(node.initializer);
         self.scope_mut().insert(
             node.ident.inner,
@@ -937,7 +935,6 @@ impl<'src> Analyzer<'src> {
         // check that the condition is of type bool
         let cond_span = node.cond.span();
         let cond = self.expression(node.cond);
-
         if !matches!(cond.result_type(), Type::Bool | Type::Never | Type::Unknown) {
             self.error(
                 ErrorKind::Type,
@@ -951,27 +948,22 @@ impl<'src> Analyzer<'src> {
         } else {
             // check that the condition is non-constant
             if cond.constant() {
-                let cond_display = match cond {
+                let cond_val = match cond {
                     AnalyzedExpression::Bool(true) => {
                         never_terminates = true;
-                        "true"
+                        true
                     }
-                    AnalyzedExpression::Bool(false) => {
-                        self.warn(
-                            "loop never actually loops",
-                            vec![
-                                "since the condition is `false`, the loop will never iterate"
-                                    .into(),
-                            ],
-                            node.span,
-                        );
-                        "false"
-                    }
+                    AnalyzedExpression::Bool(false) => false,
                     _ => unreachable!("type is checked above and expr is constant"),
                 };
                 self.warn(
-                    format!("redundant for-statement: condition is always {cond_display}",),
-                    vec!["for unconditional loops, use a loop-statement".into()],
+                    format!("redundant for-statement: condition is always {cond_val}",),
+                    match cond_val {
+                        true => vec!["for unconditional loops, use a loop-statement".into()],
+                        false => vec![
+                            "since the condition is `false`, the loop will never iterate".into(),
+                        ],
+                    },
                     cond_span,
                 )
             }
@@ -980,7 +972,6 @@ impl<'src> Analyzer<'src> {
         // check that the update expr results in `()`, `!` or `{unknown}`
         let upd_span = node.update.span();
         let update = self.expression(node.update);
-
         if !matches!(
             update.result_type(),
             Type::Unit | Type::Never | Type::Unknown
@@ -1005,7 +996,7 @@ impl<'src> Analyzer<'src> {
 
         self.loop_count += 1;
         let block_result_span = node.block.result_span();
-        let block = self.block(node.block);
+        let block = self.block(node.block, false);
         self.pop_scope();
         self.loop_count -= 1;
 
@@ -1067,7 +1058,6 @@ impl<'src> Analyzer<'src> {
                 node.span,
             );
         }
-
         AnalyzedStatement::Continue
     }
 
@@ -1079,7 +1069,7 @@ impl<'src> Analyzer<'src> {
             Expression::Float(node) => AnalyzedExpression::Float(node.inner),
             Expression::Bool(node) => AnalyzedExpression::Bool(node.inner),
             Expression::Char(node) => {
-                if node.inner > 127 {
+                if node.inner > 0x7f {
                     self.error(
                         ErrorKind::Type,
                         "char literal out of range".to_string(),
@@ -1116,9 +1106,7 @@ impl<'src> Analyzer<'src> {
     }
 
     fn block_expr(&mut self, node: Block<'src>) -> AnalyzedExpression<'src> {
-        self.push_scope();
-        let block = self.block(node);
-        self.pop_scope();
+        let block = self.block(node, true);
 
         match Self::eval_block(&block) {
             Some(expr) => expr,
@@ -1169,19 +1157,15 @@ impl<'src> Analyzer<'src> {
         }
 
         // analyze then_block
-        self.push_scope();
         let then_result_span = node.then_block.result_span();
-        let then_block = self.block(node.then_block);
-        self.pop_scope();
+        let then_block = self.block(node.then_block, true);
 
         // analyze else_block if it exists
         let result_type;
         let else_block = match node.else_block {
             Some(else_block) => {
-                self.push_scope();
                 let else_result_span = else_block.result_span();
-                let else_block = self.block(else_block);
-                self.pop_scope();
+                let else_block = self.block(else_block, true);
 
                 // check type equality of the `then` and `else` branches
                 result_type = match (then_block.result_type, else_block.result_type) {
@@ -1189,8 +1173,8 @@ impl<'src> Analyzer<'src> {
                     (Type::Unknown, _) | (_, Type::Unknown) => Type::Unknown,
                     // never when both branches are never
                     (Type::Never, Type::Never) => Type::Never,
-                    // unit when both branches are either unit or never
-                    (Type::Unit | Type::Never, Type::Unit | Type::Never) => Type::Unit,
+                    // the type of the non-never branch when one branch is never
+                    (type_, Type::Never) | (Type::Never, type_) => type_,
                     // the then_type when both branches have the same type
                     (then_type, else_type) if then_type == else_type => then_type,
                     // unknown and error otherwise
@@ -1201,7 +1185,7 @@ impl<'src> Analyzer<'src> {
                                 "mismatched types: expected `{}`, found `{}`",
                                 then_block.result_type, else_block.result_type
                             ),
-                            vec!["the `if` and `else` branches result in the same type".into()],
+                            vec!["the `if` and `else` branches must result in the same type".into()],
                             else_result_span,
                         );
                         self.hint("expected due to this", then_result_span);
@@ -1256,7 +1240,7 @@ impl<'src> Analyzer<'src> {
     }
 
     /// Searches all scopes for the requested variable.
-    /// Starts at the current scope (last) and works its way down to the root scope (first).
+    /// Starts at the current scope (last) and works its way down to the global scope (first).
     fn ident_expr(&mut self, node: Spanned<'src, &'src str>) -> AnalyzedExpression<'src> {
         for scope in self.scopes.iter_mut().rev() {
             if let Some(var) = scope.get_mut(node.inner) {
@@ -1407,10 +1391,7 @@ impl<'src> Analyzer<'src> {
             (Type::Never, _) => rhs.result_type(),
             (_, Type::Never) => lhs.result_type(),
             (left, right) if left == right && allowed_types.contains(&left) => {
-                match override_result_type {
-                    Some(type_) => type_,
-                    None => left,
-                }
+                override_result_type.unwrap_or(left)
             }
             (left, right) if left != right => {
                 self.error(
@@ -1506,12 +1487,6 @@ impl<'src> Analyzer<'src> {
                 InfixOp::Plus => return AnalyzedExpression::Float(left + right),
                 InfixOp::Minus => return AnalyzedExpression::Float(left - right),
                 InfixOp::Mul => return AnalyzedExpression::Float(left * right),
-                InfixOp::Div if *right == 0.0 => self.error(
-                    ErrorKind::Semantic,
-                    format!("cannot calculate remainder of {left} with a divisor of 0"),
-                    vec!["division by 0 is undefined".into()],
-                    node.span,
-                ),
                 InfixOp::Div => return AnalyzedExpression::Float(left / right),
                 InfixOp::Eq => return AnalyzedExpression::Bool(left == right),
                 InfixOp::Neq => return AnalyzedExpression::Bool(left != right),
@@ -1659,14 +1634,13 @@ impl<'src> Analyzer<'src> {
     }
 
     fn call_expr(&mut self, node: CallExpr<'src>) -> AnalyzedExpression<'src> {
-        // saves the name of the current function (NOT the callee)
         let func = match (
             self.functions.get_mut(node.func.inner),
             self.builtin_functions.get(node.func.inner),
         ) {
             (Some(func), _) => {
                 // only mark the function as used if it is called from outside of its body
-                if self.curr_fn != node.func.inner {
+                if self.curr_func_name != node.func.inner {
                     func.used = true;
                 }
                 Some((

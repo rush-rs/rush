@@ -160,12 +160,12 @@ impl AnalyzedExpression<'_> {
 
     pub fn as_constant(&self) -> Option<Self> {
         match self {
-            expr @ (AnalyzedExpression::Int(_)
+            AnalyzedExpression::Int(_)
             | AnalyzedExpression::Float(_)
             | AnalyzedExpression::Bool(_)
-            | AnalyzedExpression::Char(_)) => {
+            | AnalyzedExpression::Char(_) => {
                 // this clone is cheap, as inner values of these variants all impl `Copy`
-                Some(expr.clone())
+                Some(self.clone())
             }
             _ => None,
         }
