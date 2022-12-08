@@ -9,8 +9,8 @@ use crate::{ast::*, Diagnostic, DiagnosticLevel, ErrorKind};
 
 #[derive(Default, Debug)]
 pub struct Analyzer<'src> {
-    pub functions: HashMap<&'src str, Function<'src>>,
-    pub diagnostics: Vec<Diagnostic<'src>>,
+    functions: HashMap<&'src str, Function<'src>>,
+    diagnostics: Vec<Diagnostic<'src>>,
     builtin_functions: HashMap<&'static str, BuiltinFunction>,
     scopes: Vec<HashMap<&'src str, Variable<'src>>>,
     curr_fn: &'src str,
@@ -27,7 +27,7 @@ pub struct Analyzer<'src> {
 }
 
 #[derive(Debug)]
-pub struct Function<'src> {
+struct Function<'src> {
     pub ident: Spanned<'src, &'src str>,
     pub params: Spanned<'src, Vec<Parameter<'src>>>,
     pub return_type: Spanned<'src, Option<Type>>,
@@ -50,7 +50,7 @@ impl BuiltinFunction {
 }
 
 #[derive(Debug)]
-pub struct Variable<'src> {
+struct Variable<'src> {
     pub type_: Type,
     pub span: Span<'src>,
     pub used: bool,
