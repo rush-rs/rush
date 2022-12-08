@@ -4,13 +4,12 @@ mod value;
 
 use std::{borrow::Cow, fmt::Debug};
 
-pub use interpreter::*;
+pub use interpreter::Interpreter;
 use rush_analyzer::Diagnostic;
-pub use value::*;
 
 /// Interprets rush source code by walking the analyzed tree.
 /// The `Ok(_)` variant returns the exit code and non-error diagnostics.
-/// The `Err(_)` variant returns a `Vec<Diagnostic>` which contains at least one error.
+/// The `Err(_)` variant returns a [`RunError`].
 pub fn run<'src>(
     text: &'src str,
     path: &'src str,

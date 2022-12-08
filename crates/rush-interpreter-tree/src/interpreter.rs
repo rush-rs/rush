@@ -2,7 +2,7 @@ use std::{borrow::Cow, collections::HashMap, rc::Rc};
 
 use rush_analyzer::{ast::*, AssignOp, InfixOp, PrefixOp, Type};
 
-use crate::{InterruptKind, Value};
+use crate::value::{InterruptKind, Value};
 
 type ExprResult = Result<Value, InterruptKind>;
 type StmtResult = Result<(), InterruptKind>;
@@ -70,8 +70,6 @@ impl<'src> Interpreter<'src> {
         unreachable!("the analyzer guarantees valid variable references")
     }
 
-    //////////////////////////////////
-
     fn scoped<T>(&mut self, scope: Scope<'src>, callback: impl FnOnce(&mut Self) -> T) -> T {
         self.scopes.push(scope);
         let res = callback(self);
@@ -96,6 +94,8 @@ impl<'src> Interpreter<'src> {
             Err(interrupt) => Ok(interrupt.into_value()?),
         })
     }
+
+    //////////////////////////////////
 
     fn visit_block(&mut self, node: &AnalyzedBlock<'src>, new_scope: bool) -> ExprResult {
         let callback = |self_: &mut Self| {

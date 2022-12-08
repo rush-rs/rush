@@ -22,7 +22,7 @@ impl InterruptKind {
     pub fn into_value(self) -> Result<Value, InterruptKind> {
         match self {
             Self::Return(val) => Ok(val),
-            err @ (Self::Error(_) | Self::Exit(_)) => Err(err),
+            kind @ (Self::Error(_) | Self::Exit(_)) => Err(kind),
             _ => Ok(Value::Unit),
         }
     }
@@ -81,7 +81,5 @@ macro_rules! unwrap_impl {
 
 impl Value {
     unwrap_impl!(Int, i64, unwrap_int);
-    unwrap_impl!(Float, f64, unwrap_float);
-    unwrap_impl!(Char, u8, unwrap_char);
     unwrap_impl!(Bool, bool, unwrap_bool);
 }

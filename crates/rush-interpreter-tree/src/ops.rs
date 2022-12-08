@@ -3,7 +3,7 @@ use std::{
     ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Not, Rem, Shl, Shr, Sub},
 };
 
-use crate::Value;
+use crate::value::Value;
 
 impl Not for Value {
     type Output = Self;
