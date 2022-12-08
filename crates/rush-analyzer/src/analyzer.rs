@@ -17,8 +17,8 @@ pub struct Analyzer<'src> {
     used_builtins: HashSet<&'src str>,
     /// Specifies the depth of loops.
     loop_count: usize,
-    /// Counts the amount of `break` statements used inside the current loop.
-    loop_termination_count: usize,
+    /// Specifies whether there is at least one `break` statement inside the current loop.
+    current_loop_is_terminated: bool,
     /// Saves any allocations which are made inside loops.
     /// Used to include allocations into the loop AST nodes (for the LLVM compiler).
     /// Only needed when examining loops.
@@ -740,7 +740,7 @@ impl<'src> Analyzer<'src> {
 
     fn loop_stmt(&mut self, node: LoopStmt<'src>) -> AnalyzedStatement<'src> {
         // save old `loop_termination_count`
-        let old_loop_termination_count = self.loop_termination_count;
+        let old_loop_is_terminated = self.current_loop_is_terminated;
 
         // begin tracking the allocations made by the loop
         // only track allocations if this is an outer loop (loop_count == 0)
@@ -778,8 +778,8 @@ impl<'src> Analyzer<'src> {
         };
 
         // restore loop termination count
-        let never_terminates = self.loop_termination_count == 0;
-        self.loop_termination_count = old_loop_termination_count;
+        let never_terminates = !self.current_loop_is_terminated;
+        self.current_loop_is_terminated = old_loop_is_terminated;
 
         AnalyzedStatement::Loop(AnalyzedLoopStmt {
             block,
@@ -793,7 +793,7 @@ impl<'src> Analyzer<'src> {
     /// Can also return an [`AnalyzedLoopStmt`] if the expression is constant on `true`.
     fn while_stmt(&mut self, node: WhileStmt<'src>) -> Option<AnalyzedStatement<'src>> {
         // save old `loop_termination_count`
-        let old_loop_termination_count = self.loop_termination_count;
+        let old_loop_is_terminated = self.current_loop_is_terminated;
         let mut condition_is_const_true = false;
         let mut never_loops = false;
 
@@ -886,8 +886,8 @@ impl<'src> Analyzer<'src> {
         };
 
         // restore loop termination count
-        let never_terminates = condition_is_const_true && self.loop_termination_count == 0;
-        self.loop_termination_count = old_loop_termination_count;
+        let never_terminates = condition_is_const_true && !self.current_loop_is_terminated;
+        self.current_loop_is_terminated = old_loop_is_terminated;
 
         // if the condition is always `false`, return nothing
         // if the condition is always `true`, return an `AnalyzedLoopStmt`.
@@ -909,7 +909,7 @@ impl<'src> Analyzer<'src> {
 
     fn for_stmt(&mut self, node: ForStmt<'src>) -> AnalyzedStatement<'src> {
         // save old `loop_termination_count`
-        let old_loop_termination_count = self.loop_termination_count;
+        let old_loop_is_terminated = self.current_loop_is_terminated;
         let mut never_terminates = false;
 
         // push the scope here so that the initializer is in the new scope
@@ -1031,8 +1031,8 @@ impl<'src> Analyzer<'src> {
         };
 
         // restore loop termination count
-        let never_terminates = never_terminates && self.loop_termination_count == 0;
-        self.loop_termination_count = old_loop_termination_count;
+        let never_terminates = never_terminates && !self.current_loop_is_terminated;
+        self.current_loop_is_terminated = old_loop_is_terminated;
 
         AnalyzedStatement::For(AnalyzedForStmt {
             ident: node.ident.inner,
@@ -1054,7 +1054,7 @@ impl<'src> Analyzer<'src> {
                 node.span,
             );
         }
-        self.loop_termination_count += 1;
+        self.current_loop_is_terminated = true;
         AnalyzedStatement::Break
     }
 
@@ -1109,7 +1109,7 @@ impl<'src> Analyzer<'src> {
 
         // if this is a `!` expression, count it like a loop termination
         if res.result_type() == Type::Never {
-            self.loop_termination_count += 1;
+            self.current_loop_is_terminated = true;
         }
 
         res
