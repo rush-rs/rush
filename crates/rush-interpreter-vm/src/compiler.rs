@@ -405,18 +405,12 @@ impl<'src> Compiler<'src> {
         self.curr_loop_mut().break_jmp_indices.push(curr_pos);
         self.insert(Instruction::JmpFalse(usize::MAX));
 
-        // compile the loop body
-        for stmt in &node.block.stmts {
-            self.statement(stmt);
-        }
-        match &node.block.expr {
-            Some(expr) => {
-                self.expression(expr);
-                if !matches!(expr.result_type(), Type::Unit | Type::Never) {
-                    self.insert(Instruction::Pop)
-                }
-            }
-            None => {}
+        self.block(&node.block);
+        if matches!(
+            node.block.expr.as_ref().map(|e| e.result_type()),
+            Some(Type::Int | Type::Float | Type::Char | Type::Bool),
+        ) {
+            self.insert(Instruction::Pop)
         }
 
         // all `continue` statements jump before the update expr

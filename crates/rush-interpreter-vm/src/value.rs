@@ -85,13 +85,10 @@ impl Value {
     }
 
     pub(crate) fn pow(&self, rhs: Value) -> Value {
-        match self {
-            Value::Int(0) => Value::Int(0),
-            Value::Int(value) => {
-                Value::Int(value.wrapping_pow(rhs.into_int().try_into().unwrap_or(u32::MAX)))
-            }
-            _ => unreachable!("other types do not support this operation"),
-        }
+        Value::Int(
+            self.into_int()
+                .wrapping_pow(rhs.into_int().try_into().unwrap_or(u32::MAX)),
+        )
     }
 
     pub(crate) fn div(&self, rhs: Value) -> Result<Value, RuntimeError> {

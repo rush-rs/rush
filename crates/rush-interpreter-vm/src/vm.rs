@@ -250,8 +250,8 @@ impl Vm {
                 self.push(lhs.mul(rhs))?;
             }
             Instruction::Pow => {
-                let lhs = self.pop();
                 let rhs = self.pop();
+                let lhs = self.pop();
                 self.push(lhs.pow(rhs))?;
             }
             Instruction::Div => {
