@@ -1,8 +1,11 @@
 use std::{fmt::Display, thread::sleep, time::Duration};
 
-use crate::{instruction::Instruction, value::Value};
+use crate::{
+    instruction::{Instruction, Program},
+    value::Value,
+};
 
-pub(crate) struct Vm {
+pub struct Vm {
     /// Stores the program's globals.
     globals: Vec<Value>,
     /// Working memory for temporary values
@@ -63,8 +66,14 @@ impl Display for RuntimeErrorKind {
     }
 }
 
+impl Default for Vm {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Vm {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             globals: vec![],
             stack: vec![],
@@ -108,16 +117,12 @@ impl Vm {
 
     /// Runs the specified program but includes debug prints after each instruction.
     /// Also accepts the `clock_hz` parameter which specifies the speed of the VM.
-    pub(crate) fn debug_run(
-        &mut self,
-        program: Vec<Vec<Instruction>>,
-        clock_hz: u64,
-    ) -> Result<i64> {
-        while self.call_frame().ip < program[self.call_frame().fp].len() {
-            let instruction = &program[self.call_frame().fp][self.call_frame().ip];
+    pub fn debug_run(&mut self, program: Program, clock_hz: u64) -> Result<i64> {
+        while self.call_frame().ip < program.0[self.call_frame().fp].len() {
+            let instruction = &program.0[self.call_frame().fp][self.call_frame().ip];
 
             println!(
-                "[{:02}/{:02}] {:12} | {:20} | {}",
+                "[{:02}/{:02}] {:12} | {:>20} | {}",
                 self.call_frame().fp,
                 self.call_frame().ip,
                 instruction.to_string(),
@@ -147,9 +152,9 @@ impl Vm {
         Ok(0)
     }
 
-    pub(crate) fn run(&mut self, program: Vec<Vec<Instruction>>) -> Result<i64> {
-        while self.call_frame().ip < program[self.call_frame().fp].len() {
-            let instruction = &program[self.call_frame().fp][self.call_frame().ip];
+    pub fn run(&mut self, program: Program) -> Result<i64> {
+        while self.call_frame().ip < program.0[self.call_frame().fp].len() {
+            let instruction = &program.0[self.call_frame().fp][self.call_frame().ip];
 
             // if the current instruction exists the VM, terminate execution
             if let Some(code) = self.instruction(instruction)? {
@@ -164,7 +169,7 @@ impl Vm {
         match inst {
             // indexing is safe here because only valid instructions are ran
             Instruction::Push(value) => self.push(*value)?,
-            Instruction::Pop => {
+            Instruction::Drop => {
                 self.pop();
             }
             Instruction::Jmp(idx) => {
@@ -190,14 +195,14 @@ impl Vm {
             Instruction::GetVar(idx) => {
                 self.push(self.call_frame().mem[*idx].expect("variables are always initialized"))?
             }
-            Instruction::SetGlob(idx) => {
+            Instruction::SetGlobal(idx) => {
                 let val = self.pop();
                 match self.globals.len() < *idx + 1 {
                     true => self.globals.push(val),
                     false => self.globals[*idx] = val,
                 }
             }
-            Instruction::GetGlob(idx) => self.push(self.globals[*idx])?,
+            Instruction::GetGlobal(idx) => self.push(self.globals[*idx])?,
             Instruction::Call(idx) => {
                 if self.call_stack.len() > CALL_STACK_LIMIT {
                     return Err(RuntimeError::new(

@@ -1,0 +1,10 @@
+let a = 1;
+fn main() {
+    a + 2;
+    exit(lel());
+}
+
+fn lel() -> int {
+    let a = 4;
+    2 + a
+}

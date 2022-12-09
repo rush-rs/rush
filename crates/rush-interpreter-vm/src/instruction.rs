@@ -1,24 +1,26 @@
-use std::fmt::Display;
+use std::fmt::{self, Display, Formatter};
 
 use rush_analyzer::{AssignOp, InfixOp, PrefixOp, Type as AnalyzerType};
 
-pub struct Program(pub Vec<Vec<Instruction>>);
+use crate::Value;
+
+pub struct Program(pub(crate) Vec<Vec<Instruction>>);
 
 impl Display for Program {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let out = self
             .0
             .iter()
             .enumerate()
-            .map(|(idx, f)| {
+            .map(|(idx, func)| {
                 let label = match idx {
                     0 => "prelude".to_string(),
                     1 => "main".to_string(),
-                    i => i.to_string(),
+                    idx => idx.to_string(),
                 };
                 format!(
                     "{label}: {}\n",
-                    f.iter()
+                    func.iter()
                         .enumerate()
                         .map(|(idx, i)| format!("\n [{idx:02}]    {i}"))
                         .collect::<String>()
@@ -64,14 +66,13 @@ impl Display for Type {
     }
 }
 
-use crate::Value;
-
 #[derive(Debug)]
 pub enum Instruction {
     /// Adds a new constant to stack.
     Push(Value),
-    Pop,
-    // Calls a function (specified by index).
+    /// Pops the top-most value off the stack and discards the value.
+    Drop,
+    /// Calls a function (specified by index).
     Call(usize),
     /// Returns from the current function call.
     Ret,
@@ -86,9 +87,9 @@ pub enum Instruction {
     /// Retrieves the variable with the specified index and places it on top of the stack.
     GetVar(usize),
     // Pops the top element off the stack and sets it as a global using the specified index.
-    SetGlob(usize),
+    SetGlobal(usize),
     /// Retrieves the global with the specified index and places it on top of the stack.
-    GetGlob(usize),
+    GetGlobal(usize),
     /// Cast the current item on the stack to the specified type.
     Cast(Type),
 
@@ -144,21 +145,23 @@ impl From<InfixOp> for Instruction {
     }
 }
 
-impl From<AssignOp> for Instruction {
-    fn from(src: AssignOp) -> Self {
+impl TryFrom<AssignOp> for Instruction {
+    type Error = ();
+
+    fn try_from(src: AssignOp) -> Result<Self, Self::Error> {
         match src {
-            AssignOp::Basic => unreachable!("never called using this operator"),
-            AssignOp::Plus => Self::Add,
-            AssignOp::Minus => Self::Sub,
-            AssignOp::Mul => Self::Mul,
-            AssignOp::Div => Self::Div,
-            AssignOp::Rem => Self::Rem,
-            AssignOp::Pow => Self::Pow,
-            AssignOp::Shl => Self::Shl,
-            AssignOp::Shr => Self::Shr,
-            AssignOp::BitOr => Self::BitOr,
-            AssignOp::BitAnd => Self::BitAnd,
-            AssignOp::BitXor => Self::BitXor,
+            AssignOp::Basic => Err(()),
+            AssignOp::Plus => Ok(Self::Add),
+            AssignOp::Minus => Ok(Self::Sub),
+            AssignOp::Mul => Ok(Self::Mul),
+            AssignOp::Div => Ok(Self::Div),
+            AssignOp::Rem => Ok(Self::Rem),
+            AssignOp::Pow => Ok(Self::Pow),
+            AssignOp::Shl => Ok(Self::Shl),
+            AssignOp::Shr => Ok(Self::Shr),
+            AssignOp::BitOr => Ok(Self::BitOr),
+            AssignOp::BitAnd => Ok(Self::BitAnd),
+            AssignOp::BitXor => Ok(Self::BitXor),
         }
     }
 }
@@ -176,13 +179,13 @@ impl Display for Instruction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Instruction::Push(val) => write!(f, "push {val}"),
-            Instruction::Pop => write!(f, "pop"),
+            Instruction::Drop => write!(f, "pop"),
             Instruction::Jmp(idx) => write!(f, "jmp {idx}"),
             Instruction::JmpFalse(idx) => write!(f, "jmpfalse {idx}"),
             Instruction::SetVar(idx) => write!(f, "setvar {idx}"),
             Instruction::GetVar(idx) => write!(f, "getvar {idx}"),
-            Instruction::SetGlob(idx) => write!(f, "setglob {idx}"),
-            Instruction::GetGlob(idx) => write!(f, "getglob {idx}"),
+            Instruction::SetGlobal(idx) => write!(f, "setglob {idx}"),
+            Instruction::GetGlobal(idx) => write!(f, "getglob {idx}"),
             Instruction::Call(idx) => write!(f, "call {idx}"),
             Instruction::Cast(to) => write!(f, "cast {to}"),
             Instruction::Ret => write!(f, "ret"),

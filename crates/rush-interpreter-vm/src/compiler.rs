@@ -1,49 +1,39 @@
 use std::{collections::HashMap, vec};
 
-use rush_analyzer::{ast::*, AssignOp, InfixOp, Type};
+use rush_analyzer::{ast::*, InfixOp, Type};
 
 use crate::{
     instruction::{Instruction, Program, Type as InstructionType},
     value::Value,
 };
 
-pub(crate) struct Compiler<'src> {
-    /// The first item is the main function: execution will start here
+#[derive(Default)]
+pub struct Compiler<'src> {
+    /// The first item is the prelude: execution will start here
     functions: Vec<Vec<Instruction>>,
-    /// points to the current function in the functions Vec.
-    fp: usize,
-    // Maps a function name to its position in the `functions` Vec
+    /// Maps a function name to its position in the `functions` Vec
     fn_names: HashMap<&'src str, usize>,
 
     /// Maps a name to a global index and the variable type.
-    globals: HashMap<&'src str, (usize, Type)>,
-    global_idx: usize,
+    globals: HashMap<&'src str, usize>,
 
     /// Contains the scopes of the current function. The last item is the current scope.
     scopes: Vec<Scope<'src>>,
 
-    curr_fn: Function,
+    /// Counter for let bindings in the current function.
+    local_let_count: usize,
 
     /// Contains information about the current loop(s)
     loops: Vec<Loop>,
 }
 
-#[derive(Default, Debug)]
-struct Scope<'src> {
-    /// Maps an ident to a variable
-    vars: HashMap<&'src str, Variable>,
-}
+/// Maps idents to variables
+type Scope<'src> = HashMap<&'src str, Variable>;
 
 #[derive(Debug, Clone, Copy)]
 enum Variable {
-    Local { stack_idx: usize, type_: Type },
-    Global,
-}
-
-#[derive(Default)]
-struct Function {
-    /// Counter for let bindings.
-    pub let_cnt: usize,
+    Local { idx: usize, type_: Type },
+    Global { idx: usize },
 }
 
 #[derive(Default)]
@@ -56,34 +46,30 @@ struct Loop {
     continue_jmp_indices: Vec<usize>,
 }
 
-impl Loop {
-    fn new() -> Self {
-        Self {
-            break_jmp_indices: vec![],
-            continue_jmp_indices: vec![],
-        }
-    }
-}
-
 impl<'src> Compiler<'src> {
     pub(crate) fn new() -> Self {
         Self {
-            // allocate the `prelude` and the `main` fn
-            functions: vec![vec![], vec![]],
-            fp: 0,
-            fn_names: HashMap::new(),
-            curr_fn: Function::default(),
-            scopes: vec![],
-            globals: HashMap::new(),
-            global_idx: 0,
-            loops: vec![],
+            // begin with empty `prelude`
+            functions: vec![vec![]],
+            ..Default::default()
         }
     }
 
     #[inline]
     /// Emits a new instruction and appends it to the `instructions` [`Vec`].
     fn insert(&mut self, instruction: Instruction) {
-        self.functions[self.fp].push(instruction)
+        self.functions
+            .last_mut()
+            .expect("there is always a function")
+            .push(instruction)
+    }
+
+    #[inline]
+    /// Returns a mutable reference to the current function
+    fn curr_fn_mut(&mut self) -> &mut Vec<Instruction> {
+        self.functions
+            .last_mut()
+            .expect("there is always a function")
     }
 
     #[inline]
@@ -111,11 +97,13 @@ impl<'src> Compiler<'src> {
     /// Returns the specified variable given its identifier
     fn resolve_var(&self, name: &'src str) -> Variable {
         for scope in self.scopes.iter().rev() {
-            if let Some(i) = scope.vars.get(name) {
+            if let Some(i) = scope.get(name) {
                 return *i;
             };
         }
-        Variable::Global
+        Variable::Global {
+            idx: self.globals[name],
+        }
     }
 
     /// Loads the value of the specified variable name on the stack
@@ -126,114 +114,98 @@ impl<'src> Compiler<'src> {
                 type_: Type::Unit | Type::Never,
                 ..
             } => {} // ignore unit / never values
-            Variable::Local { stack_idx, .. } => self.insert(Instruction::GetVar(stack_idx)),
-            Variable::Global => {
-                let var = self.globals.get(name).expect("every variable was declared");
-                match var {
-                    (_, Type::Unit | Type::Never) => {} // ignore unit / never values
-                    (idx, _) => self.insert(Instruction::GetGlob(*idx)),
-                }
-            }
+            Variable::Local { idx, .. } => self.insert(Instruction::GetVar(idx)),
+            Variable::Global { idx } => self.insert(Instruction::GetGlobal(idx)),
         }
     }
 
-    pub(crate) fn compile(mut self, ast: &'src AnalyzedProgram) -> Program {
-        // add function signatures for later use
+    pub(crate) fn compile(mut self, ast: AnalyzedProgram<'src>) -> Program {
+        // map function names to indices
         for (idx, func) in ast.functions.iter().filter(|f| f.used).enumerate() {
             self.fn_names.insert(func.name, idx + 2);
         }
 
         // add global variables
-        for var in ast.globals.iter().filter(|g| g.used) {
+        for var in ast.globals.into_iter().filter(|g| g.used) {
             self.declare_global(var);
         }
 
         // call the main fn
         self.insert(Instruction::Call(1));
 
-        self.fp += 1;
-        self.main_fn(&ast.main_fn);
+        // compile the main function
+        self.main_fn(ast.main_fn);
 
-        for func in ast.functions.iter().filter(|f| f.used) {
+        // compile all other functions
+        for func in ast.functions.into_iter().filter(|f| f.used) {
             self.functions.push(vec![]);
-            self.fp += 1;
             self.fn_declaration(func);
         }
 
         Program(self.functions)
     }
 
-    fn declare_global(&mut self, node: &'src AnalyzedLetStmt<'src>) {
+    fn declare_global(&mut self, node: AnalyzedLetStmt<'src>) {
         // map the name to the new global index
-        self.globals
-            .insert(node.name, (self.global_idx, node.expr.result_type()));
+        let idx = self.globals.len();
+        self.globals.insert(node.name, idx);
         // push global value onto the stack
-        self.expression(&node.expr);
+        self.expression(node.expr);
         // pop and set the value as global
-        self.insert(Instruction::SetGlob(self.global_idx));
-        // increment global index
-        self.global_idx += 1;
+        self.insert(Instruction::SetGlobal(idx));
     }
 
-    fn fn_declaration(&mut self, node: &'src AnalyzedFunctionDefinition) {
-        self.curr_fn = Function::default();
+    fn fn_declaration(&mut self, node: AnalyzedFunctionDefinition<'src>) {
+        self.local_let_count = 0;
         self.scopes.push(Scope::default());
 
         for param in node.params.iter().rev() {
-            let stack_idx = self.curr_fn.let_cnt;
-            self.scope_mut().vars.insert(
+            let idx = self.local_let_count;
+            self.scope_mut().insert(
                 param.name,
                 Variable::Local {
-                    stack_idx,
+                    idx,
                     type_: param.type_,
                 },
             );
 
             if !matches!(param.type_, Type::Unit | Type::Never) {
-                self.insert(Instruction::SetVar(self.curr_fn.let_cnt));
-                self.curr_fn.let_cnt += 1;
+                self.insert(Instruction::SetVar(self.local_let_count));
+                self.local_let_count += 1;
             }
         }
 
-        self.fn_block(&node.block);
+        self.block(node.block, false);
         self.scopes.pop();
         self.insert(Instruction::Ret);
     }
 
-    fn main_fn(&mut self, node: &'src AnalyzedBlock) {
-        self.curr_fn = Function::default();
-        // allows main function recursion
-        self.fn_names.insert("main", self.fp);
-        self.block(node);
-    }
-
-    /// Similar to `self.block` but does not push a new [`Scope`].
-    fn fn_block(&mut self, node: &'src AnalyzedBlock) {
-        for stmt in &node.stmts {
-            self.statement(stmt);
-        }
-        match &node.expr {
-            Some(expr) => self.expression(expr),
-            None => {}
-        }
+    fn main_fn(&mut self, node: AnalyzedBlock<'src>) {
+        self.functions.push(vec![]);
+        self.local_let_count = 0;
+        self.fn_names.insert("main", 1);
+        self.block(node, true);
     }
 
     /// Compiles a block of statements.
     /// Results in the optional expr (unit if there is none).
-    /// Automatically pushes a new [`Scope`] for the block.
-    fn block(&mut self, node: &'src AnalyzedBlock) {
-        self.scopes.push(Scope::default());
-        for stmt in &node.stmts {
+    /// Automatically pushes a new [`Scope`] for the block when `new_scope` is `true`.
+    fn block(&mut self, node: AnalyzedBlock<'src>, new_scope: bool) {
+        if new_scope {
+            self.scopes.push(Scope::default());
+        }
+        for stmt in node.stmts {
             self.statement(stmt);
         }
-        match &node.expr {
-            Some(expr) => self.expression(expr),
-            None => {}
+        if let Some(expr) = node.expr {
+            self.expression(expr);
         }
-        self.scopes.pop();
+        if new_scope {
+            self.scopes.pop();
+        }
     }
 
-    fn statement(&mut self, node: &'src AnalyzedStatement) {
+    fn statement(&mut self, node: AnalyzedStatement<'src>) {
         match node {
             AnalyzedStatement::Let(node) => self.let_stmt(node),
             AnalyzedStatement::Return(expr) => {
@@ -247,51 +219,53 @@ impl<'src> Compiler<'src> {
             AnalyzedStatement::For(node) => self.for_stmt(node),
             AnalyzedStatement::Break => {
                 // the jmp instruction is corrected later
-                let end = self.functions[self.fp].len();
+                let end = self.curr_fn_mut().len();
                 self.curr_loop_mut().break_jmp_indices.push(end);
                 self.insert(Instruction::Jmp(usize::MAX));
             }
             AnalyzedStatement::Continue => {
                 // the jmp instruction is corrected later
-                let end = self.functions[self.fp].len();
+                let end = self.curr_fn_mut().len();
                 self.curr_loop_mut().continue_jmp_indices.push(end);
                 self.insert(Instruction::Jmp(usize::MAX));
             }
-
             AnalyzedStatement::Expr(node) => {
+                let expr_type = node.result_type();
                 self.expression(node);
-                if !matches!(node.result_type(), Type::Unit | Type::Never) {
-                    self.insert(Instruction::Pop)
+                if !matches!(expr_type, Type::Unit | Type::Never) {
+                    self.insert(Instruction::Drop)
                 }
             }
         }
     }
 
-    fn let_stmt(&mut self, node: &'src AnalyzedLetStmt) {
-        self.expression(&node.expr);
+    fn let_stmt(&mut self, node: AnalyzedLetStmt<'src>) {
+        let expr_type = node.expr.result_type();
+        self.expression(node.expr);
 
-        match node.expr.result_type() {
+        match expr_type {
             Type::Unit | Type::Never => {
-                self.scope_mut().vars.insert(
+                self.scope_mut().insert(
                     node.name,
+                    // TODO: Variable::Unit or use options
                     Variable::Local {
-                        stack_idx: 0,
+                        idx: 0,
                         type_: Type::Unit,
                     },
                 );
             }
             _ => {
-                let stack_idx = self.curr_fn.let_cnt;
-                self.insert(Instruction::SetVar(stack_idx));
+                let idx = self.local_let_count;
+                self.insert(Instruction::SetVar(idx));
 
-                self.scope_mut().vars.insert(
+                self.scope_mut().insert(
                     node.name,
                     Variable::Local {
-                        stack_idx,
-                        type_: node.expr.result_type(),
+                        idx,
+                        type_: expr_type,
                     },
                 );
-                self.curr_fn.let_cnt += 1;
+                self.local_let_count += 1;
             }
         }
     }
@@ -299,7 +273,7 @@ impl<'src> Compiler<'src> {
     /// Fills in any blank-value `break` statement instructions.
     fn fill_blank_jmps(&mut self, break_offset: usize) {
         for idx in &self.curr_loop().break_jmp_indices.clone() {
-            match &mut self.functions[self.fp][*idx] {
+            match &mut self.curr_fn_mut()[*idx] {
                 Instruction::Jmp(o) => *o = break_offset,
                 Instruction::JmpFalse(o) => *o = break_offset,
                 _ => unreachable!("other instructions do not jump"),
@@ -310,63 +284,71 @@ impl<'src> Compiler<'src> {
     /// Fills in any blank-value `continue` statement instructions.
     fn fill_blank_continues(&mut self, continue_offset: usize) {
         for idx in &self.curr_loop().continue_jmp_indices.clone() {
-            match &mut self.functions[self.fp][*idx] {
+            match &mut self.curr_fn_mut()[*idx] {
                 Instruction::Jmp(o) => *o = continue_offset,
                 _ => unreachable!("other instructions do not jump"),
             }
         }
     }
 
-    fn loop_stmt(&mut self, node: &'src AnalyzedLoopStmt) {
+    fn loop_stmt(&mut self, node: AnalyzedLoopStmt<'src>) {
         // save location of the loop head (for continue stmts)
-        let loop_head_pos = self.functions[self.fp].len();
-        self.loops.push(Loop::new());
+        let loop_head_pos = self.curr_fn_mut().len();
+        self.loops.push(Loop::default());
 
         // compile the loop body
-        self.block(&node.block);
-        if node.block.expr.as_ref().map_or(false, |e| {
-            !matches!(e.result_type(), Type::Unit | Type::Never)
-        }) {
-            self.insert(Instruction::Pop);
+        let block_expr_type = node
+            .block
+            .expr
+            .as_ref()
+            .map_or(Type::Unit, |expr| expr.result_type());
+        self.block(node.block, true);
+        if !matches!(block_expr_type, Type::Unit | Type::Never) {
+            self.insert(Instruction::Drop);
         }
 
         // jump back to the top
         self.insert(Instruction::Jmp(loop_head_pos));
 
         // correct placeholder break values
-        self.fill_blank_jmps(self.functions[self.fp].len());
+        let pos = self.curr_fn_mut().len();
+        self.fill_blank_jmps(pos);
         // correct placeholder continue values
         self.fill_blank_continues(loop_head_pos);
 
         self.loops.pop();
     }
 
-    fn while_stmt(&mut self, node: &'src AnalyzedWhileStmt) {
+    fn while_stmt(&mut self, node: AnalyzedWhileStmt<'src>) {
         // save location of the loop head (for continue stmts)
-        let loop_head_pos = self.functions[self.fp].len();
-        self.loops.push(Loop::new());
+        let loop_head_pos = self.curr_fn_mut().len();
+        self.loops.push(Loop::default());
 
         // compile the while condition
-        self.expression(&node.cond);
+        self.expression(node.cond);
 
         // jump to the end if the condition is false
-        let end = self.functions[self.fp].len();
+        let end = self.curr_fn_mut().len();
         self.curr_loop_mut().break_jmp_indices.push(end);
         self.insert(Instruction::JmpFalse(usize::MAX));
 
         // compile the loop body
-        self.block(&node.block);
-        if node.block.expr.as_ref().map_or(false, |e| {
-            !matches!(e.result_type(), Type::Unit | Type::Never)
-        }) {
-            self.insert(Instruction::Pop);
+        let block_expr_type = node
+            .block
+            .expr
+            .as_ref()
+            .map_or(Type::Unit, |expr| expr.result_type());
+        self.block(node.block, true);
+        if !matches!(block_expr_type, Type::Unit | Type::Never) {
+            self.insert(Instruction::Drop);
         }
 
         // jump back to the top
         self.insert(Instruction::Jmp(loop_head_pos));
 
         // correct placeholder break values
-        self.fill_blank_jmps(self.functions[self.fp].len());
+        let pos = self.curr_fn_mut().len();
+        self.fill_blank_jmps(pos);
 
         // correct placeholder continue values
         self.fill_blank_continues(loop_head_pos);
@@ -377,153 +359,157 @@ impl<'src> Compiler<'src> {
         self.loops.pop();
     }
 
-    fn for_stmt(&mut self, node: &'src AnalyzedForStmt) {
+    fn for_stmt(&mut self, node: AnalyzedForStmt<'src>) {
         // compile the init expression
-        self.expression(&node.initializer);
-        let stack_idx = self.curr_fn.let_cnt;
-        self.insert(Instruction::SetVar(stack_idx));
-        self.scope_mut().vars.insert(
+        let initializer_type = node.initializer.result_type();
+        self.expression(node.initializer);
+        let idx = self.local_let_count;
+        self.insert(Instruction::SetVar(idx));
+        self.scope_mut().insert(
             node.ident,
             Variable::Local {
-                stack_idx,
-                type_: node.initializer.result_type(),
+                idx,
+                type_: initializer_type,
             },
         );
-        self.curr_fn.let_cnt += 1;
+        self.local_let_count += 1;
 
         // save location of the loop head (for repetition)
-        let loop_head_pos = self.functions[self.fp].len();
+        let loop_head_pos = self.curr_fn_mut().len();
 
         // `loop_head` is set to placeholder value and updated later
-        self.loops.push(Loop::new());
+        self.loops.push(Loop::default());
 
         // compile the condition expr
-        self.expression(&node.cond);
+        self.expression(node.cond);
 
         // jump to the end if the condition is false
-        let curr_pos = self.functions[self.fp].len();
+        let curr_pos = self.curr_fn_mut().len();
         self.curr_loop_mut().break_jmp_indices.push(curr_pos);
         self.insert(Instruction::JmpFalse(usize::MAX));
 
-        self.block(&node.block);
-        if matches!(
-            node.block.expr.as_ref().map(|e| e.result_type()),
-            Some(Type::Int | Type::Float | Type::Char | Type::Bool),
-        ) {
-            self.insert(Instruction::Pop)
+        let block_expr_type = node
+            .block
+            .expr
+            .as_ref()
+            .map_or(Type::Unit, |expr| expr.result_type());
+        self.block(node.block, true);
+        if !matches!(block_expr_type, Type::Unit | Type::Never) {
+            self.insert(Instruction::Drop);
         }
 
         // all `continue` statements jump before the update expr
-        let curr_pos = self.functions[self.fp].len();
+        let curr_pos = self.curr_fn_mut().len();
         self.fill_blank_continues(curr_pos);
 
         // compile the update expression
-        self.expression(&node.update);
-        if node.block.expr.as_ref().map_or(false, |e| {
-            !matches!(e.result_type(), Type::Unit | Type::Never)
-        }) {
-            self.insert(Instruction::Pop);
+        let update_type = node.update.result_type();
+        self.expression(node.update);
+        if !matches!(update_type, Type::Unit | Type::Never) {
+            self.insert(Instruction::Drop);
         }
 
         // jump back to the top
         self.insert(Instruction::Jmp(loop_head_pos));
 
         // correct placeholder break values
-        self.fill_blank_jmps(self.functions[self.fp].len());
+        let pos = self.curr_fn_mut().len();
+        self.fill_blank_jmps(pos);
 
         self.loops.pop();
     }
 
-    fn expression(&mut self, node: &'src AnalyzedExpression) {
+    fn expression(&mut self, node: AnalyzedExpression<'src>) {
         match node {
-            AnalyzedExpression::Int(value) => self.insert(Instruction::Push(Value::Int(*value))),
-            AnalyzedExpression::Float(value) => {
-                self.insert(Instruction::Push(Value::Float(*value)))
-            }
-            AnalyzedExpression::Bool(value) => self.insert(Instruction::Push(Value::Bool(*value))),
-            AnalyzedExpression::Char(value) => self.insert(Instruction::Push(Value::Char(*value))),
+            AnalyzedExpression::Int(value) => self.insert(Instruction::Push(Value::Int(value))),
+            AnalyzedExpression::Float(value) => self.insert(Instruction::Push(Value::Float(value))),
+            AnalyzedExpression::Bool(value) => self.insert(Instruction::Push(Value::Bool(value))),
+            AnalyzedExpression::Char(value) => self.insert(Instruction::Push(Value::Char(value))),
             AnalyzedExpression::Ident(node) => self.load_var(node.ident),
-            AnalyzedExpression::Block(node) => self.block(node),
-            AnalyzedExpression::If(node) => self.if_expr(node),
-            AnalyzedExpression::Prefix(node) => self.prefix_expr(node),
-            AnalyzedExpression::Infix(node) => self.infix_expr(node),
-            AnalyzedExpression::Assign(node) => self.assign_expr(node),
-            AnalyzedExpression::Call(node) => self.call_expr(node),
-            AnalyzedExpression::Cast(node) => self.cast_expr(node),
-            AnalyzedExpression::Grouped(node) => self.expression(node),
+            AnalyzedExpression::Block(node) => self.block(*node, true),
+            AnalyzedExpression::If(node) => self.if_expr(*node),
+            AnalyzedExpression::Prefix(node) => self.prefix_expr(*node),
+            AnalyzedExpression::Infix(node) => self.infix_expr(*node),
+            AnalyzedExpression::Assign(node) => self.assign_expr(*node),
+            AnalyzedExpression::Call(node) => self.call_expr(*node),
+            AnalyzedExpression::Cast(node) => self.cast_expr(*node),
+            AnalyzedExpression::Grouped(node) => self.expression(*node),
         }
     }
 
-    fn if_expr(&mut self, node: &'src AnalyzedIfExpr) {
+    fn if_expr(&mut self, node: AnalyzedIfExpr<'src>) {
         // compile the condition
-        self.expression(&node.cond);
-        let after_condition = self.functions[self.fp].len();
+        self.expression(node.cond);
+        let after_condition = self.curr_fn_mut().len();
         self.insert(Instruction::Jmp(usize::MAX)); // placeholder
 
         // compile the `then` branch
-        self.block(&node.then_block);
-        let after_then_idx = self.functions[self.fp].len();
+        self.block(node.then_block, true);
+        let after_then_idx = self.curr_fn_mut().len();
 
-        if let Some(else_block) = &node.else_block {
+        if let Some(else_block) = node.else_block {
             self.insert(Instruction::Jmp(usize::MAX)); // placeholder
                                                        // if there is `else`, jump to the instruction after the jump after `then`
-            self.functions[self.fp][after_condition] = Instruction::JmpFalse(after_then_idx + 1);
+            self.curr_fn_mut()[after_condition] = Instruction::JmpFalse(after_then_idx + 1);
 
-            self.block(else_block);
-            let after_else = self.functions[self.fp].len();
+            self.block(else_block, true);
+            let after_else = self.curr_fn_mut().len();
 
             // skip the `else` block when coming from the `then` block
-            self.functions[self.fp][after_then_idx] = Instruction::Jmp(after_else);
+            self.curr_fn_mut()[after_then_idx] = Instruction::Jmp(after_else);
         } else {
             // if there is no `else` branch, jump after the last instruction of the `then` branch
-            self.functions[self.fp][after_condition] = Instruction::JmpFalse(after_then_idx);
+            self.curr_fn_mut()[after_condition] = Instruction::JmpFalse(after_then_idx);
         }
     }
 
-    fn prefix_expr(&mut self, node: &'src AnalyzedPrefixExpr) {
-        self.expression(&node.expr);
+    fn prefix_expr(&mut self, node: AnalyzedPrefixExpr<'src>) {
+        self.expression(node.expr);
         self.insert(Instruction::from(node.op));
     }
 
-    fn infix_expr(&mut self, node: &'src AnalyzedInfixExpr) {
+    fn infix_expr(&mut self, node: AnalyzedInfixExpr<'src>) {
         match node.op {
             InfixOp::Or => {
-                self.expression(&node.lhs);
+                self.expression(node.lhs);
                 self.insert(Instruction::Not);
-                let merge_jmp_idx = self.functions[self.fp].len();
+                let merge_jmp_idx = self.curr_fn_mut().len();
                 self.insert(Instruction::JmpFalse(usize::MAX));
-                self.expression(&node.rhs);
-                self.insert(Instruction::Jmp(self.functions[self.fp].len() + 2));
+                self.expression(node.rhs);
+                let pos = self.curr_fn_mut().len() + 2;
+                self.insert(Instruction::Jmp(pos));
                 self.insert(Instruction::Push(Value::Bool(true)));
-                self.functions[self.fp][merge_jmp_idx] =
-                    Instruction::JmpFalse(self.functions[self.fp].len() - 1);
+                self.curr_fn_mut()[merge_jmp_idx] =
+                    Instruction::JmpFalse(self.curr_fn_mut().len() - 1);
             }
             InfixOp::And => {
-                self.expression(&node.lhs);
-                let merge_jmp_idx = self.functions[self.fp].len();
+                self.expression(node.lhs);
+                let merge_jmp_idx = self.curr_fn_mut().len();
                 self.insert(Instruction::JmpFalse(usize::MAX));
-                self.expression(&node.rhs);
-                self.insert(Instruction::Jmp(self.functions[self.fp].len() + 2));
+                self.expression(node.rhs);
+                let pos = self.curr_fn_mut().len() + 2;
+                self.insert(Instruction::Jmp(pos));
                 self.insert(Instruction::Push(Value::Bool(false)));
-                self.functions[self.fp][merge_jmp_idx] =
-                    Instruction::JmpFalse(self.functions[self.fp].len() - 1);
+                self.curr_fn_mut()[merge_jmp_idx] =
+                    Instruction::JmpFalse(self.curr_fn_mut().len() - 1);
             }
             op => {
-                self.expression(&node.lhs);
-                self.expression(&node.rhs);
+                self.expression(node.lhs);
+                self.expression(node.rhs);
                 self.insert(Instruction::from(op));
             }
         }
     }
 
-    fn assign_expr(&mut self, node: &'src AnalyzedAssignExpr) {
-        if node.op != AssignOp::Basic {
-            // load the assignee value
-            self.load_var(node.assignee);
-            self.expression(&node.expr);
-            self.insert(Instruction::from(node.op))
-        } else {
-            self.expression(&node.expr);
+    fn assign_expr(&mut self, node: AnalyzedAssignExpr<'src>) {
+        match node.op.try_into() {
+            Ok(instruction) => {
+                // load the assignee value
+                self.load_var(node.assignee);
+                self.expression(node.expr);
+                self.insert(instruction);
+            }
+            Err(()) => self.expression(node.expr),
         }
 
         let assignee = self.resolve_var(node.assignee);
@@ -532,25 +518,15 @@ impl<'src> Compiler<'src> {
                 type_: Type::Unit | Type::Never,
                 ..
             } => {}
-            Variable::Local { stack_idx, .. } => self.insert(Instruction::SetVar(stack_idx)),
-            Variable::Global => {
-                let var = self
-                    .globals
-                    .get(node.assignee)
-                    .expect("every variable was declared");
-
-                match var {
-                    (_, Type::Unit | Type::Never) => {}
-                    (idx, _) => self.insert(Instruction::SetGlob(*idx)),
-                };
-            }
+            Variable::Local { idx, .. } => self.insert(Instruction::SetVar(idx)),
+            Variable::Global { idx } => self.insert(Instruction::SetGlobal(idx)),
         };
     }
 
-    fn call_expr(&mut self, node: &'src AnalyzedCallExpr) {
+    fn call_expr(&mut self, node: AnalyzedCallExpr<'src>) {
         for arg in node
             .args
-            .iter()
+            .into_iter()
             .filter(|a| !matches!(a.result_type(), Type::Unit | Type::Never))
         {
             self.expression(arg);
@@ -565,9 +541,10 @@ impl<'src> Compiler<'src> {
         }
     }
 
-    fn cast_expr(&mut self, node: &'src AnalyzedCastExpr) {
-        self.expression(&node.expr);
-        match (node.expr.result_type(), node.type_) {
+    fn cast_expr(&mut self, node: AnalyzedCastExpr<'src>) {
+        let expr_type = node.expr.result_type();
+        self.expression(node.expr);
+        match (expr_type, node.type_) {
             (from, to) if from == to => {}
             (_, to) => self.insert(Instruction::Cast(InstructionType::from(to))),
         }

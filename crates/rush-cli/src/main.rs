@@ -28,7 +28,7 @@ fn main() {
                 Backend::Wasm => wasm::compile(ast, args),
                 Backend::RiscV => riscv::compile(ast, args),
                 Backend::X86_64 => x86::compile(ast, args),
-                Backend::Vm => println!("{}", rush_interpreter_vm::compile(&ast)),
+                Backend::Vm => println!("{}", rush_interpreter_vm::compile(ast)),
                 Backend::TreeWalking => {
                     eprintln!("cannot compile using an interpreted backend");
                     process::exit(1)
@@ -63,7 +63,7 @@ fn main() {
                         process::exit(1)
                     }
                 },
-                Backend::Vm => match rush_interpreter_vm::run(&ast) {
+                Backend::Vm => match rush_interpreter_vm::run(ast) {
                     Ok(code) => {
                         println!("vm exited with code {code}");
                         process::exit(code as i32)
