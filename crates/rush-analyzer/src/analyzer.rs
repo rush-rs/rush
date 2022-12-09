@@ -907,7 +907,6 @@ impl<'src> Analyzer<'src> {
     }
 
     fn for_stmt(&mut self, node: ForStmt<'src>) -> AnalyzedStatement<'src> {
-        let old_loop_is_terminated = self.current_loop_is_terminated;
         let mut never_terminates = false;
 
         // push the scope here so that the initializer is in the new scope
@@ -935,6 +934,7 @@ impl<'src> Analyzer<'src> {
         // check that the condition is of type bool
         let cond_span = node.cond.span();
         let cond = self.expression(node.cond);
+
         if !matches!(cond.result_type(), Type::Bool | Type::Never | Type::Unknown) {
             self.error(
                 ErrorKind::Type,
@@ -994,11 +994,18 @@ impl<'src> Analyzer<'src> {
             self.allocations = Some(vec![]);
         }
 
+        // save the old status of loop termination
+        let old_loop_is_terminated = self.current_loop_is_terminated;
+
         self.loop_count += 1;
         let block_result_span = node.block.result_span();
         let block = self.block(node.block, false);
         self.pop_scope();
         self.loop_count -= 1;
+
+        // restore loop termination count
+        let never_terminates = never_terminates && !self.current_loop_is_terminated;
+        self.current_loop_is_terminated = old_loop_is_terminated;
 
         if !matches!(block.result_type, Type::Unit | Type::Never | Type::Unknown) {
             self.error(
@@ -1020,10 +1027,6 @@ impl<'src> Analyzer<'src> {
         } else {
             vec![]
         };
-
-        // restore loop termination count
-        let never_terminates = never_terminates && !self.current_loop_is_terminated;
-        self.current_loop_is_terminated = old_loop_is_terminated;
 
         AnalyzedStatement::For(AnalyzedForStmt {
             ident: node.ident.inner,
