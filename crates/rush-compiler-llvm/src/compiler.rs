@@ -1,4 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Debug,
+};
 
 use crate::{error::Result, Error};
 use inkwell::{
@@ -159,6 +162,8 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
 
         // compile the main function
         self.compile_main_fn(&program.main_fn);
+
+        self.module.print_to_stderr();
 
         // verify the LLVM module when using debug
         self.module.verify().unwrap();
@@ -368,23 +373,40 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
     /// Compiles a block and returns its result value.
     /// Also automatically pushes a new scope for the block if the `scoping` parater is `true`.
     fn compile_block(&mut self, node: &'src AnalyzedBlock, scoping: bool) -> BasicValueEnum<'ctx> {
+        let block = self
+            .context
+            .append_basic_block(self.curr_fn().llvm_value, "block");
+
+        if !self.current_instruction_is_block_terminator() {
+            self.builder.build_unconditional_branch(block);
+        }
+
+        self.builder.position_at_end(block);
+
         if scoping {
             self.scopes.push(HashMap::new());
         }
 
         for stmt in &node.stmts {
             self.compile_statement(stmt);
-            // when encountering `break`, `continue`, or `return` statements
+            // stop when encountering `break`, `continue`, or `return` statements
             if stmt.result_type() == Type::Never {
-                break;
+                if !self.current_instruction_is_block_terminator() {
+                    // required if terminated through `exit`
+                    self.builder.build_unreachable();
+                }
+                return self.unit_value();
             }
         }
 
         // if there is an expression, return its value instead of `()`
-        let res = node
-            .expr
-            .as_ref()
-            .map_or(self.unit_value(), |expr| self.compile_expression(expr));
+        let res = node.expr.as_ref().map_or(self.unit_value(), |expr| {
+            let res = self.compile_expression(expr);
+            if expr.result_type() == Type::Never {
+                self.builder.build_unreachable();
+            }
+            res
+        });
 
         if scoping {
             self.scopes.pop();
@@ -821,7 +843,7 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         // handle any builtin functions
         let func = match node.func {
             "exit" => self.get_exit(),
-            "main" => self
+            "main" => self // TODO: do different actions depending on whether `_start` is used
                 .module
                 .get_function("_start")
                 .expect("main function exists"),
