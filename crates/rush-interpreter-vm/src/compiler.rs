@@ -1,4 +1,4 @@
-use std::{collections::HashMap, vec};
+use std::{collections::HashMap, mem, vec};
 
 use rush_analyzer::{ast::*, InfixOp, Type};
 
@@ -271,7 +271,7 @@ impl<'src> Compiler<'src> {
     }
 
     /// Fills in any blank-value `break` statement instructions.
-    fn fill_blank_jmps(&mut self, break_offset: usize) {
+    fn fill_blank_breaks(&mut self, break_offset: usize) {
         for idx in &self.curr_loop().break_jmp_indices.clone() {
             match &mut self.curr_fn_mut()[*idx] {
                 Instruction::Jmp(o) => *o = break_offset,
@@ -312,7 +312,7 @@ impl<'src> Compiler<'src> {
 
         // correct placeholder break values
         let pos = self.curr_fn_mut().len();
-        self.fill_blank_jmps(pos);
+        self.fill_blank_breaks(pos);
         // correct placeholder continue values
         self.fill_blank_continues(loop_head_pos);
 
@@ -348,7 +348,7 @@ impl<'src> Compiler<'src> {
 
         // correct placeholder break values
         let pos = self.curr_fn_mut().len();
-        self.fill_blank_jmps(pos);
+        self.fill_blank_breaks(pos);
 
         // correct placeholder continue values
         self.fill_blank_continues(loop_head_pos);
@@ -377,13 +377,12 @@ impl<'src> Compiler<'src> {
         // save location of the loop head (for repetition)
         let loop_head_pos = self.curr_fn_mut().len();
 
-        // `loop_head` is set to placeholder value and updated later
-        self.loops.push(Loop::default());
-
         // compile the condition expr
         self.expression(node.cond);
 
-        // jump to the end if the condition is false
+        self.loops.push(Loop::default());
+
+        // jump to the end of the loop if the condition is false
         let curr_pos = self.curr_fn_mut().len();
         self.curr_loop_mut().break_jmp_indices.push(curr_pos);
         self.insert(Instruction::JmpFalse(usize::MAX));
@@ -400,7 +399,13 @@ impl<'src> Compiler<'src> {
 
         // all `continue` statements jump before the update expr
         let curr_pos = self.curr_fn_mut().len();
+
+        // save the current state of the `break_jmp_indices`
+        let break_jmp_indices_bef = mem::take(&mut self.curr_loop_mut().break_jmp_indices);
+
+        // update jump target of the `continue` stmts & empty placeholder list
         self.fill_blank_continues(curr_pos);
+        self.curr_loop_mut().continue_jmp_indices = vec![];
 
         // compile the update expression
         let update_type = node.update.result_type();
@@ -409,12 +414,27 @@ impl<'src> Compiler<'src> {
             self.insert(Instruction::Drop);
         }
 
+        if self.loops.len() > 2 {
+            // if the update expression contains `continue` / `break` stmts, they should refer to the outer loop
+            let len = self.loops.len();
+            let mut curr_continue_indices =
+                mem::take(&mut self.curr_loop_mut().continue_jmp_indices);
+            let mut curr_break_indices = mem::take(&mut self.curr_loop_mut().break_jmp_indices);
+            self.loops[len - 2]
+                .continue_jmp_indices
+                .append(&mut curr_continue_indices);
+            self.loops[len - 2]
+                .break_jmp_indices
+                .append(&mut curr_break_indices);
+        }
+
         // jump back to the top
         self.insert(Instruction::Jmp(loop_head_pos));
 
-        // correct placeholder break values
+        // restore & correct placeholder break values
+        self.curr_loop_mut().break_jmp_indices = break_jmp_indices_bef;
         let pos = self.curr_fn_mut().len();
-        self.fill_blank_jmps(pos);
+        self.fill_blank_breaks(pos);
 
         self.loops.pop();
     }
