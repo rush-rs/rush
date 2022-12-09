@@ -9,25 +9,40 @@
 .global __rush_internal_pow_int
 
 __rush_internal_pow_int:
+	# if exp == 0; return 1
+	beq a1, zero, return_1
 	# if exp < 0; return 0
-	blt a1, zero, return
-	j body
+	blt a1, zero, return_0
 
-	return:
-		li t0, 0			# return 0
-		j after_loop		# transfer control to `after_loop`
-
-	body:
-		li t0, 1			# accumulator = 1
+	li t0, 1			# acc = 1
 
 	loop_head:
-		# if exp == 0 { break }
-		beq a1, zero, after_loop
+		# if exp < 2; { break }
+		li t1, 2
+		blt a1, t1, after_loop
 
-		mul t0, t0, a0		# accumulator *= base
-		addi a1, a1, -1		# exp -= 1
-		j loop_head			# continue
+		# if (exp & 1) == 1
+		andi t1, a1, 1
+		li t2, 1
+		beq t1, t2, inc_acc
+
+		loop_body:
+			srli a1, a1, 1		# exp /= 2
+			mul a0, a0, a0
+			j loop_head			# continue
+
+	inc_acc:
+		mul t0, t0, a0
+		j loop_body
 
 	after_loop:
-		add a0, zero, t0	# return accumulator
+		mul a0, t0, a0			# acc * base
+		ret
+
+	return_0:
+		li a0, 0
+		ret
+
+	return_1:
+		li a0, 1
 		ret

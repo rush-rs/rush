@@ -22,5 +22,5 @@ clean:
 
 # runs `main.c` alongside the corelib in order to test it
 test: libcore.a
-	riscv64-linux-gnu-gcc -nostdlib -static main.c -L . -lcore -o main
+	riscv64-linux-gnu-gcc -nostdlib -static main.c -L . -lcore-rush-riscv-lp64d -o main
 	qemu-riscv64 ./main
