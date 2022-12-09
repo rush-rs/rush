@@ -1,16 +1,20 @@
 import subprocess
 import os
-import time
 
 
 # maps an input file to a desired exit-code
-tests = {'complete.rush': 50, 'loops.rush': 80}
+tests = {
+    './complete.rush': 50,
+    './loops.rush': 15,
+    './float_casts.rush': 2,
+    './pow.rush': 7,
+}
 
 # saves the backend an any additional commands to be executed after `cargo r`
 backends = {
     'rush-interpreter-tree': '',
     'rush-interpreter-vm': '',
-    #'rush-compiler-wasm': 'wasmer output.wasm',
+    'rush-compiler-wasm': 'wasmtime output.wasm',
     'rush-compiler-llvm': 'gcc output.o -o test && ./test',
     'rush-compiler-x86-64': """
         gcc output.s -L corelib/ -lcore -nostdlib -o output \
@@ -39,6 +43,7 @@ def run():
 
 
 def run_test(file: str, code: int, name: str, cmd: str):
+    print(f'\x1b[2m\x1b[1;39mRUNNING\x1b[1;0m: {file.ljust(15)} {name}')
     command = 'cargo r ../../samples/tests/' + file
     if cmd:
         command += '&&' + cmd
@@ -46,9 +51,12 @@ def run_test(file: str, code: int, name: str, cmd: str):
     p = subprocess.run(
         command,
         shell=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
     )
+
+    print('\x1b[1A', end='')
+
     if p.returncode != code:
         print(
             f'\x1b[1;31mFAIL\x1b[1;0m: {file}/{name} => expected {code}, got {p.returncode}'

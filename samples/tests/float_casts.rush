@@ -1,0 +1,9 @@
+fn main() {
+    let nine = 9.9;
+    let eq = (nine as int == 9.9 as int);
+
+    let min_nine = -9.9;
+    let minus_eq = (min_nine as int == -9.9 as int);
+
+    exit((eq && minus_eq) as int + 1)
+}
