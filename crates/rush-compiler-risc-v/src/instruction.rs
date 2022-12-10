@@ -21,14 +21,18 @@ impl<'tree> Display for Block<'tree> {
             self.label,
             self.instructions
                 .iter()
-                .map(|(i, comment)| format!(
-                    "    {:32} {}\n",
-                    i.to_string().replace('\n', "\n    "),
-                    match comment.to_owned() {
-                        Some(msg) => format!("# {msg}"),
-                        None => String::new(),
-                    }
-                ))
+                .map(|(i, comment)| (i.to_string(), comment))
+                .filter(|(i, _)| !i.is_empty())
+                .map(|(i, comment)| {
+                    format!(
+                        "    {:32} {}\n",
+                        i.replace('\n', "\n    "),
+                        match comment.to_owned() {
+                            Some(msg) => format!("# {msg}"),
+                            None => String::new(),
+                        }
+                    )
+                })
                 .collect::<String>()
         )
     }
@@ -326,7 +330,6 @@ mod tests {
         ];
 
         for (inst, display) in tests {
-            //println!("{inst}");
             assert_eq!(inst.to_string(), display)
         }
     }

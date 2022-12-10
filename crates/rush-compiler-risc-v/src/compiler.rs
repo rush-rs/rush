@@ -729,7 +729,7 @@ impl<'tree> Compiler<'tree> {
         match (node.lhs.result_type(), node.op) {
             (Type::Bool, InfixOp::Or) => {
                 // compile the lhs (initial expression)
-                let lhs_cond = self.expression(node.lhs)?;
+                let lhs = self.expression(node.lhs)?;
 
                 let merge_block = self.append_block("merge");
 
@@ -737,7 +737,7 @@ impl<'tree> Compiler<'tree> {
                 self.insert_w_comment(
                     Instruction::BrCond(
                         Condition::Ne,
-                        lhs_cond.into(),
+                        lhs.into(),
                         IntRegister::Zero,
                         Rc::clone(&merge_block),
                     ),
@@ -749,14 +749,14 @@ impl<'tree> Compiler<'tree> {
 
                 #[cfg(debug_assertions)]
                 if let Some(rhs) = _rhs {
-                    assert_eq!(lhs_cond, rhs);
+                    assert_eq!(lhs, rhs);
                 }
 
                 self.insert(Instruction::Jmp(Rc::clone(&merge_block)));
 
                 self.insert_at(&merge_block);
 
-                Some(lhs_cond)
+                Some(lhs)
             }
             (Type::Bool, InfixOp::And) => {
                 // compile the lhs (initial expression)
@@ -1199,22 +1199,40 @@ impl<'tree> Compiler<'tree> {
             _ => None, // other types require no register
         };
 
-        let then_block = self.append_block("then");
         let merge_block = self.gen_label("merge");
+        let else_block_label = self.gen_label("else");
 
-        // if the condition evaluated to `true`, the `then` block is entered
+        // if the condition evaluated to `false`, jump to the `else` or `merge` block
         self.insert(Instruction::BrCond(
-            Condition::Ne,
+            Condition::Eq,
             cond_reg.into(),
             IntRegister::Zero,
-            Rc::clone(&then_block),
+            if node.else_block.is_some() {
+                Rc::clone(&else_block_label)
+            } else {
+                Rc::clone(&merge_block)
+            },
         ));
+
+        let then_reg = self.block(node.then_block);
+
+        // if the `then` block returns a register other than res, move the block register into res
+        match (res_reg, then_reg) {
+            (Some(Register::Int(res)), Some(Register::Int(then_reg))) => {
+                self.insert(Instruction::Mov(res, then_reg));
+            }
+            (Some(Register::Float(res)), Some(Register::Float(then_reg))) => {
+                self.insert(Instruction::Fmv(res, then_reg));
+            }
+            _ => {}
+        }
+
+        // jump to the `merge` block
+        self.insert_jmp(Rc::clone(&merge_block), None);
 
         // if there is an `else` block, compile it
         if let Some(else_block) = node.else_block {
-            let else_block_label = self.append_block("else");
-            // this jump is the instruction after the conditional branch
-            self.insert_jmp(Rc::clone(&else_block_label), None);
+            self.blocks.push(Block::new(Rc::clone(&else_block_label)));
             self.insert_at(&else_block_label);
             let else_reg = self.block(else_block);
 
@@ -1228,29 +1246,10 @@ impl<'tree> Compiler<'tree> {
                 }
                 _ => {}
             }
+
+            // jumps to `merge` from the `else` block
+            self.insert_jmp(Rc::clone(&merge_block), None);
         }
-
-        // regardless of the previous block, insert a jump to the `merge` block
-        // jumps to `merge` from the `else` block
-        // or if the condition was `false` without an `else` branch
-        self.insert_jmp(Rc::clone(&merge_block), None);
-
-        self.insert_at(&then_block);
-        let then_reg = self.block(node.then_block);
-
-        // if the block returns a register other than res, move the block register into res
-        match (res_reg, then_reg) {
-            (Some(Register::Int(res)), Some(Register::Int(then_reg))) => {
-                self.insert(Instruction::Mov(res, then_reg));
-            }
-            (Some(Register::Float(res)), Some(Register::Float(then_reg))) => {
-                self.insert(Instruction::Fmv(res, then_reg));
-            }
-            _ => {}
-        }
-
-        // jump to the `merge` block after this branch
-        self.insert_jmp(Rc::clone(&merge_block), None);
 
         // set the cursor position to the end of the `merge` block
         self.blocks.push(Block::new(Rc::clone(&merge_block)));
