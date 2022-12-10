@@ -804,8 +804,6 @@ impl<'src> Compiler<'src> {
     fn while_stmt(&mut self, node: AnalyzedWhileStmt<'src>) {
         let start_loop_symbol = self.next_block_name();
         let end_loop_symbol = self.next_block_name();
-        self.loop_symbols
-            .push((Rc::clone(&start_loop_symbol), Rc::clone(&end_loop_symbol)));
 
         self.function_body.push(Instruction::Commented(
             Instruction::Symbol(Rc::clone(&start_loop_symbol), false).into(),
@@ -818,6 +816,9 @@ impl<'src> Compiler<'src> {
         {
             return;
         };
+
+        self.loop_symbols
+            .push((Rc::clone(&start_loop_symbol), Rc::clone(&end_loop_symbol)));
 
         self.tmp_expr(AnalyzedExpression::Block(node.block.into()));
         self.function_body.push(Instruction::Commented(
@@ -838,8 +839,6 @@ impl<'src> Compiler<'src> {
         let update_symbol = self.next_block_name();
         let end_loop_symbol = self.next_block_name();
         self.push_scope();
-        self.loop_symbols
-            .push((Rc::clone(&update_symbol), Rc::clone(&end_loop_symbol)));
 
         // initializer
         let init_type = node.initializer.result_type();
@@ -871,7 +870,10 @@ impl<'src> Compiler<'src> {
         }
 
         // loop body
+        self.loop_symbols
+            .push((Rc::clone(&update_symbol), Rc::clone(&end_loop_symbol)));
         self.tmp_expr(AnalyzedExpression::Block(node.block.into()));
+        self.loop_symbols.pop();
 
         // update expr
         self.function_body
@@ -885,7 +887,6 @@ impl<'src> Compiler<'src> {
             "}".into(),
         ));
 
-        self.loop_symbols.pop();
         self.pop_scope();
     }
 
