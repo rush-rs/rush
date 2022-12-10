@@ -1,4 +1,4 @@
-use std::{collections::HashMap, mem, vec};
+use std::{collections::HashMap, vec};
 
 use rush_analyzer::{ast::*, InfixOp, Type};
 
@@ -76,14 +76,6 @@ impl<'src> Compiler<'src> {
     /// Returns a mutable reference to the current scope
     fn scope_mut(&mut self) -> &mut Scope<'src> {
         self.scopes.last_mut().expect("there is always a scope")
-    }
-
-    #[inline]
-    /// Returns a reference to the current loop
-    fn curr_loop(&self) -> &Loop {
-        self.loops
-            .last()
-            .expect("there is always a loop when called")
     }
 
     #[inline]
@@ -270,22 +262,12 @@ impl<'src> Compiler<'src> {
         }
     }
 
-    /// Fills in any blank-value `break` statement instructions.
-    fn fill_blank_breaks(&mut self, break_offset: usize) {
-        for idx in &self.curr_loop().break_jmp_indices.clone() {
+    /// Fills in any blank-value `jmp` / `jmpfalse` instructions to point to the specified target.
+    fn fill_blank_jmps(&mut self, jmps: Vec<usize>, target: usize) {
+        for idx in &jmps {
             match &mut self.curr_fn_mut()[*idx] {
-                Instruction::Jmp(o) => *o = break_offset,
-                Instruction::JmpFalse(o) => *o = break_offset,
-                _ => unreachable!("other instructions do not jump"),
-            }
-        }
-    }
-
-    /// Fills in any blank-value `continue` statement instructions.
-    fn fill_blank_continues(&mut self, continue_offset: usize) {
-        for idx in &self.curr_loop().continue_jmp_indices.clone() {
-            match &mut self.curr_fn_mut()[*idx] {
-                Instruction::Jmp(o) => *o = continue_offset,
+                Instruction::Jmp(o) => *o = target,
+                Instruction::JmpFalse(o) => *o = target,
                 _ => unreachable!("other instructions do not jump"),
             }
         }
@@ -310,13 +292,11 @@ impl<'src> Compiler<'src> {
         // jump back to the top
         self.insert(Instruction::Jmp(loop_head_pos));
 
-        // correct placeholder break values
+        // correct placeholder `break` / `continue` values
+        let loop_ = self.loops.pop().expect("pushed above"); // TODO: use helper function for
         let pos = self.curr_fn_mut().len();
-        self.fill_blank_breaks(pos);
-        // correct placeholder continue values
-        self.fill_blank_continues(loop_head_pos);
-
-        self.loops.pop();
+        self.fill_blank_jmps(loop_.break_jmp_indices, pos);
+        self.fill_blank_jmps(loop_.continue_jmp_indices, loop_head_pos);
     }
 
     fn while_stmt(&mut self, node: AnalyzedWhileStmt<'src>) {
@@ -346,17 +326,11 @@ impl<'src> Compiler<'src> {
         // jump back to the top
         self.insert(Instruction::Jmp(loop_head_pos));
 
-        // correct placeholder break values
+        // correct placeholder `break` / `continue` values
+        let loop_ = self.loops.pop().expect("pushed above"); // TODO: helper func
         let pos = self.curr_fn_mut().len();
-        self.fill_blank_breaks(pos);
-
-        // correct placeholder continue values
-        self.fill_blank_continues(loop_head_pos);
-
-        // correct placeholder continue values
-        self.fill_blank_continues(loop_head_pos);
-
-        self.loops.pop();
+        self.fill_blank_jmps(loop_.break_jmp_indices, pos);
+        self.fill_blank_jmps(loop_.continue_jmp_indices, loop_head_pos);
     }
 
     fn for_stmt(&mut self, node: AnalyzedForStmt<'src>) {
@@ -397,15 +371,10 @@ impl<'src> Compiler<'src> {
             self.insert(Instruction::Drop);
         }
 
-        // all `continue` statements jump before the update expr
+        // correct placeholder `continue` values
         let curr_pos = self.curr_fn_mut().len();
-
-        // save the current state of the `break_jmp_indices`
-        let break_jmp_indices_bef = mem::take(&mut self.curr_loop_mut().break_jmp_indices);
-
-        // update jump target of the `continue` stmts & empty placeholder list
-        self.fill_blank_continues(curr_pos);
-        self.curr_loop_mut().continue_jmp_indices = vec![];
+        let loop_ = self.loops.pop().expect("pushed above");
+        self.fill_blank_jmps(loop_.continue_jmp_indices, curr_pos);
 
         // compile the update expression
         let update_type = node.update.result_type();
@@ -414,29 +383,12 @@ impl<'src> Compiler<'src> {
             self.insert(Instruction::Drop);
         }
 
-        if self.loops.len() > 2 {
-            // if the update expression contains `continue` / `break` stmts, they should refer to the outer loop
-            let len = self.loops.len();
-            let mut curr_continue_indices =
-                mem::take(&mut self.curr_loop_mut().continue_jmp_indices);
-            let mut curr_break_indices = mem::take(&mut self.curr_loop_mut().break_jmp_indices);
-            self.loops[len - 2]
-                .continue_jmp_indices
-                .append(&mut curr_continue_indices);
-            self.loops[len - 2]
-                .break_jmp_indices
-                .append(&mut curr_break_indices);
-        }
-
         // jump back to the top
         self.insert(Instruction::Jmp(loop_head_pos));
 
-        // restore & correct placeholder break values
-        self.curr_loop_mut().break_jmp_indices = break_jmp_indices_bef;
+        // correct placeholder break values
         let pos = self.curr_fn_mut().len();
-        self.fill_blank_breaks(pos);
-
-        self.loops.pop();
+        self.fill_blank_jmps(loop_.break_jmp_indices, pos);
     }
 
     fn expression(&mut self, node: AnalyzedExpression<'src>) {
