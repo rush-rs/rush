@@ -373,40 +373,35 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
     /// Compiles a block and returns its result value.
     /// Also automatically pushes a new scope for the block if the `scoping` parater is `true`.
     fn compile_block(&mut self, node: &'src AnalyzedBlock, scoping: bool) -> BasicValueEnum<'ctx> {
-        let block = self
-            .context
-            .append_basic_block(self.curr_fn().llvm_value, "block");
-
-        if !self.current_instruction_is_block_terminator() {
-            self.builder.build_unconditional_branch(block);
-        }
-
-        self.builder.position_at_end(block);
-
         if scoping {
             self.scopes.push(HashMap::new());
         }
 
-        for stmt in &node.stmts {
-            self.compile_statement(stmt);
-            // stop when encountering `break`, `continue`, or `return` statements
-            if stmt.result_type() == Type::Never {
-                if !self.current_instruction_is_block_terminator() {
-                    // required if terminated through `exit`
+        let mut close = || -> BasicValueEnum<'ctx> {
+            for stmt in &node.stmts {
+                self.compile_statement(stmt);
+                // stop when encountering `break`, `continue`, or `return` statements
+                if stmt.result_type() == Type::Never {
+                    if !self.current_instruction_is_block_terminator() {
+                        // required if terminated through `exit`
+                        self.builder.build_unreachable();
+                    }
+                    return self.unit_value();
+                }
+            }
+
+            // if there is an expression, return its value instead of `()`
+            let res = node.expr.as_ref().map_or(self.unit_value(), |expr| {
+                let res = self.compile_expression(expr);
+                if expr.result_type() == Type::Never {
                     self.builder.build_unreachable();
                 }
-                return self.unit_value();
-            }
-        }
-
-        // if there is an expression, return its value instead of `()`
-        let res = node.expr.as_ref().map_or(self.unit_value(), |expr| {
-            let res = self.compile_expression(expr);
-            if expr.result_type() == Type::Never {
-                self.builder.build_unreachable();
-            }
+                res
+            });
             res
-        });
+        };
+
+        let res = close();
 
         if scoping {
             self.scopes.pop();
@@ -664,15 +659,8 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
             self.scope_mut().insert(node.ident, Variable::new_unit());
         }
 
-        // set the loop metadata so that the inner block can use it
+        // perform any allocations before the loop starts
         let allocations = self.do_loop_allocations(&node.allocations);
-
-        // compile the loop body
-        self.loops.push(Loop {
-            loop_head: for_update,
-            after_loop: after_for,
-            allocations,
-        });
 
         // enter the loop from outside
         if !self.current_instruction_is_block_terminator() {
@@ -684,6 +672,11 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         let cond = self.compile_expression(&node.cond);
 
         // TODO: maybe push the loop after the condition (if there is continue in the condition?)
+        self.loops.push(Loop {
+            loop_head: for_update,
+            after_loop: after_for,
+            allocations,
+        });
 
         // if the condition is true, jump into the for body, otherwise, quit the loop
         if !self.current_instruction_is_block_terminator() {
@@ -694,6 +687,10 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         self.builder.position_at_end(for_body);
 
         self.compile_block(&node.block, true);
+
+        // pop the loop here so that `break` and `continue` inside the update statement will affect
+        // the outer loop
+        self.loops.pop();
 
         // jump to the update block
         if !self.current_instruction_is_block_terminator() {
@@ -708,9 +705,6 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         if !self.current_instruction_is_block_terminator() {
             self.builder.build_unconditional_branch(for_head);
         }
-
-        // remove the loop from `loops`
-        self.loops.pop();
 
         // drop the scope
         self.scopes.pop();
@@ -1381,7 +1375,7 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                         let success = self.context.i32_type().const_zero();
                         self.builder.build_return(Some(&success));
                     }
-                    // TODO: aa
+                    // TODO: do correct thing depending on whether `_start` is used
                     false => {
                         // perform the `exit` function call
                         let exit_func = self.get_exit();
