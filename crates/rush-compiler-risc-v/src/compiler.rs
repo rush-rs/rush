@@ -463,9 +463,11 @@ impl<'tree> Compiler<'tree> {
         // compile the condition
         self.insert_at(&while_head);
         self.insert(Instruction::Comment("while condition".into()));
-        let cond = self
-            .expression(node.cond)
-            .expect("the analyzer guarantees that the condition is always of type bool");
+
+        // if the cond is `!`, return here
+        let Some(cond) = self.expression(node.cond) else {
+            return
+        };
 
         // if the condition evaluates to `false`, break out of the loop
         self.insert(Instruction::BrCond(
@@ -533,13 +535,15 @@ impl<'tree> Compiler<'tree> {
 
         self.insert(Instruction::Comment("loop condition".into()));
 
-        let Some(expr_res) = self.expression(node.cond) else {
-            return // if the cond is `!`, return here
+        // if the cond is `!`, return here
+        let Some(cond) = self.expression(node.cond) else {
+            return
         };
+
         self.insert(Instruction::BrCond(
             Condition::Eq,
             IntRegister::Zero,
-            expr_res.into(),
+            cond.into(),
             Rc::clone(&after_loop_label),
         ));
 
