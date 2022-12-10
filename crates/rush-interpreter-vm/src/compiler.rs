@@ -302,10 +302,12 @@ impl<'src> Compiler<'src> {
     fn while_stmt(&mut self, node: AnalyzedWhileStmt<'src>) {
         // save location of the loop head (for continue stmts)
         let loop_head_pos = self.curr_fn_mut().len();
-        self.loops.push(Loop::default());
 
         // compile the while condition
         self.expression(node.cond);
+
+        // push the loop here (`continue` / `break` can be in cond)
+        self.loops.push(Loop::default());
 
         // jump to the end if the condition is false
         let end = self.curr_fn_mut().len();
