@@ -727,24 +727,27 @@ impl<'tree> Compiler<'tree> {
     /// After compiling the lhs and rhs, the `infix_helper` is invoked.
     fn infix_expr(&mut self, node: AnalyzedInfixExpr<'tree>) -> Option<Register> {
         match (node.lhs.result_type(), node.op) {
-            (Type::Bool, InfixOp::Or) => {
-                // compile the lhs (initial expression)
+            (Type::Bool, InfixOp::Or | InfixOp::And) => {
                 let lhs = self.expression(node.lhs)?;
+                let merge_block = self.gen_label("merge");
 
-                let merge_block = self.append_block("merge");
+                let (condition, comment) = match node.op == InfixOp::Or {
+                    true => (Condition::Ne, "||"),  // if the lhs is `true` ( || )
+                    false => (Condition::Eq, "&&"), // if the lhs is `false` ( && )
+                };
 
-                // jump to the merge block if the lhs is true
+                // jump to the merge block if the result is determined by the lhs
                 self.insert_w_comment(
                     Instruction::BrCond(
-                        Condition::Ne,
+                        condition,
                         lhs.into(),
                         IntRegister::Zero,
                         Rc::clone(&merge_block),
                     ),
-                    "||".into(),
+                    comment.into(),
                 );
 
-                // compile the rhs
+                // rhs is unused on release builds
                 let _rhs = self.expression(node.rhs);
 
                 #[cfg(debug_assertions)]
@@ -753,55 +756,10 @@ impl<'tree> Compiler<'tree> {
                 }
 
                 self.insert(Instruction::Jmp(Rc::clone(&merge_block)));
-
+                self.blocks.push(Block::new(Rc::clone(&merge_block)));
                 self.insert_at(&merge_block);
 
                 Some(lhs)
-            }
-            (Type::Bool, InfixOp::And) => {
-                // compile the lhs (initial expression)
-                let lhs_cond = self.expression(node.lhs)?;
-
-                let merge_block = self.append_block("merge");
-
-                // jump to the merge block directly
-                self.insert_w_comment(
-                    Instruction::BrCond(
-                        Condition::Eq,
-                        lhs_cond.into(),
-                        IntRegister::Zero,
-                        Rc::clone(&merge_block),
-                    ),
-                    "&&".into(),
-                );
-
-                // compile the rhs
-                let _rhs = self.expression(node.rhs);
-
-                #[cfg(debug_assertions)]
-                if let Some(rhs) = _rhs {
-                    assert_eq!(lhs_cond, rhs);
-                }
-
-                // TODO: if this is broken, uncomment this code
-                // if the rhs does not match the lhs, move the rhs into the lhs
-                /* match (lhs_cond, rhs) {
-                    (Register::Int(lhs), Some(Register::Int(rhs))) if lhs == rhs => {}
-                    (Register::Int(lhs), Some(Register::Int(rhs))) => {
-                        self.insert(Instruction::Mov(lhs, rhs))
-                    }
-                    (Register::Float(lhs), Some(Register::Float(rhs))) if lhs == rhs => {}
-                    (Register::Float(lhs), Some(Register::Float(rhs))) => {
-                        self.insert(Instruction::Fmv(lhs, rhs))
-                    }
-                    _ => unreachable!("lhs and rhs are always the same type"),
-                } */
-
-                self.insert(Instruction::Jmp(Rc::clone(&merge_block)));
-
-                self.insert_at(&merge_block);
-
-                Some(lhs_cond)
             }
             _ => {
                 match (node.lhs, node.rhs, node.op) {
