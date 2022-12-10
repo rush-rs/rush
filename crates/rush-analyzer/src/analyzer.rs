@@ -796,7 +796,6 @@ impl<'src> Analyzer<'src> {
     /// Will return [`None`] if the loop never iterates (condition is constant `false`)
     /// Can also return an [`AnalyzedLoopStmt`] if the expression is constant `true`.
     fn while_stmt(&mut self, node: WhileStmt<'src>) -> Option<AnalyzedStatement<'src>> {
-        let old_loop_is_terminated = self.current_loop_is_terminated;
         let mut condition_is_const_true = false;
         let mut never_loops = false;
 
@@ -847,6 +846,8 @@ impl<'src> Analyzer<'src> {
         if is_outer_loop {
             self.allocations = Some(vec![]);
         }
+
+        let old_loop_is_terminated = self.current_loop_is_terminated;
 
         self.loop_count += 1;
         let block_result_span = node.block.result_span();
