@@ -533,7 +533,9 @@ impl<'tree> Compiler<'tree> {
 
         self.insert(Instruction::Comment("loop condition".into()));
 
-        let expr_res = self.expression(node.cond).expect("cond is non-unit");
+        let Some(expr_res) = self.expression(node.cond) else {
+            return // if the cond is `!`, return here
+        };
         self.insert(Instruction::BrCond(
             Condition::Eq,
             IntRegister::Zero,
@@ -551,6 +553,7 @@ impl<'tree> Compiler<'tree> {
         ));
 
         self.block(node.block);
+        self.loops.pop();
 
         //// UPDATE EXPR ////
         self.blocks.push(Block::new(Rc::clone(&for_update_label)));
@@ -564,7 +567,6 @@ impl<'tree> Compiler<'tree> {
         self.pop_scope();
         self.blocks.push(Block::new(Rc::clone(&after_loop_label)));
         self.insert_at(&after_loop_label);
-        self.loops.pop();
 
         // release register of induction variable at the end
         if let Some(reg) = res.map(|r| r.1) {
