@@ -5,9 +5,12 @@ import os
 # maps an input file to a desired exit-code
 tests = {
     './complete.rush': 50,
-    './loops.rush': 15,
+    './loops.rush': 20,
     './float_casts.rush': 2,
     './pow.rush': 7,
+    './fib.rush': 110,
+    './globals.rush': 44,
+    './if_else.rush': 20,
 }
 
 # saves the backend an any additional commands to be executed after `cargo r`
@@ -63,7 +66,7 @@ def run_test(file: str, code: int, name: str, cmd: str):
         )
         return False
 
-    print(f'\x1b[1;32mPASS\x1b[1;0m: {file.ljust(15)} {name}')
+    print(f'\x1b[1;32mPASS\x1b[1;0m: {file.ljust(15)} {name} {" " * 10}')
     return True
 
 

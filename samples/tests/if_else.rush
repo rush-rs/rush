@@ -1,0 +1,29 @@
+fn main() {
+    let true_ = true;
+
+    let a = if true_ {
+        if !!true_ && true_ {
+            let mut a = 0;
+            for i = 0; i < 10; i += 1 {
+                a += 1;
+            }
+            a
+        } else {
+            exit(99) // unreachable
+        }
+    } else {
+        exit(99) // unreachable
+    };
+
+    let b = if (!true_ && true_) || (!true_) {
+        exit(99) // unreachable
+    } else {
+        let mut a = 0;
+        for i = 0; (i < 10) && true_; i += 1 {
+            a += 1;
+        }
+        a
+    };
+
+    exit(a + b)
+}

@@ -1,0 +1,14 @@
+let const = 42;
+let mut mut_ = 1;
+
+fn main() {
+    if mut_ != 1 {
+        exit(99)
+    }
+    mutate_mut();
+    exit(const + mut_);
+}
+
+fn mutate_mut() {
+    mut_ += 1
+}

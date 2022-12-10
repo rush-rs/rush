@@ -1,0 +1,29 @@
+fn main() {
+    exit(fib_rec(10) + fib_iter(10))
+}
+
+// fib_rec(10) = 55
+fn fib_rec(n: int) -> int {
+    if n < 2 {
+        n
+    } else {
+        fib_rec(n - 2) + fib_rec(n - 1)
+    }
+}
+
+// fib_iter(10) = 55
+fn fib_iter(mut n: int) -> int {
+    if n == 0 {
+        return 0;
+    }
+
+    let mut prev = 1;
+    let mut curr = 1;
+    while n > 2 {
+        n -= 1;
+        let tmp = curr + prev;
+        prev = curr;
+        curr = tmp;
+    }
+    curr
+}

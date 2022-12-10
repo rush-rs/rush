@@ -5,8 +5,8 @@ fn main() {
     let three = 3;
     let eight = two ** three;
 
-    let exp = 4294967296; // larger than u32::MAX
-    let high_exp_eq = 2 ** 4294967296 == 2 ** exp;
+    let exp = 4294967297; // larger than u32::MAX
+    let high_exp_eq = 2 ** 4294967297 == 2 ** exp;
 
     exit(
         sixteen
