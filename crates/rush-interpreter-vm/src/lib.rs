@@ -11,7 +11,7 @@ use instruction::Program;
 use rush_analyzer::ast::AnalyzedProgram;
 pub use rush_analyzer::Diagnostic;
 pub use value::Value;
-pub use vm::{RuntimeError, Vm};
+pub use vm::{RuntimeError, RuntimeErrorKind, Vm};
 
 /// Compiles rush source code to VM instructions.
 /// The `Ok(_)` variant is a [`CompilationResult`] which also includes any non-error diagnostics.
