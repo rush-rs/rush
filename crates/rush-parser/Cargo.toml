@@ -5,6 +5,7 @@ authors.workspace = true
 edition = "2021"
 license.workspace = true
 repository.workspace = true
+description = "A lexer and parser for the rush programming language"
 
 [dependencies]
 either = "1.8.0"
