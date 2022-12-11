@@ -671,7 +671,7 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         self.builder.position_at_end(for_head);
         let cond = self.compile_expression(&node.cond);
 
-        // TODO: maybe push the loop after the condition (if there is continue in the condition?)
+        // loop is pushed after the condition because it could contain `break` / `continue`
         self.loops.push(Loop {
             loop_head: for_update,
             after_loop: after_for,
@@ -837,11 +837,11 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         // handle any builtin functions
         let func = match node.func {
             "exit" => self.get_exit(),
-            "main" => self // TODO: do different actions depending on whether `_start` is used
-                .module
-                .get_function("_start")
-                .expect("main function exists"),
-            // for user-defined funcs: look up the identifier in the module
+            "main" => match self.compile_main_fn {
+                true => self.module.get_function("main"),
+                false => self.module.get_function("_start"),
+            }
+            .expect("there is always some sort of `main` fn"),
             _ => self
                 .module
                 .get_function(node.func)
@@ -1375,7 +1375,6 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                         let success = self.context.i32_type().const_zero();
                         self.builder.build_return(Some(&success));
                     }
-                    // TODO: do correct thing depending on whether `_start` is used
                     false => {
                         // perform the `exit` function call
                         let exit_func = self.get_exit();
