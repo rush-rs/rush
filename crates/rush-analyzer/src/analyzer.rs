@@ -20,10 +20,6 @@ pub struct Analyzer<'src> {
     loop_count: usize,
     /// Specifies whether there is at least one `break` statement inside the current loop.
     current_loop_is_terminated: bool,
-    /// Saves any allocations which are made inside loops.
-    /// Used to include allocations into the loop AST nodes (for the LLVM compiler).
-    /// Only needed when examining loops.
-    allocations: Option<Vec<(&'src str, Type)>>,
     /// The source code of the program to be analyzed
     source: &'src str,
 }
@@ -682,13 +678,6 @@ impl<'src> Analyzer<'src> {
             }
         }
 
-        // even if the variable is shadowed, an allocation is required
-        if node.mutable {
-            if let Some(allocations) = self.allocations.as_mut() {
-                allocations.push((node.name.inner, expr.result_type()));
-            }
-        }
-
         AnalyzedStatement::Let(AnalyzedLetStmt {
             name: node.name.inner,
             expr,
@@ -748,13 +737,6 @@ impl<'src> Analyzer<'src> {
     fn loop_stmt(&mut self, node: LoopStmt<'src>) -> AnalyzedStatement<'src> {
         let old_loop_is_terminated = self.current_loop_is_terminated;
 
-        // begin tracking the allocations made by the loop
-        // only track allocations if this is an outer loop (loop_count == 0)
-        let is_outer_loop = self.loop_count == 0;
-        if is_outer_loop {
-            self.allocations = Some(vec![]);
-        }
-
         self.loop_count += 1;
         let block_result_span = node.block.result_span();
         let block = self.block(node.block, true);
@@ -772,22 +754,12 @@ impl<'src> Analyzer<'src> {
             );
         }
 
-        // only include allocations if this was an outer loop
-        let allocations = if is_outer_loop {
-            self.allocations
-                .take()
-                .expect("allocations is set to `Some(_)` above")
-        } else {
-            vec![]
-        };
-
         // restore loop termination count
         let never_terminates = !self.current_loop_is_terminated;
         self.current_loop_is_terminated = old_loop_is_terminated;
 
         AnalyzedStatement::Loop(AnalyzedLoopStmt {
             block,
-            allocations,
             never_terminates,
         })
     }
@@ -840,13 +812,6 @@ impl<'src> Analyzer<'src> {
             }
         }
 
-        // begin tracking the allocations made by the loop
-        // only track allocations if this is an outer loop (loop_count == 0)
-        let is_outer_loop = self.loop_count == 0;
-        if is_outer_loop {
-            self.allocations = Some(vec![]);
-        }
-
         let old_loop_is_terminated = self.current_loop_is_terminated;
 
         self.loop_count += 1;
@@ -875,15 +840,6 @@ impl<'src> Analyzer<'src> {
             );
         }
 
-        // only include allocations if this was an outer loop
-        let allocations = if is_outer_loop {
-            self.allocations
-                .take()
-                .expect("allocations is set to `Some(_)` above")
-        } else {
-            vec![]
-        };
-
         // restore loop termination count
         let never_terminates = condition_is_const_true && !self.current_loop_is_terminated;
         self.current_loop_is_terminated = old_loop_is_terminated;
@@ -894,14 +850,12 @@ impl<'src> Analyzer<'src> {
             // else if the condition is always `true`, return an `AnalyzedLoopStmt`
             (false, true) => Some(AnalyzedStatement::Loop(AnalyzedLoopStmt {
                 block,
-                allocations,
                 never_terminates,
             })),
             // else return an `AnalyzedWhileStmt`
             (false, false) => Some(AnalyzedStatement::While(AnalyzedWhileStmt {
                 cond,
                 block,
-                allocations,
                 never_terminates,
             })),
         }
@@ -926,11 +880,6 @@ impl<'src> Analyzer<'src> {
                 mutated: true,
             },
         );
-
-        // add an allocation for the init variable if the allocations are tracked
-        if let Some(allocations) = self.allocations.as_mut() {
-            allocations.push((node.ident.inner, initializer.result_type()))
-        }
 
         // check that the condition is of type bool
         let cond_span = node.cond.span();
@@ -988,13 +937,6 @@ impl<'src> Analyzer<'src> {
             )
         }
 
-        // begin tracking the allocations made by the loop
-        // only track allocations if this is an outer loop (loop_count == 0)
-        let is_outer_loop = self.loop_count == 0;
-        if is_outer_loop {
-            self.allocations = Some(vec![]);
-        }
-
         // save the old status of loop termination
         let old_loop_is_terminated = self.current_loop_is_terminated;
 
@@ -1020,22 +962,12 @@ impl<'src> Analyzer<'src> {
             );
         }
 
-        // only include allocations if this was an outer loop
-        let allocations = if is_outer_loop {
-            self.allocations
-                .take()
-                .expect("allocations is set to `Some(_)` above")
-        } else {
-            vec![]
-        };
-
         AnalyzedStatement::For(AnalyzedForStmt {
             ident: node.ident.inner,
             initializer,
             cond,
             update,
             block,
-            allocations,
             never_terminates,
         })
     }

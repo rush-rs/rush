@@ -46,19 +46,19 @@ pub struct Compiler<'ctx, 'src> {
 }
 
 pub(crate) struct Loop<'ctx> {
-    // saves the loop_start basic block
+    /// Saves the loop_start basic block (for `continue`)
     loop_head: BasicBlock<'ctx>,
-    // saves the after_loop basic block
+    /// Saves the after_loop basic block (for `break`)
     after_loop: BasicBlock<'ctx>,
-    // contains the allocations available for the loop
-    allocations: Vec<(String, Type, PointerValue<'ctx>)>,
 }
 
 pub(crate) struct Function<'ctx, 'src> {
-    // specifies the name of the function
+    /// Specifies the name of the function.
     name: &'src str,
-    // holds the LLVM function value
+    /// Holds the LLVM function value.
     llvm_value: FunctionValue<'ctx>,
+    // Refers to the `entry` label of the function.
+    entry_block: BasicBlock<'ctx>,
 }
 
 #[derive(Clone, Copy)]
@@ -163,10 +163,12 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         // compile the main function
         self.compile_main_fn(&program.main_fn);
 
-        self.module.print_to_stderr();
-
         // verify the LLVM module when using debug
         self.module.verify().unwrap();
+
+        // initialize the target
+        let config = InitializationConfig::default();
+        Target::initialize_all(&config);
 
         // run optimizations on the IR
         self.optimize();
@@ -189,9 +191,8 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         Ok((objcode, llvm_ir))
     }
 
+    /// Runs an optimization pass over the generated LLVM IR.
     fn optimize(&self) {
-        let config = InitializationConfig::default();
-        Target::initialize_all(&config);
         let pass_manager_builder = PassManagerBuilder::create();
 
         pass_manager_builder.set_optimization_level(self.optimization);
@@ -224,17 +225,19 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
             Some(Linkage::External),
         );
 
-        // create basic block for the main function
-        let main_basic_block = self.context.append_basic_block(fn_type, "entry");
-        self.builder.position_at_end(main_basic_block);
+        // create basic blocks for the function
+        let entry_block = self.context.append_basic_block(fn_type, "entry");
+        let body_block = self.context.append_basic_block(fn_type, "body");
 
         // set the current function to `main`
         self.curr_fn = Some(Function {
             name: "main",
             llvm_value: fn_type,
+            entry_block,
         });
 
-        // compile the function's body
+        // compile the body
+        self.builder.position_at_end(body_block);
         self.compile_block(node, true);
 
         if self.compile_main_fn {
@@ -251,6 +254,10 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                 .try_as_basic_value();
             self.builder.build_unreachable();
         }
+
+        // insert the jump from `entry` to the body
+        self.builder.position_at_end(entry_block);
+        self.builder.build_unconditional_branch(body_block);
     }
 
     /// Defines a new global variable with the given name and initializes it using the expression
@@ -307,18 +314,21 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
             .get_function(node.name)
             .expect("every fn exists");
 
-        // create basic block for the function
-        let basic_block = self.context.append_basic_block(function, "entry");
-        self.builder.position_at_end(basic_block);
+        // create basic blocks for the function
+        let entry_block = self.context.append_basic_block(function, "entry");
+        let body_block = self.context.append_basic_block(function, "body");
 
         // set the current function environment
         self.curr_fn = Some(Function {
             name: node.name,
             llvm_value: function,
+            entry_block,
         });
 
         // create new scope for the function
         self.scopes.push(HashMap::new());
+
+        self.builder.position_at_end(body_block);
 
         // bind each parameter to the original value (for later reference)
         for (i, param) in node.params.iter().enumerate() {
@@ -361,13 +371,15 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
             }
         }
 
-        // build the result value of the function's body
+        // compile the body
         let return_value = self.compile_block(&node.block, false);
-
-        // drop the function's scope
-        self.scopes.pop();
-
         self.build_return(Some(return_value));
+
+        // jump to the function body from `entry`
+        self.builder.position_at_end(entry_block);
+        self.builder.build_unconditional_branch(body_block);
+
+        self.scopes.pop();
     }
 
     /// Compiles a block and returns its result value.
@@ -432,11 +444,11 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
     fn compile_let_statement(&mut self, node: &'src AnalyzedLetStmt) {
         let rhs = self.compile_expression(&node.expr);
 
-        // if the variable is mutable, no pointer allocations are required
+        // if the variable is mutable, a pointer allocation is required
         match node.mutable {
             true => {
                 // allocate a pointer for the value
-                let ptr = self.alloc_ptr(node.name, node.expr.result_type(), rhs.get_type());
+                let ptr = self.alloc_ptr(node.name, rhs.get_type());
 
                 // store the rhs value in the pointer
                 self.builder.build_store(ptr, rhs);
@@ -452,34 +464,23 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         };
     }
 
-    fn alloc_ptr(
-        &mut self,
-        name: &str,
-        type_: Type,
-        llvm_type: BasicTypeEnum<'ctx>,
-    ) -> PointerValue<'ctx> {
-        // if there is a (root) loop, use its allocations
-        match self.loops.first_mut() {
-            Some(curr_loop) => {
-                let mut ptr = None;
-                for (idx, (alloc_ident, alloc_type, alloc_ptr)) in
-                    curr_loop.allocations.iter_mut().enumerate()
-                {
-                    if *alloc_ident == name && *alloc_type == type_ {
-                        ptr = Some(*alloc_ptr);
-                        // remove this allocation from the vec
-                        curr_loop.allocations.remove(idx);
-                        println!("used loop alloc");
-                        break;
-                    }
-                }
-                ptr.expect("every loop allocation exists")
-            }
-            None => {
-                // if there is no loop with allocations, allocate a pointer
-                self.builder.build_alloca(llvm_type, name)
-            }
-        }
+    /// Creates (allocates) a new LLVM pointer value.
+    /// The LLVM IR code for allocation will be inserted at the `entry` block of the current
+    /// function in order to improve `mem2reg` efficiency.
+    fn alloc_ptr(&mut self, name: &str, llvm_type: BasicTypeEnum<'ctx>) -> PointerValue<'ctx> {
+        // save current insertion point
+        let curr_block = self.curr_block();
+
+        // insert at `entry` block
+        self.builder.position_at_end(self.curr_fn().entry_block);
+
+        // allocate the pointer
+        let res = self.builder.build_alloca(llvm_type, name);
+
+        // jump back to previous insert position
+        self.builder.position_at_end(curr_block);
+
+        res
     }
 
     /// Compiles a return statement with an optional expression as it's value.
@@ -492,23 +493,6 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
             }
             None => self.build_return(None),
         };
-    }
-
-    /// Transforms a vector containing allocations tracked by the analyzer into a vector conainting
-    /// allocated pointers. For each element, a new LLVM pointer allocation is made.
-    /// Used in loop statements in order to perform allocations upfront.
-    /// Unit and never types are skipped.
-    fn do_loop_allocations(
-        &mut self,
-        src: &[(&'src str, Type)],
-    ) -> Vec<(String, Type, PointerValue<'ctx>)> {
-        src.iter()
-            .filter(|(_, type_)| !matches!(type_, Type::Unit | Type::Never))
-            .map(|(ident, type_)| {
-                let ptr = self.builder.build_alloca(self.to_llvm_type(*type_), ident);
-                (ident.to_string(), *type_, ptr)
-            })
-            .collect()
     }
 
     /// Compiles an [`AnalyzedLoopStmt`].
@@ -526,11 +510,9 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
             .append_basic_block(self.curr_fn().llvm_value, "after_loop");
 
         // set the loop metadata so that the inner block can use it
-        let allocations = self.do_loop_allocations(&node.allocations);
         self.loops.push(Loop {
             loop_head,
             after_loop,
-            allocations,
         });
 
         // enter the loop from outside
@@ -570,9 +552,6 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
             .context
             .append_basic_block(self.curr_fn().llvm_value, "after_while");
 
-        // set the loop metadata so that the inner block can use it
-        let allocations = self.do_loop_allocations(&node.allocations);
-
         // enter the loop from outside
         self.builder.build_unconditional_branch(while_head);
 
@@ -589,7 +568,6 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         self.loops.push(Loop {
             loop_head: while_head,
             after_loop: after_while,
-            allocations,
         });
 
         // compile the loop body
@@ -641,11 +619,7 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
 
         // allocate a pointer for the induction variable (if not unit or never)
         if !matches!(node.initializer.result_type(), Type::Unit | Type::Never) {
-            let ptr = self.alloc_ptr(
-                node.ident,
-                node.initializer.result_type(),
-                induction_var.get_type(),
-            );
+            let ptr = self.alloc_ptr(node.ident, induction_var.get_type());
 
             // store the value in the pointer
             self.builder.build_store(ptr, induction_var);
@@ -658,9 +632,6 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         } else {
             self.scope_mut().insert(node.ident, Variable::new_unit());
         }
-
-        // perform any allocations before the loop starts
-        let allocations = self.do_loop_allocations(&node.allocations);
 
         // enter the loop from outside
         if !self.current_instruction_is_block_terminator() {
@@ -675,7 +646,6 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         self.loops.push(Loop {
             loop_head: for_update,
             after_loop: after_for,
-            allocations,
         });
 
         // if the condition is true, jump into the for body, otherwise, quit the loop
@@ -1372,11 +1342,12 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
             match (return_value, self.curr_fn().name) {
                 (_, "main") => match self.compile_main_fn {
                     true => {
+                        // return 0 when using `main`
                         let success = self.context.i32_type().const_zero();
                         self.builder.build_return(Some(&success));
                     }
                     false => {
-                        // perform the `exit` function call
+                        // perform the `exit` function call when using `_start`
                         let exit_func = self.get_exit();
                         self.builder
                             .build_call(
@@ -1394,19 +1365,6 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                     self.builder.build_return(None);
                 }
             };
-        }
-    }
-
-    fn to_llvm_type(&self, type_: Type) -> BasicTypeEnum<'ctx> {
-        match type_ {
-            Type::Int => self.context.i64_type().as_basic_type_enum(),
-            Type::Bool => self.context.bool_type().as_basic_type_enum(),
-            Type::Float => self.context.f64_type().as_basic_type_enum(),
-            Type::Char => self.context.i8_type().as_basic_type_enum(),
-            Type::Unit => self.context.bool_type().as_basic_type_enum(),
-            Type::Never | Type::Unknown => {
-                unreachable!("cannot convert these types")
-            }
         }
     }
 }
