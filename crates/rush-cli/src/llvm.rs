@@ -1,60 +1,73 @@
 use std::{
     env, fs,
-    path::Path,
+    path::PathBuf,
     process::{self, Command, Stdio},
 };
 
+use anyhow::{bail, Context};
 use rush_analyzer::ast::AnalyzedProgram;
 use rush_compiler_llvm::inkwell::targets::{TargetMachine, TargetTriple};
 
-use crate::cli::BuildArgs;
+use crate::cli::{BuildArgs, CompilerBackend, RunArgs};
 
-pub fn compile(ast: AnalyzedProgram, args: BuildArgs) {
+pub fn compile(ast: AnalyzedProgram, args: BuildArgs) -> anyhow::Result<()> {
     let target = match args.llvm_target.as_ref() {
         Some(triplet) => TargetTriple::create(triplet),
         None => TargetMachine::get_default_triple(),
     };
 
-    let (obj, ir) = rush_compiler_llvm::compile(
+    let (obj, ir) = match rush_compiler_llvm::compile(
         ast,
         target,
         args.llvm_opt.into(),
         args.llvm_target.is_none(), // only compile a main fn if target is native
-    )
-    .unwrap_or_else(|err| {
-        eprintln!("compilation failed: llvm error: {err}");
-        process::exit(1);
-    });
+    ) {
+        Ok(res) => res,
+        Err(err) => bail!(format!("llvm error: {err}")),
+    };
 
     if args.llvm_show_ir {
         println!("{ir}");
     }
-    // write to file
-    let out = Path::new("/tmp").join("rush.o");
+
+    let out = env::current_dir()
+        .with_context(|| "could not determine your working directory")?
+        .join({
+            let mut base = PathBuf::from(
+                args.path
+                    .file_stem()
+                    .with_context(|| "cannot obtain filestem of output file")?,
+            );
+            base.set_extension("o");
+            base
+        });
+    let out = out.to_string_lossy();
 
     // get output path
-    let output = args.output_file.unwrap_or_else(|| {
-        args.path
+    let output = match args.output_file {
+        Some(out) => out,
+        None => args
+            .path
             .file_stem()
-            .expect("file reading would have failed before")
-            .into()
-    });
+            .with_context(|| "cannot obtain filestem of output file")?
+            .into(),
+    };
 
     // if a non-native target is used, quit here
     if args.llvm_target.is_some() {
         let mut path = output;
         path.set_extension("o");
         fs::write(&path, obj.as_slice())
-            .unwrap_or_else(|err| eprintln!("cannot write to `{}`: {err}", path.to_string_lossy()));
-        return;
+            .with_context(|| format!("cannot write to `{file}`", file = path.to_string_lossy()))?;
+        return Ok(());
     }
 
-    fs::write(&out, obj.as_slice())
-        .unwrap_or_else(|err| eprintln!("cannot write to `{}`: {err}", out.to_string_lossy()));
+    fs::write(&out.to_string(), obj.as_slice())
+        .with_context(|| format!("cannot write to `{file}`", file = out))?;
 
     // invoke gcc to link the file
     let command = Command::new("gcc")
-        .arg(&out)
+        .arg(&out.to_string())
         .arg("-o")
         .arg(output)
         .stderr(Stdio::inherit())
@@ -65,52 +78,46 @@ pub fn compile(ast: AnalyzedProgram, args: BuildArgs) {
         });
 
     if !command.status.success() {
-        eprintln!(
-            "gcc failed with exit-code {}",
-            command.status.code().unwrap()
-        );
-        process::exit(1);
+        bail!(
+            "invoking gcc failed with exit-code {code}",
+            code = command.status.code().unwrap()
+        )
     }
+
+    Ok(())
 }
 
-pub fn run(ast: AnalyzedProgram, args: BuildArgs) {
-    // get executable path
-    let executable: String = match &args.output_file {
-        Some(path) => match path.is_absolute() {
-            true => path.to_string_lossy().into(),
-            false => env::current_dir()
-                .expect("there must be a working dir")
-                .join(path)
-                .to_string_lossy()
-                .into(),
+pub fn run(ast: AnalyzedProgram, args: RunArgs) -> anyhow::Result<i64> {
+    let executable = env::current_dir()
+        .with_context(|| "could not determine your working directory")?
+        .join(
+            args.path
+                .file_stem()
+                .with_context(|| "cannot obtain filestem of output file")?,
+        );
+    let executable = executable.to_string_lossy();
+
+    compile(
+        ast,
+        BuildArgs {
+            backend: CompilerBackend::Llvm,
+            output_file: None,
+            llvm_opt: args.llvm_opt,
+            llvm_target: None,
+            llvm_show_ir: false,
+            path: args.path,
         },
-        None => env::current_dir()
-            .expect("there must be a working dir")
-            .join(
-                args.path
-                    .file_stem()
-                    .expect("file reading would have failed before"),
-            )
-            .to_string_lossy()
-            .into(),
-    };
+    )?;
 
-    let target_specified = args.llvm_target.is_some();
-
-    compile(ast, args);
-
-    // if a non-native target is used, do not run the binary
-    if target_specified {
-        return;
-    }
-
-    let command = Command::new(executable)
+    let command = Command::new(executable.to_string())
         .stderr(Stdio::inherit())
         .stdout(Stdio::inherit())
         .output()
-        .unwrap_or_else(|err| {
-            eprintln!("could not invoke binary: {err}");
-            process::exit(1);
-        });
-    process::exit(command.status.code().unwrap_or_default())
+        .with_context(|| "could not invoke compiled binary")?;
+
+    command
+        .status
+        .code()
+        .map(|c| c as i64)
+        .with_context(|| "could not capture exit-code of compiled binary")
 }

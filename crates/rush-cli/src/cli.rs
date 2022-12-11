@@ -11,7 +11,7 @@ pub enum Cli {
     Build(BuildArgs),
     /// Run the source file's binary using the specified compiler
     #[clap(alias = "r")]
-    Run(BuildArgs),
+    Run(RunArgs),
     /// Check the source code without compilation
     #[clap(alias = "c")]
     Check {
@@ -21,10 +21,24 @@ pub enum Cli {
 }
 
 #[derive(Args, Debug)]
+pub struct RunArgs {
+    /// Specifies the backend
+    #[clap(short, long, value_enum)]
+    pub backend: RunnableBackend,
+
+    /// The optimization level when using the LLVM backend
+    #[clap(short = 'O', long, value_parser, default_value = "0")]
+    pub llvm_opt: LlvmOpt,
+
+    /// Path to rush source file
+    pub path: PathBuf,
+}
+
+#[derive(Args, Debug)]
 pub struct BuildArgs {
     /// Specifies the compiler backend
     #[clap(short, long, value_enum)]
-    pub backend: Backend,
+    pub backend: CompilerBackend,
 
     /// Output file location
     #[clap(short, long, value_parser)]
@@ -47,33 +61,51 @@ pub struct BuildArgs {
 }
 
 #[derive(ValueEnum, Clone, Debug, PartialEq, Eq)]
-pub enum Backend {
-    /// LLVM compiler: no runtime dependencies
+pub enum CompilerBackend {
+    /// LLVM compiler: requires GCC
     Llvm,
     /// WASM compiler: requires wasm runtime for later execution
     Wasm,
-    /// RISC-V compiler: no dependencies
+    /// RISC-V compiler: requires RISC-V toolchain
     RiscV,
-    /// X86_64 compiler: no dependencies
+    /// X86_64 compiler: requires x86 toolchain
     X86_64,
-    /// Tree-walking interpreter: no dependencies
-    TreeWalking,
-    /// VM interpreter: no dependencies
-    Vm,
 }
 
-impl Display for Backend {
+#[derive(ValueEnum, Clone, Debug, PartialEq, Eq)]
+pub enum RunnableBackend {
+    /// Tree-walking interpreter: no dependencies
+    Tree,
+    /// VM interpreter: no dependencies
+    Vm,
+    /// LLVM compiler: requires GCC
+    Llvm,
+}
+
+impl Display for CompilerBackend {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{}",
             match self {
-                Backend::Llvm => "llvm",
-                Backend::Wasm => "wasm",
-                Backend::RiscV => "risc-v",
-                Backend::X86_64 => "x86_64",
-                Backend::TreeWalking => "tree-walking",
-                Backend::Vm => "vm",
+                CompilerBackend::Llvm => "llvm",
+                CompilerBackend::Wasm => "wasm",
+                CompilerBackend::RiscV => "risc-v",
+                CompilerBackend::X86_64 => "x86_64",
+            }
+        )
+    }
+}
+
+impl Display for RunnableBackend {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                RunnableBackend::Tree => "tree",
+                RunnableBackend::Vm => "vm",
+                RunnableBackend::Llvm => "llvm",
             }
         )
     }
