@@ -5,7 +5,7 @@ import os
 # maps an input file to a desired exit-code
 tests = {
     './complete.rush': 50,
-    './loops.rush': 20,
+    './loops.rush': 45,
     './float_casts.rush': 2,
     './pow.rush': 7,
     './fib.rush': 110,

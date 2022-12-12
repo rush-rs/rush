@@ -162,6 +162,28 @@ fn block_cond() -> int {
     a
 }
 
+// expected return-value: 10
+fn unit() -> int {
+    let mut a = 0;
+    let mut b = 0;
+    for i = unit_(); a < 10; a += 1 {
+        b += 1
+    }
+    b
+}
+
+fn unit_() {}
+
+// expected return-value: 15
+fn scoping() -> int {
+    let i = 10;
+    let mut a = 0;
+    for i = 0; i < 5; i += 1 {
+        a += 1
+    }
+    i + a
+}
+
 fn main() {
-    exit(continues() - a() + breaks() - whiles() + block_cond() )
+    exit(continues() - a() + breaks() - whiles() + block_cond() + unit() + scoping())
 }
