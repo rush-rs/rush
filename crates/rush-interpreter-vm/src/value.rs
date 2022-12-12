@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::fmt::{self, Display, Formatter};
 
 use crate::{
     instruction::Type,
@@ -14,30 +14,16 @@ pub enum Value {
 }
 
 impl Value {
-    pub(crate) fn into_int(self) -> i64 {
+    pub(crate) fn unwrap_int(self) -> i64 {
         match self {
             Value::Int(value) => value,
             _ => unreachable!("no illegal calls exist"),
         }
     }
 
-    pub(crate) fn into_bool(self) -> bool {
+    pub(crate) fn unwrap_bool(self) -> bool {
         match self {
             Value::Bool(value) => value,
-            _ => unreachable!("no illegal calls exist"),
-        }
-    }
-
-    pub(crate) fn into_char(self) -> u8 {
-        match self {
-            Value::Char(value) => value,
-            _ => unreachable!("no illegal calls exist"),
-        }
-    }
-
-    pub(crate) fn into_float(self) -> f64 {
-        match self {
-            Value::Float(value) => value,
             _ => unreachable!("no illegal calls exist"),
         }
     }
@@ -59,58 +45,58 @@ impl Value {
     }
 
     pub(crate) fn add(&self, rhs: Value) -> Value {
-        match self {
-            Value::Int(value) => Value::Int(value.wrapping_add(rhs.into_int())),
-            Value::Char(value) => Value::Char(value.wrapping_add(rhs.into_char()) & 0x7f),
-            Value::Float(value) => Value::Float(value + rhs.into_float()),
-            _ => unreachable!("other types do not support this operation: {self} {rhs}"),
+        match (self, rhs) {
+            (Value::Int(lhs), Value::Int(rhs)) => Value::Int(lhs.wrapping_add(rhs)),
+            (Value::Char(lhs), Value::Char(rhs)) => Value::Char(lhs.wrapping_add(rhs) & 0x7f),
+            (Value::Float(lhs), Value::Float(rhs)) => Value::Float(lhs + rhs),
+            _ => unreachable!("other types do not support this operation: {self} + {rhs}"),
         }
     }
 
     pub(crate) fn sub(&self, rhs: Value) -> Value {
-        match self {
-            Value::Int(value) => Value::Int(value.wrapping_sub(rhs.into_int())),
-            Value::Char(value) => Value::Char(value.wrapping_sub(rhs.into_char()) & 0x7f),
-            Value::Float(value) => Value::Float(value - rhs.into_float()),
-            _ => unreachable!("other types do not support this operation"),
+        match (self, rhs) {
+            (Value::Int(lhs), Value::Int(rhs)) => Value::Int(lhs.wrapping_sub(rhs)),
+            (Value::Char(lhs), Value::Char(rhs)) => Value::Char(lhs.wrapping_sub(rhs) & 0x7f),
+            (Value::Float(lhs), Value::Float(rhs)) => Value::Float(lhs - rhs),
+            _ => unreachable!("other types do not support this operation: {self} - {rhs}"),
         }
     }
 
     pub(crate) fn mul(&self, rhs: Value) -> Value {
-        match self {
-            Value::Int(value) => Value::Int(value.wrapping_mul(rhs.into_int())),
-            Value::Float(value) => Value::Float(value * rhs.into_float()),
-            _ => unreachable!("other types do not support this operation"),
+        match (self, rhs) {
+            (Value::Int(lhs), Value::Int(rhs)) => Value::Int(lhs.wrapping_mul(rhs)),
+            (Value::Float(lhs), Value::Float(rhs)) => Value::Float(lhs * rhs),
+            _ => unreachable!("other types do not support this operation: {self} * {rhs}"),
         }
     }
 
     pub(crate) fn pow(&self, rhs: Value) -> Value {
         Value::Int(
-            self.into_int()
-                .wrapping_pow(rhs.into_int().try_into().unwrap_or(u32::MAX)),
+            self.unwrap_int()
+                .wrapping_pow(rhs.unwrap_int().try_into().unwrap_or(u32::MAX)),
         )
     }
 
     pub(crate) fn div(&self, rhs: Value) -> Result<Value, RuntimeError> {
-        match self {
-            Value::Int(_) if rhs.into_int() == 0 => Err(RuntimeError::new(
+        match (self, rhs) {
+            (_, Value::Int(0)) => Err(RuntimeError::new(
                 RuntimeErrorKind::Arithmetic,
                 format!("{self} / {rhs} is illegal"),
             )),
-            Value::Int(value) => Ok(Value::Int(value.wrapping_div(rhs.into_int()))),
-            Value::Float(value) => Ok(Value::Float(value / rhs.into_float())),
-            _ => unreachable!("other types do not support this operation"),
+            (Value::Int(lhs), Value::Int(rhs)) => Ok(Value::Int(lhs.wrapping_div(rhs))),
+            (Value::Float(lhs), Value::Float(rhs)) => Ok(Value::Float(lhs / rhs)),
+            _ => unreachable!("other types do not support this operation: {self} / {rhs}"),
         }
     }
 
     pub(crate) fn rem(&self, rhs: Value) -> Result<Value, RuntimeError> {
-        match self {
-            Value::Int(_) if rhs.into_int() == 0 => Err(RuntimeError::new(
+        match (self, rhs) {
+            (_, Value::Int(0)) => Err(RuntimeError::new(
                 RuntimeErrorKind::Arithmetic,
                 format!("{self} % {rhs} is illegal"),
             )),
-            Value::Int(value) => Ok(Value::Int(value.wrapping_rem(rhs.into_int()))),
-            _ => unreachable!("other types do not support this operation"),
+            (Value::Int(lhs), Value::Int(rhs)) => Ok(Value::Int(lhs.wrapping_rem(rhs))),
+            _ => unreachable!("other types do not support this operation: {self} % {rhs}"),
         }
     }
 
@@ -127,7 +113,7 @@ impl Value {
             (Value::Int(lhs), Value::Int(rhs)) => *lhs < rhs,
             (Value::Float(lhs), Value::Float(rhs)) => *lhs < rhs,
             (Value::Char(lhs), Value::Char(rhs)) => *lhs < rhs,
-            _ => unreachable!("other types cannot be compared"),
+            _ => unreachable!("other types cannot be compared: {self} < {rhs}"),
         };
         Value::Bool(res)
     }
@@ -137,7 +123,7 @@ impl Value {
             (Value::Int(lhs), Value::Int(rhs)) => *lhs <= rhs,
             (Value::Float(lhs), Value::Float(rhs)) => *lhs <= rhs,
             (Value::Char(lhs), Value::Char(rhs)) => *lhs <= rhs,
-            _ => unreachable!("other types cannot be compared"),
+            _ => unreachable!("other types cannot be compared: {self} <= {rhs}"),
         };
         Value::Bool(res)
     }
@@ -147,7 +133,7 @@ impl Value {
             (Value::Int(lhs), Value::Int(rhs)) => *lhs > rhs,
             (Value::Float(lhs), Value::Float(rhs)) => *lhs > rhs,
             (Value::Char(lhs), Value::Char(rhs)) => *lhs > rhs,
-            _ => unreachable!("other types cannot be compared"),
+            _ => unreachable!("other types cannot be compared: {self} > {rhs}"),
         };
         Value::Bool(res)
     }
@@ -157,72 +143,58 @@ impl Value {
             (Value::Int(lhs), Value::Int(rhs)) => *lhs >= rhs,
             (Value::Float(lhs), Value::Float(rhs)) => *lhs >= rhs,
             (Value::Char(lhs), Value::Char(rhs)) => *lhs >= rhs,
-            _ => unreachable!("other types cannot be compared"),
+            _ => unreachable!("other types cannot be compared: {self} >= {rhs}"),
         };
         Value::Bool(res)
     }
 
     pub(crate) fn shl(&self, rhs: Value) -> Result<Value, RuntimeError> {
-        let Value::Int(lhs) = self else {
-            unreachable!("other types cannot be shifted");
+        let (Value::Int(lhs), Value::Int(rhs)) = (self, rhs) else {
+            unreachable!("other types cannot be shifted: {self} << {rhs}");
         };
-        if !(0..=63).contains(&rhs.into_int()) {
+        if !(0..=63).contains(&rhs) {
             return Err(RuntimeError::new(
                 RuntimeErrorKind::Arithmetic,
                 "rhs is not in range `0..=63`".to_string(),
             ));
         }
-        Ok(Value::Int(lhs << rhs.into_int() as u32))
+        Ok(Value::Int(lhs << rhs as u32))
     }
 
     pub(crate) fn shr(&self, rhs: Value) -> Result<Value, RuntimeError> {
-        let Value::Int(lhs) = self else {
-            unreachable!("other types cannot be shifted");
+        let (Value::Int(lhs), Value::Int(rhs)) = (self, rhs) else {
+            unreachable!("other types cannot be shifted: {self} >> {rhs}");
         };
-        if !(0..=63).contains(&rhs.into_int()) {
+        if !(0..=63).contains(&rhs) {
             return Err(RuntimeError::new(
                 RuntimeErrorKind::Arithmetic,
                 "rhs is not in range `0..=63`".to_string(),
             ));
         }
-        Ok(Value::Int(lhs >> rhs.into_int() as u32))
+        Ok(Value::Int(lhs >> rhs as u32))
     }
 
     pub(crate) fn bit_or(&self, rhs: Value) -> Value {
-        match self {
-            Value::Int(val) => Value::Int(val | rhs.into_int()),
-            Value::Bool(val) => Value::Bool(val | rhs.into_bool()),
-            _ => unreachable!("other types are illegal"),
+        match (self, rhs) {
+            (Value::Int(lhs), Value::Int(rhs)) => Value::Int(lhs | rhs),
+            (Value::Bool(lhs), Value::Bool(rhs)) => Value::Bool(lhs | rhs),
+            _ => unreachable!("other types are illegal: {self} | {rhs}"),
         }
     }
 
     pub(crate) fn bit_and(&self, rhs: Value) -> Value {
-        match self {
-            Value::Int(val) => Value::Int(val & rhs.into_int()),
-            Value::Bool(val) => Value::Bool(val & rhs.into_bool()),
-            _ => unreachable!("other types are illegal"),
+        match (self, rhs) {
+            (Value::Int(lhs), Value::Int(rhs)) => Value::Int(lhs & rhs),
+            (Value::Bool(lhs), Value::Bool(rhs)) => Value::Bool(lhs & rhs),
+            _ => unreachable!("other types are illegal: {self} & {rhs}"),
         }
     }
 
     pub(crate) fn bit_xor(&self, rhs: Value) -> Value {
-        match self {
-            Value::Int(val) => Value::Int(val ^ rhs.into_int()),
-            Value::Bool(val) => Value::Bool(val ^ rhs.into_bool()),
-            _ => unreachable!("other types are illegal"),
-        }
-    }
-
-    pub(crate) fn and(&self, rhs: Value) -> Value {
-        match self {
-            Value::Bool(val) => Value::Bool(*val && rhs.into_bool()),
-            _ => unreachable!("other types are illegal"),
-        }
-    }
-
-    pub(crate) fn or(&self, rhs: Value) -> Value {
-        match self {
-            Value::Bool(val) => Value::Bool(*val || rhs.into_bool()),
-            _ => unreachable!("other types are illegal"),
+        match (self, rhs) {
+            (Value::Int(lhs), Value::Int(rhs)) => Value::Int(lhs ^ rhs),
+            (Value::Bool(lhs), Value::Bool(rhs)) => Value::Bool(lhs ^ rhs),
+            _ => unreachable!("other types are illegal: {self} ^ {rhs}"),
         }
     }
 
@@ -240,7 +212,7 @@ impl Value {
             Value::Bool(val) => val as i64,
             Value::Char(val) => val as i64,
             Value::Float(val) => val as i64,
-            _ => unreachable!("other combinations are impossible"),
+            _ => unreachable!("other combinations are impossible: {self} as int"),
         };
         Value::Int(res)
     }
@@ -250,7 +222,7 @@ impl Value {
             Value::Int(val) => val != 0,
             Value::Char(val) => val != 0,
             Value::Float(val) => val != 0.0,
-            _ => unreachable!("other combinations are impossible"),
+            _ => unreachable!("other combinations are impossible: {self} as bool"),
         };
         Value::Bool(res)
     }
@@ -264,7 +236,7 @@ impl Value {
             Value::Float(val) if val < 0.0 => 0,
             Value::Float(val) if val > 127.0 => 127,
             Value::Float(val) => val as u8,
-            _ => unreachable!("other combinations are impossible"),
+            _ => unreachable!("other combinations are impossible: {self} as char"),
         };
         Value::Char(res)
     }
@@ -274,18 +246,18 @@ impl Value {
             Value::Int(val) => val as f64,
             Value::Bool(val) => val as u8 as f64,
             Value::Char(val) => val as f64,
-            _ => unreachable!("other combinations are impossible"),
+            _ => unreachable!("other combinations are impossible: {self} as float"),
         };
         Value::Float(res)
     }
 }
 
 impl Display for Value {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Value::Int(val) => write!(f, "{val}"),
             Value::Bool(val) => write!(f, "{val}"),
-            Self::Char(val) => write!(f, "{val}"),
+            Value::Char(val) => write!(f, "{val}"),
             Value::Float(val) => write!(
                 f,
                 "{val}{zero}",

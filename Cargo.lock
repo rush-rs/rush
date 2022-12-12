@@ -570,7 +570,7 @@ dependencies = [
 
 [[package]]
 name = "rush-interpreter-vm"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rush-analyzer",
 ]

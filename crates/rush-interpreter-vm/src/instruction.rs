@@ -115,8 +115,6 @@ pub enum Instruction {
     BitOr,
     BitAnd,
     BitXor,
-    And,
-    Or,
 }
 
 impl From<InfixOp> for Instruction {
@@ -139,8 +137,7 @@ impl From<InfixOp> for Instruction {
             InfixOp::BitOr => Self::BitOr,
             InfixOp::BitAnd => Self::BitAnd,
             InfixOp::BitXor => Self::BitXor,
-            InfixOp::And => Self::And,
-            InfixOp::Or => Self::Or,
+            _ => unreachable!("logical operators are handled separately"),
         }
     }
 }
@@ -176,7 +173,7 @@ impl From<PrefixOp> for Instruction {
 }
 
 impl Display for Instruction {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Instruction::Push(val) => write!(f, "push {val}"),
             Instruction::Drop => write!(f, "pop"),
@@ -209,8 +206,6 @@ impl Display for Instruction {
             Instruction::BitOr => write!(f, "bitor"),
             Instruction::BitAnd => write!(f, "bitand"),
             Instruction::BitXor => write!(f, "bitxor"),
-            Instruction::And => write!(f, "and"),
-            Instruction::Or => write!(f, "or"),
         }
     }
 }

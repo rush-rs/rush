@@ -3,7 +3,7 @@ use std::{collections::HashMap, vec};
 use rush_analyzer::{ast::*, InfixOp, Type};
 
 use crate::{
-    instruction::{Instruction, Program, Type as InstructionType},
+    instruction::{self, Instruction, Program},
     value::Value,
 };
 
@@ -32,7 +32,8 @@ type Scope<'src> = HashMap<&'src str, Variable>;
 
 #[derive(Debug, Clone, Copy)]
 enum Variable {
-    Local { idx: usize, type_: Type },
+    Unit,
+    Local { idx: usize },
     Global { idx: usize },
 }
 
@@ -102,10 +103,7 @@ impl<'src> Compiler<'src> {
     fn load_var(&mut self, name: &'src str) {
         let var = self.resolve_var(name);
         match var {
-            Variable::Local {
-                type_: Type::Unit | Type::Never,
-                ..
-            } => {} // ignore unit / never values
+            Variable::Unit => {} // ignore unit / never values
             Variable::Local { idx, .. } => self.insert(Instruction::GetVar(idx)),
             Variable::Global { idx } => self.insert(Instruction::GetGlobal(idx)),
         }
@@ -153,18 +151,16 @@ impl<'src> Compiler<'src> {
 
         for param in node.params.iter().rev() {
             let idx = self.local_let_count;
-            self.scope_mut().insert(
-                param.name,
-                Variable::Local {
-                    idx,
-                    type_: param.type_,
-                },
-            );
 
-            if !matches!(param.type_, Type::Unit | Type::Never) {
-                self.insert(Instruction::SetVar(self.local_let_count));
-                self.local_let_count += 1;
-            }
+            let var = match param.type_ {
+                Type::Unit | Type::Never => Variable::Unit,
+                _ => {
+                    self.insert(Instruction::SetVar(self.local_let_count));
+                    self.local_let_count += 1;
+                    Variable::Local { idx }
+                }
+            };
+            self.scope_mut().insert(param.name, var);
         }
 
         self.block(node.block, false);
@@ -237,34 +233,21 @@ impl<'src> Compiler<'src> {
 
         match expr_type {
             Type::Unit | Type::Never => {
-                self.scope_mut().insert(
-                    node.name,
-                    // TODO: Variable::Unit or use options
-                    Variable::Local {
-                        idx: 0,
-                        type_: Type::Unit,
-                    },
-                );
+                self.scope_mut().insert(node.name, Variable::Unit);
             }
             _ => {
                 let idx = self.local_let_count;
                 self.insert(Instruction::SetVar(idx));
 
-                self.scope_mut().insert(
-                    node.name,
-                    Variable::Local {
-                        idx,
-                        type_: expr_type,
-                    },
-                );
+                self.scope_mut().insert(node.name, Variable::Local { idx });
                 self.local_let_count += 1;
             }
         }
     }
 
     /// Fills in any blank-value `jmp` / `jmpfalse` instructions to point to the specified target.
-    fn fill_blank_jmps(&mut self, jmps: Vec<usize>, target: usize) {
-        for idx in &jmps {
+    fn fill_blank_jmps(&mut self, jmps: &[usize], target: usize) {
+        for idx in jmps {
             match &mut self.curr_fn_mut()[*idx] {
                 Instruction::Jmp(o) => *o = target,
                 Instruction::JmpFalse(o) => *o = target,
@@ -293,10 +276,10 @@ impl<'src> Compiler<'src> {
         self.insert(Instruction::Jmp(loop_head_pos));
 
         // correct placeholder `break` / `continue` values
-        let loop_ = self.loops.pop().expect("pushed above"); // TODO: use helper function for
+        let loop_ = self.loops.pop().expect("pushed above");
         let pos = self.curr_fn_mut().len();
-        self.fill_blank_jmps(loop_.break_jmp_indices, pos);
-        self.fill_blank_jmps(loop_.continue_jmp_indices, loop_head_pos);
+        self.fill_blank_jmps(&loop_.break_jmp_indices, pos);
+        self.fill_blank_jmps(&loop_.continue_jmp_indices, loop_head_pos);
     }
 
     fn while_stmt(&mut self, node: AnalyzedWhileStmt<'src>) {
@@ -329,26 +312,28 @@ impl<'src> Compiler<'src> {
         self.insert(Instruction::Jmp(loop_head_pos));
 
         // correct placeholder `break` / `continue` values
-        let loop_ = self.loops.pop().expect("pushed above"); // TODO: helper func
+        let loop_ = self.loops.pop().expect("pushed above");
         let pos = self.curr_fn_mut().len();
-        self.fill_blank_jmps(loop_.break_jmp_indices, pos);
-        self.fill_blank_jmps(loop_.continue_jmp_indices, loop_head_pos);
+        self.fill_blank_jmps(&loop_.break_jmp_indices, pos);
+        self.fill_blank_jmps(&loop_.continue_jmp_indices, loop_head_pos);
     }
 
     fn for_stmt(&mut self, node: AnalyzedForStmt<'src>) {
         // compile the init expression
+        self.scopes.push(HashMap::new());
         let initializer_type = node.initializer.result_type();
         self.expression(node.initializer);
-        let idx = self.local_let_count;
-        self.insert(Instruction::SetVar(idx));
-        self.scope_mut().insert(
-            node.ident,
-            Variable::Local {
-                idx,
-                type_: initializer_type,
-            },
-        );
-        self.local_let_count += 1;
+        match initializer_type {
+            Type::Unit | Type::Never => {
+                self.scope_mut().insert(node.ident, Variable::Unit);
+            }
+            _ => {
+                let idx = self.local_let_count;
+                self.insert(Instruction::SetVar(idx));
+                self.scope_mut().insert(node.ident, Variable::Local { idx });
+                self.local_let_count += 1;
+            }
+        }
 
         // save location of the loop head (for repetition)
         let loop_head_pos = self.curr_fn_mut().len();
@@ -376,7 +361,7 @@ impl<'src> Compiler<'src> {
         // correct placeholder `continue` values
         let curr_pos = self.curr_fn_mut().len();
         let loop_ = self.loops.pop().expect("pushed above");
-        self.fill_blank_jmps(loop_.continue_jmp_indices, curr_pos);
+        self.fill_blank_jmps(&loop_.continue_jmp_indices, curr_pos);
 
         // compile the update expression
         let update_type = node.update.result_type();
@@ -390,7 +375,9 @@ impl<'src> Compiler<'src> {
 
         // correct placeholder break values
         let pos = self.curr_fn_mut().len();
-        self.fill_blank_jmps(loop_.break_jmp_indices, pos);
+        self.fill_blank_jmps(&loop_.break_jmp_indices, pos);
+
+        self.scopes.pop();
     }
 
     fn expression(&mut self, node: AnalyzedExpression<'src>) {
@@ -415,7 +402,7 @@ impl<'src> Compiler<'src> {
         // compile the condition
         self.expression(node.cond);
         let after_condition = self.curr_fn_mut().len();
-        self.insert(Instruction::Jmp(usize::MAX)); // placeholder
+        self.insert(Instruction::JmpFalse(usize::MAX)); // placeholder
 
         // compile the `then` branch
         self.block(node.then_block, true);
@@ -423,7 +410,8 @@ impl<'src> Compiler<'src> {
 
         if let Some(else_block) = node.else_block {
             self.insert(Instruction::Jmp(usize::MAX)); // placeholder
-                                                       // if there is `else`, jump to the instruction after the jump after `then`
+
+            // if there is `else`, jump to the instruction after the jump after `then`
             self.curr_fn_mut()[after_condition] = Instruction::JmpFalse(after_then_idx + 1);
 
             self.block(else_block, true);
@@ -444,26 +432,17 @@ impl<'src> Compiler<'src> {
 
     fn infix_expr(&mut self, node: AnalyzedInfixExpr<'src>) {
         match node.op {
-            InfixOp::Or => {
+            InfixOp::Or | InfixOp::And => {
                 self.expression(node.lhs);
-                self.insert(Instruction::Not);
+                if node.op == InfixOp::Or {
+                    self.insert(Instruction::Not);
+                }
                 let merge_jmp_idx = self.curr_fn_mut().len();
                 self.insert(Instruction::JmpFalse(usize::MAX));
                 self.expression(node.rhs);
                 let pos = self.curr_fn_mut().len() + 2;
                 self.insert(Instruction::Jmp(pos));
-                self.insert(Instruction::Push(Value::Bool(true)));
-                self.curr_fn_mut()[merge_jmp_idx] =
-                    Instruction::JmpFalse(self.curr_fn_mut().len() - 1);
-            }
-            InfixOp::And => {
-                self.expression(node.lhs);
-                let merge_jmp_idx = self.curr_fn_mut().len();
-                self.insert(Instruction::JmpFalse(usize::MAX));
-                self.expression(node.rhs);
-                let pos = self.curr_fn_mut().len() + 2;
-                self.insert(Instruction::Jmp(pos));
-                self.insert(Instruction::Push(Value::Bool(false)));
+                self.insert(Instruction::Push(Value::Bool(node.op == InfixOp::Or)));
                 self.curr_fn_mut()[merge_jmp_idx] =
                     Instruction::JmpFalse(self.curr_fn_mut().len() - 1);
             }
@@ -488,10 +467,7 @@ impl<'src> Compiler<'src> {
 
         let assignee = self.resolve_var(node.assignee);
         match assignee {
-            Variable::Local {
-                type_: Type::Unit | Type::Never,
-                ..
-            } => {}
+            Variable::Unit => {}
             Variable::Local { idx, .. } => self.insert(Instruction::SetVar(idx)),
             Variable::Global { idx } => self.insert(Instruction::SetGlobal(idx)),
         };
@@ -509,8 +485,8 @@ impl<'src> Compiler<'src> {
         match node.func {
             "exit" => self.insert(Instruction::Exit),
             func => {
-                let fn_idx = self.fn_names.get(func).expect("every function exists");
-                self.insert(Instruction::Call(*fn_idx));
+                let fn_idx = self.fn_names[func];
+                self.insert(Instruction::Call(fn_idx));
             }
         }
     }
@@ -520,7 +496,7 @@ impl<'src> Compiler<'src> {
         self.expression(node.expr);
         match (expr_type, node.type_) {
             (from, to) if from == to => {}
-            (_, to) => self.insert(Instruction::Cast(InstructionType::from(to))),
+            (_, to) => self.insert(Instruction::Cast(instruction::Type::from(to))),
         }
     }
 }

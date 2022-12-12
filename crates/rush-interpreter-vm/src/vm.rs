@@ -1,4 +1,8 @@
-use std::{fmt::Display, thread::sleep, time::Duration};
+use std::{
+    fmt::{self, Display, Formatter},
+    thread::sleep,
+    time::Duration,
+};
 
 use crate::{
     instruction::{Instruction, Program},
@@ -24,8 +28,8 @@ struct CallFrame {
     fp: usize,
 }
 
-const STACK_LIMIT: usize = 1000;
-const CALL_STACK_LIMIT: usize = 1000;
+const STACK_LIMIT: usize = 1024;
+const CALL_STACK_LIMIT: usize = 1024;
 
 pub type Result<T> = std::result::Result<T, RuntimeError>;
 
@@ -36,7 +40,7 @@ pub struct RuntimeError {
 }
 
 impl Display for RuntimeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}: {}", self.kind, self.msg)
     }
 }
@@ -85,7 +89,7 @@ impl Vm {
     /// Adds a value to the stack.
     /// If this operation would exceed the stack limit, an error is returned.
     fn push(&mut self, val: Value) -> Result<()> {
-        match self.stack.len() > STACK_LIMIT {
+        match self.stack.len() >= STACK_LIMIT {
             true => Err(RuntimeError::new(
                 RuntimeErrorKind::StackOverflow,
                 format!("maximum stack size of {STACK_LIMIT} exceeded"),
@@ -105,14 +109,16 @@ impl Vm {
 
     #[inline]
     fn call_frame(&self) -> &CallFrame {
-        self.call_stack.last().expect("there is always the root")
+        self.call_stack
+            .last()
+            .expect("there is always at least one call frame")
     }
 
     #[inline]
     fn call_frame_mut(&mut self) -> &mut CallFrame {
         self.call_stack
             .last_mut()
-            .expect("there is always the root")
+            .expect("there is always at least one call frame")
     }
 
     /// Runs the specified program but includes debug prints after each instruction.
@@ -122,17 +128,19 @@ impl Vm {
             let instruction = &program.0[self.call_frame().fp][self.call_frame().ip];
 
             println!(
-                "[{:02}/{:02}] {:12} | {:>20} | {}",
-                self.call_frame().fp,
-                self.call_frame().ip,
-                instruction.to_string(),
-                self.stack
+                "[{fp:02}/{ip:02}] {instr:12} | {stack:>40} | {mem}",
+                fp = self.call_frame().fp,
+                ip = self.call_frame().ip,
+                instr = instruction.to_string(),
+                stack = self
+                    .stack
                     .iter()
                     .rev()
                     .map(|v| v.to_string())
                     .collect::<Vec<String>>()
                     .join(", "),
-                self.call_frame()
+                mem = self
+                    .call_frame()
                     .mem
                     .iter()
                     .map(|v| match v {
@@ -145,7 +153,7 @@ impl Vm {
             sleep(Duration::from_millis(1000 / clock_hz));
 
             // if the current instruction exists the VM, terminate execution
-            if let Some(code) = self.instruction(instruction)? {
+            if let Some(code) = self.run_instruction(instruction)? {
                 return Ok(code);
             };
         }
@@ -157,7 +165,7 @@ impl Vm {
             let instruction = &program.0[self.call_frame().fp][self.call_frame().ip];
 
             // if the current instruction exists the VM, terminate execution
-            if let Some(code) = self.instruction(instruction)? {
+            if let Some(code) = self.run_instruction(instruction)? {
                 return Ok(code);
             };
         }
@@ -165,9 +173,8 @@ impl Vm {
         Ok(0)
     }
 
-    fn instruction(&mut self, inst: &Instruction) -> Result<Option<i64>> {
+    fn run_instruction(&mut self, inst: &Instruction) -> Result<Option<i64>> {
         match inst {
-            // indexing is safe here because only valid instructions are ran
             Instruction::Push(value) => self.push(*value)?,
             Instruction::Drop => {
                 self.pop();
@@ -178,7 +185,7 @@ impl Vm {
             }
             Instruction::JmpFalse(idx) => {
                 // if the value on the stack is `false`, perform the jump
-                if !self.pop().into_bool() {
+                if !self.pop().unwrap_bool() {
                     self.call_frame_mut().ip = *idx;
                     return Ok(None);
                 }
@@ -186,11 +193,14 @@ impl Vm {
             Instruction::SetVar(idx) => {
                 // if there is already an entry in the memory, use it.
                 // otherwise, new memory is allocated
-                while self.call_frame().mem.len() < idx + 1 {
-                    self.call_frame_mut().mem.push(None)
+                let val = self.pop();
+                match self.call_frame_mut().mem.get_mut(*idx) {
+                    Some(var) => *var = Some(val),
+                    None => {
+                        self.call_frame_mut().mem.resize(idx + 1, None);
+                        self.call_frame_mut().mem[*idx] = Some(val)
+                    }
                 }
-
-                self.call_frame_mut().mem[*idx] = Some(self.pop());
             }
             Instruction::GetVar(idx) => {
                 self.push(self.call_frame().mem[*idx].expect("variables are always initialized"))?
@@ -204,7 +214,7 @@ impl Vm {
             }
             Instruction::GetGlobal(idx) => self.push(self.globals[*idx])?,
             Instruction::Call(idx) => {
-                if self.call_stack.len() > CALL_STACK_LIMIT {
+                if self.call_stack.len() >= CALL_STACK_LIMIT {
                     return Err(RuntimeError::new(
                         RuntimeErrorKind::StackOverflow,
                         format!("maximum call-stack size of {CALL_STACK_LIMIT} was exceeded"),
@@ -221,15 +231,15 @@ impl Vm {
                 // must return because the ip would be incremented otherwise
                 return Ok(None);
             }
+            Instruction::Ret => {
+                self.call_stack.pop();
+            }
             Instruction::Cast(to) => {
                 let from = self.pop();
                 self.push(from.cast(*to))?
             }
-            Instruction::Ret => {
-                self.call_stack.pop();
-            }
             Instruction::Exit => {
-                return Ok(Some(self.pop().into_int()));
+                return Ok(Some(self.pop().unwrap_int()));
             }
             Instruction::Neg => {
                 let top = self.pop();
@@ -323,16 +333,6 @@ impl Vm {
                 let rhs = self.pop();
                 let lhs = self.pop();
                 self.push(lhs.bit_xor(rhs))?;
-            }
-            Instruction::And => {
-                let rhs = self.pop();
-                let lhs = self.pop();
-                self.push(lhs.and(rhs))?;
-            }
-            Instruction::Or => {
-                let rhs = self.pop();
-                let lhs = self.pop();
-                self.push(lhs.or(rhs))?;
             }
         }
         self.call_frame_mut().ip += 1;
