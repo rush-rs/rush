@@ -21,7 +21,7 @@ impl Compiler<'_> {
                 let func_idx = (self.function_section.len() + self.import_count).to_uleb128();
                 self.function_section.push(type_idx);
 
-                // save in builtin_functions map
+                // save in `self.builtin_functions` map
                 self.builtin_functions.insert(name, func_idx);
                 let func_idx = &self.builtin_functions[name];
 
@@ -252,7 +252,7 @@ impl Compiler<'_> {
                 // add signature to type section
                 self.type_section.push(signature);
 
-                // save in builtin_functions map
+                // save in `self.builtin_functions` map
                 let func_idx = self.import_section.len().to_uleb128();
                 self.builtin_functions.insert(name, func_idx);
                 let func_idx = &self.builtin_functions[name];

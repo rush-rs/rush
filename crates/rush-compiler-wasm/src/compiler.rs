@@ -31,7 +31,7 @@ pub struct Compiler<'src> {
     pub(crate) functions: HashMap<&'src str, Vec<u8>>,
     /// Maps builtin function names to their index encoded as unsigned LEB128
     pub(crate) builtin_functions: HashMap<&'static str, Vec<u8>>,
-    /// The number of imports this module uses
+    /// The number of imports this module uses (for offsetting the function index)
     pub(crate) import_count: usize,
 
     pub(crate) type_section: Vec<Vec<u8>>,     // 1
@@ -47,6 +47,7 @@ pub struct Compiler<'src> {
     pub(crate) data_section: Vec<Vec<u8>>,     // 11
     pub(crate) data_count_section: Vec<u8>,    // 12
 
+    ////// ONLY for the name section //////
     pub(crate) function_names: Vec<Vec<u8>>,
     pub(crate) imported_function_names: Vec<Vec<u8>>,
     /// List of `(func_idx, list_of_locals)`
@@ -184,7 +185,7 @@ impl<'src> Compiler<'src> {
         ]
         .concat();
         [
-            &[0][..],                     // section id
+            &[0][..],                     // section id for custom sections
             &contents.len().to_uleb128(), // section size
             &contents,                    // section contents
         ]
@@ -209,10 +210,7 @@ impl<'src> Compiler<'src> {
                 return Variable::Local(idx);
             }
         }
-        if let Some(idx) = self.global_scope.get(name) {
-            return Variable::Global(idx);
-        }
-        unreachable!("the analyzer guarantees valid variable references");
+        Variable::Global(&self.global_scope[name])
     }
 
     /////////////////////////
@@ -226,7 +224,7 @@ impl<'src> Compiler<'src> {
             // add name to name section
             self.global_names.push(
                 [
-                    &global_idx[..],                 // function index
+                    &global_idx[..],                 // global index
                     &global.name.len().to_uleb128(), // string len
                     global.name.as_bytes(),          // name
                 ]
@@ -266,7 +264,7 @@ impl<'src> Compiler<'src> {
 
         // add main fn signature
         {
-            // add to self.functions map
+            // add to `self.functions` map
             let func_idx = self.import_count.to_uleb128();
             self.functions.insert("main", func_idx.clone());
 
@@ -295,19 +293,14 @@ impl<'src> Compiler<'src> {
         }
 
         // add other function signatures
-        for func in &node.functions {
+        for func in node.functions.iter().filter(|func| func.used) {
             self.function_signature(func);
         }
 
         // compile functions
         self.main_fn(node.main_fn);
-        for (idx, func) in node
-            .functions
-            .into_iter()
-            .filter(|func| func.used)
-            .enumerate()
-        {
-            self.curr_func_idx = idx + 1;
+        for func in node.functions.into_iter().filter(|func| func.used) {
+            self.curr_func_idx += 1;
             self.function_definition(func);
         }
 
@@ -347,12 +340,7 @@ impl<'src> Compiler<'src> {
     }
 
     fn function_signature(&mut self, node: &AnalyzedFunctionDefinition<'src>) {
-        // skip unused functions
-        if !node.used {
-            return;
-        }
-
-        // add to self.functions map
+        // add to `self.functions` map
         let func_idx = (self.function_section.len() + self.import_count).to_uleb128();
         self.functions.insert(node.name, func_idx.clone());
 
@@ -446,7 +434,7 @@ impl<'src> Compiler<'src> {
         }
         self.function_body.push(instructions::END);
 
-        // take self.locals
+        // take `self.locals`
         let locals = Self::vector(mem::take(&mut self.locals), false);
 
         // push function
@@ -500,10 +488,8 @@ impl<'src> Compiler<'src> {
         let local_idx = (self.locals.len() + self.param_count).to_uleb128();
         if let Some(byte) = wasm_type {
             self.locals.push(vec![1, byte]);
-        }
 
-        // add variable name to name section
-        if wasm_type.is_some() {
+            // add variable name to name section
             self.local_names[self.curr_func_idx].1.push(
                 [
                     &local_idx[..],                // local index
@@ -543,7 +529,7 @@ impl<'src> Compiler<'src> {
         self.function_body.push(instructions::LOOP); // loop to jump to with `continue`
         self.function_body.push(types::VOID); // with result `()`
 
-        self.block_expr(node.block, true);
+        self.block_expr(node.block);
         self.function_body.push(instructions::BR); // jump
         self.function_body.push(0); // to start of loop
 
@@ -572,7 +558,7 @@ impl<'src> Compiler<'src> {
         self.block_count = 0;
         self.break_labels.push(1);
 
-        self.block_expr(node.block, true);
+        self.block_expr(node.block);
         self.function_body.push(instructions::BR); // jump
         self.function_body.push(0); // to start of loop
 
@@ -632,7 +618,7 @@ impl<'src> Compiler<'src> {
         self.block_count = 0;
         self.break_labels.push(2);
 
-        self.block_expr(node.block, true); // the loop body
+        self.block_expr(node.block); // the loop body
 
         self.function_body.push(instructions::END); // end of block
 
@@ -656,7 +642,7 @@ impl<'src> Compiler<'src> {
     fn expression(&mut self, node: AnalyzedExpression<'src>) {
         let diverges = node.result_type() == Type::Never;
         match node {
-            AnalyzedExpression::Block(node) => self.block_expr(*node, true),
+            AnalyzedExpression::Block(node) => self.block_expr(*node),
             AnalyzedExpression::If(node) => self.if_expr(*node),
             AnalyzedExpression::Int(value) => {
                 // `int`s are stored as signed `i64`
@@ -704,19 +690,15 @@ impl<'src> Compiler<'src> {
         }
     }
 
-    fn block_expr(&mut self, node: AnalyzedBlock<'src>, new_scope: bool) {
-        if new_scope {
-            self.push_scope();
-        }
+    fn block_expr(&mut self, node: AnalyzedBlock<'src>) {
+        self.push_scope();
         for stmt in node.stmts {
             self.statement(stmt);
         }
         if let Some(expr) = node.expr {
             self.expression(expr);
         }
-        if new_scope {
-            self.pop_scope();
-        }
+        self.pop_scope();
     }
 
     fn if_expr(&mut self, node: AnalyzedIfExpr<'src>) {
@@ -730,11 +712,11 @@ impl<'src> Compiler<'src> {
         }
 
         self.block_count += 1;
-        self.block_expr(node.then_block, true);
+        self.block_expr(node.then_block);
 
         if let Some(else_block) = node.else_block {
             self.function_body.push(instructions::ELSE);
-            self.block_expr(else_block, true);
+            self.block_expr(else_block);
         }
 
         self.block_count -= 1;
@@ -852,20 +834,22 @@ impl<'src> Compiler<'src> {
             (InfixOp::Pow, Type::Int) => return self.__rush_internal_pow_int(),
             (InfixOp::Eq, Type::Int) => instructions::I64_EQ,
             (InfixOp::Eq, Type::Float) => instructions::F64_EQ,
-            (InfixOp::Eq, Type::Bool) => instructions::I32_EQ,
-            (InfixOp::Eq, Type::Char) => instructions::I32_EQ,
+            (InfixOp::Eq, Type::Bool | Type::Char) => instructions::I32_EQ,
             (InfixOp::Neq, Type::Int) => instructions::I64_NE,
             (InfixOp::Neq, Type::Float) => instructions::F64_NE,
-            (InfixOp::Neq, Type::Bool) => instructions::I32_NE,
-            (InfixOp::Neq, Type::Char) => instructions::I32_NE,
+            (InfixOp::Neq, Type::Bool | Type::Char) => instructions::I32_NE,
             (InfixOp::Lt, Type::Int) => instructions::I64_LT_S,
             (InfixOp::Lt, Type::Float) => instructions::F64_LT,
+            (InfixOp::Lt, Type::Char) => instructions::I32_LT_U,
             (InfixOp::Gt, Type::Int) => instructions::I64_GT_S,
             (InfixOp::Gt, Type::Float) => instructions::F64_GT,
+            (InfixOp::Gt, Type::Char) => instructions::I32_GT_U,
             (InfixOp::Lte, Type::Int) => instructions::I64_LE_S,
             (InfixOp::Lte, Type::Float) => instructions::F64_LE,
+            (InfixOp::Lte, Type::Char) => instructions::I32_LE_U,
             (InfixOp::Gte, Type::Int) => instructions::I64_GE_S,
             (InfixOp::Gte, Type::Float) => instructions::F64_GE,
+            (InfixOp::Gte, Type::Char) => instructions::I32_GE_U,
             (InfixOp::Shl, Type::Int) => instructions::I64_SHL,
             (InfixOp::Shr, Type::Int) => instructions::I64_SHR_S,
             (InfixOp::BitOr, Type::Int) => instructions::I64_OR,

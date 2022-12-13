@@ -58,7 +58,7 @@ macro_rules! leb128_impl {
 
 leb128_impl!(bool, i8, u8, i16, u16, i32, u32, i64, isize, usize);
 
-/// Convert a [`rush_analyzer::Type`] into its WASM equivalent
+/// Convert a [`Type`] into its WASM equivalent
 pub fn type_to_byte(type_: Type) -> Option<u8> {
     match type_ {
         Type::Int => Some(types::I64),
