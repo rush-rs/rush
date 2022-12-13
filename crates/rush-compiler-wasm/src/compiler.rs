@@ -556,20 +556,21 @@ impl<'src> Compiler<'src> {
     }
 
     fn while_stmt(&mut self, node: AnalyzedWhileStmt<'src>) {
-        // store current block count and set break label
-        let prev_block_count = self.block_count;
-        self.block_count = 0;
-        self.break_labels.push(1);
-
         self.function_body.push(instructions::BLOCK); // outer block to jump to with `break`
         self.function_body.push(types::VOID); // with result `()`
         self.function_body.push(instructions::LOOP); // loop to jump to with `continue`
         self.function_body.push(types::VOID); // with result `()`
+        self.block_count += 2;
 
         self.expression(node.cond); // compile condition
         self.function_body.push(instructions::I32_EQZ); // negate result
         self.function_body.push(instructions::BR_IF); // jump if cond is not true
         self.function_body.push(1); // to end of outer block
+
+        // store current block count and set break label
+        let prev_block_count = self.block_count;
+        self.block_count = 0;
+        self.break_labels.push(1);
 
         self.block_expr(node.block, true);
         self.function_body.push(instructions::BR); // jump
@@ -579,25 +580,18 @@ impl<'src> Compiler<'src> {
         self.function_body.push(instructions::END); // end of block
 
         // restore block count and loop labels
-        self.block_count = prev_block_count;
+        self.block_count = prev_block_count - 2;
         self.break_labels.pop();
     }
 
     fn for_stmt(&mut self, node: AnalyzedForStmt<'src>) {
-        // store current block count and set break label
-        let prev_block_count = self.block_count;
-        self.block_count = 0;
-        self.break_labels.push(2);
-
         // compile the initializer
         let wasm_type = utils::type_to_byte(node.initializer.result_type());
         let local_idx = (self.locals.len() + self.param_count).to_uleb128();
         if let Some(byte) = wasm_type {
             self.locals.push(vec![1, byte]);
-        }
 
-        // add init variable name to name section
-        if wasm_type.is_some() {
+            // add init variable name to name section
             self.local_names[self.curr_func_idx].1.push(
                 [
                     &local_idx[..],                 // local index
@@ -609,8 +603,10 @@ impl<'src> Compiler<'src> {
         }
 
         self.expression(node.initializer);
-        self.function_body.push(instructions::LOCAL_SET);
-        self.function_body.extend_from_slice(&local_idx);
+        if wasm_type.is_some() {
+            self.function_body.push(instructions::LOCAL_SET);
+            self.function_body.extend_from_slice(&local_idx);
+        }
 
         // create new scope just for induction variable
         self.scopes.push(HashMap::from([(
@@ -624,15 +620,25 @@ impl<'src> Compiler<'src> {
         self.function_body.push(types::VOID); // with result `()`
         self.function_body.push(instructions::BLOCK); // block to jump to with continue
         self.function_body.push(types::VOID); // with result `()`
+        self.block_count += 3;
 
         self.expression(node.cond); // compile condition
         self.function_body.push(instructions::I32_EQZ); // negate result
         self.function_body.push(instructions::BR_IF); // jump if cond is not true
         self.function_body.push(2); // to end of outer block
 
+        // store current block count and set break label
+        let prev_block_count = self.block_count;
+        self.block_count = 0;
+        self.break_labels.push(2);
+
         self.block_expr(node.block, true); // the loop body
 
         self.function_body.push(instructions::END); // end of block
+
+        // restore block count and loop labels
+        self.block_count = prev_block_count - 1;
+        self.break_labels.pop();
 
         self.expression(node.update); // loop update expression
 
@@ -641,10 +647,7 @@ impl<'src> Compiler<'src> {
 
         self.function_body.push(instructions::END); // end of loop
         self.function_body.push(instructions::END); // end of block
-
-        // restore block count and loop labels
-        self.block_count = prev_block_count;
-        self.break_labels.pop();
+        self.block_count -= 2;
 
         // pop scope
         self.pop_scope();
