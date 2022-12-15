@@ -217,7 +217,7 @@ impl<'src> Compiler<'src> {
 
     fn program(&mut self, node: AnalyzedProgram<'src>) {
         // add globals
-        for global in &node.globals {
+        for global in node.globals.iter().filter(|global| global.used) {
             // get index
             let global_idx = self.global_scope.len().to_uleb128();
 
