@@ -182,7 +182,7 @@ impl Display for Instruction {
             Instruction::Fdiv(dest, lhs, rhs) => write!(f, "fdiv.d {dest}, {lhs}, {rhs}"),
             Instruction::SetFloatCondition(cond, dest, l, r) => match cond {
                 Condition::Lt => write!(f, "flt.d {dest}, {l}, {r}"),
-                Condition::Le => write!(f, "file.d {dest}, {l}, {r}"),
+                Condition::Le => write!(f, "fle.d {dest}, {l}, {r}"),
                 Condition::Gt => write!(f, "fgt.d {dest}, {l}, {r}"),
                 Condition::Ge => write!(f, "fge.d {dest}, {l}, {r}"),
                 Condition::Eq => write!(f, "feq.d {dest}, {l}, {r}"),
