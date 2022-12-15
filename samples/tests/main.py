@@ -11,6 +11,7 @@ tests = {
     './fib.rush': 110,
     './globals.rush': 44,
     './if_else.rush': 20,
+    './nan.rush': 11,
 }
 
 # saves the backend an any additional commands to be executed after `cargo r`

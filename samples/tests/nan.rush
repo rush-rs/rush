@@ -1,0 +1,14 @@
+fn main() {
+    let zero = 0.0;
+    let nan = zero / zero;
+
+
+    let res = !(nan == nan) &&
+        nan != nan &&
+        !(nan > nan) &&
+        !(nan >= nan) &&
+        !(nan < nan) &&
+        !(nan <= nan);
+
+    exit(res as int + 10)
+}
