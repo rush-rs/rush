@@ -769,11 +769,6 @@ impl<'tree> Compiler<'tree> {
                         self.insert(Instruction::Addi(rhs_reg.into(), rhs_reg.into(), value));
                         Some(rhs_reg)
                     }
-                    (AnalyzedExpression::Int(value), expr, InfixOp::Minus) => {
-                        let rhs_reg = self.expression(expr)?;
-                        self.insert(Instruction::Addi(rhs_reg.into(), rhs_reg.into(), -value));
-                        Some(rhs_reg)
-                    }
                     (AnalyzedExpression::Ident(_), AnalyzedExpression::Int(0), InfixOp::Mul)
                     | (AnalyzedExpression::Int(0), AnalyzedExpression::Int(_), InfixOp::Mul) => {
                         let res_reg = self.alloc_ireg();
