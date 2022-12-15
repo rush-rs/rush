@@ -1082,7 +1082,7 @@ impl<'src> Compiler<'src> {
 
         let block_type = node.then_block.result_type;
         let block_val = self.block_expr(node.then_block);
-        let result_reg = self.value_to_reg(block_type, block_val, false, false);
+        let mut result_reg = self.value_to_reg(block_type, block_val, false, false);
         if let Some(block) = node.else_block {
             match result_reg {
                 Some(Register::Int(_)) => {
@@ -1104,12 +1104,12 @@ impl<'src> Compiler<'src> {
             match self.block_expr(block) {
                 Some(Value::Int(val)) => {
                     match val {
-                        IntValue::Register(reg) => {
-                            debug_assert_eq!(
-                                result_reg.map(|r| r.in_size(reg.size())),
-                                Some(Register::Int(reg))
-                            )
-                        }
+                        IntValue::Register(reg) => match result_reg {
+                            Some(result_reg) => {
+                                debug_assert_eq!(result_reg.in_size(reg.size()), Register::Int(reg))
+                            }
+                            None => result_reg = Some(Register::Int(reg)),
+                        },
                         _ => {
                             let size = match &val {
                                 IntValue::Ptr(ptr) => ptr.size,
@@ -1119,7 +1119,11 @@ impl<'src> Compiler<'src> {
                                 Some(reg) => reg.expect_int(
                                     "the analyzer guarantees equal types in both blocks",
                                 ),
-                                None => self.get_free_register(size),
+                                None => {
+                                    let reg = self.get_tmp_register(size);
+                                    result_reg = Some(Register::Int(reg));
+                                    reg
+                                }
                             };
 
                             // restore temporarily freed register
@@ -1132,13 +1136,23 @@ impl<'src> Compiler<'src> {
                 }
                 Some(Value::Float(val)) => {
                     match val {
-                        FloatValue::Register(reg) => {
-                            debug_assert_eq!(result_reg, Some(Register::Float(reg)))
-                        }
+                        FloatValue::Register(reg) => match result_reg {
+                            Some(result_reg) => {
+                                debug_assert_eq!(result_reg, Register::Float(reg))
+                            }
+                            None => result_reg = Some(Register::Float(reg)),
+                        },
                         FloatValue::Ptr(_) => {
-                            let result_reg = result_reg
-                                .expect("the else-block has a result, so the then-block must have one too")
-                                .expect_float("the analyzer guarantees equal types in both blocks");
+                            let result_reg = match result_reg {
+                                Some(reg) => reg.expect_float(
+                                    "the analyzer guarantees equal types in both blocks",
+                                ),
+                                None => {
+                                    let reg = self.get_tmp_float_register();
+                                    result_reg = Some(Register::Float(reg));
+                                    reg
+                                }
+                            };
                             // restore temporarily freed register
                             self.used_float_registers.push(result_reg);
 
