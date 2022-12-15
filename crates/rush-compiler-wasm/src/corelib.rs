@@ -201,21 +201,26 @@ impl Compiler<'_> {
                 // -- begin loop
                 instructions::LOOP,
                 types::VOID, // with result `()`
-                // -- break if exponent == 0
-                instructions::LOCAL_GET, // get
-                1,                       // exponent
-                instructions::I64_EQZ,   // == 0
-                instructions::BR_IF,     // conditional jump
-                1,                       // to end of outer block
-                // -- decrement exponent
+                // -- break if exponent <= 1
                 instructions::LOCAL_GET, // get
                 1,                       // exponent
                 instructions::I64_CONST,
                 1,
-                instructions::I64_SUB,   // subtract 1
-                instructions::LOCAL_SET, // set
-                1,                       // exponent
-                // -- multiply accumulator with base
+                instructions::I64_LE_S,
+                instructions::BR_IF, // conditional jump
+                1,                   // to end of outer block
+                // -- if (exponent & 1) == 1
+                instructions::LOCAL_GET,
+                1,
+                instructions::I64_CONST,
+                1,
+                instructions::I64_AND,
+                instructions::I64_CONST,
+                1,
+                instructions::I64_EQ,
+                instructions::IF, // if
+                types::VOID,      // with result `()`
+                // -- then multiply accumulator with base
                 instructions::LOCAL_GET, // get
                 2,                       // accumulator
                 instructions::LOCAL_GET, // get
@@ -223,6 +228,23 @@ impl Compiler<'_> {
                 instructions::I64_MUL,   // multiply
                 instructions::LOCAL_SET, // set
                 2,                       // accumulator
+                instructions::END,       // end if
+                // -- shift exponent right once
+                instructions::LOCAL_GET, // get
+                1,                       // exponent
+                instructions::I64_CONST, // const
+                1,                       // 1
+                instructions::I64_SHR_S, // shift
+                instructions::LOCAL_SET, // set
+                1,                       // exponent
+                // -- multiply base with base
+                instructions::LOCAL_GET, // get
+                0,                       // base
+                instructions::LOCAL_GET, // get
+                0,                       // base
+                instructions::I64_MUL,   // multiply
+                instructions::LOCAL_SET, // set
+                0,                       // base
                 // -- jump to start of loop
                 instructions::BR,
                 0,
@@ -230,9 +252,12 @@ impl Compiler<'_> {
                 instructions::END,
                 // -- end block
                 instructions::END,
-                // -- return accumulator
-                instructions::LOCAL_GET,
-                2,
+                // -- return accumulator * base
+                instructions::LOCAL_GET, // get
+                2,                       // accumulator
+                instructions::LOCAL_GET, // get
+                0,                       // base
+                instructions::I64_MUL,   // multiply
                 // end if
                 instructions::END,
                 // end function body
