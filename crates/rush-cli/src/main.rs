@@ -1,8 +1,8 @@
-use std::{fs, process};
+use std::{fs, process, time::Instant};
 
 use anyhow::{bail, Context};
 use clap::Parser;
-use cli::{Cli, CompilerBackend, LlvmOpt, RunnableBackend};
+use cli::{Cli, Command, CompilerBackend, LlvmOpt, RunnableBackend};
 use rush_analyzer::{ast::AnalyzedProgram, Diagnostic};
 use rush_interpreter_tree::Interpreter;
 
@@ -14,10 +14,10 @@ mod wasm;
 mod x86;
 
 fn main() -> anyhow::Result<()> {
-    let args = Cli::parse();
+    let root_args = Cli::parse();
 
-    match args {
-        Cli::Build(args) => {
+    match root_args.command {
+        Command::Build(args) => {
             if args.backend != CompilerBackend::Llvm {
                 if args.llvm_show_ir {
                     bail!("cannot show llvm IR when not using LLVM backend")
@@ -31,10 +31,20 @@ fn main() -> anyhow::Result<()> {
             }
 
             let compile_func = || -> anyhow::Result<()> {
+                let total_start = Instant::now();
+                let mut start = Instant::now();
+
                 let text = fs::read_to_string(&args.path)?;
+
+                let file_read_time = start.elapsed();
+                start = Instant::now();
+
                 let path = args.path.clone();
                 let path = path.to_string_lossy();
                 let tree = analyze(&text, &path)?;
+
+                let analyze_time = start.elapsed();
+                start = Instant::now();
 
                 match args.backend {
                     CompilerBackend::Llvm => llvm::compile(tree, args)?,
@@ -43,11 +53,18 @@ fn main() -> anyhow::Result<()> {
                     CompilerBackend::X86_64 => x86::compile(tree, args)?,
                 }
 
+                if root_args.time {
+                    println!("file read: {file_read_time:?}");
+                    println!("analyze:   {analyze_time:?}");
+                    println!("compile:   {:?}", start.elapsed());
+                    println!("\x1b[90mtotal:     {:?}\x1b[0m", total_start.elapsed());
+                }
+
                 Ok(())
             };
             compile_func().with_context(|| "compilation failed")?;
         }
-        Cli::Run(args) => {
+        Command::Run(args) => {
             if args.backend != RunnableBackend::Llvm && args.llvm_opt != LlvmOpt::None {
                 bail!("cannot set LLVM optimization level when not using LLVM backend")
             }
@@ -56,8 +73,18 @@ fn main() -> anyhow::Result<()> {
             let path = path.to_string_lossy();
 
             let run_func = || -> anyhow::Result<i64> {
+                let total_start = Instant::now();
+                let mut start = Instant::now();
+
                 let text = fs::read_to_string(&args.path)?;
+
+                let file_read_time = start.elapsed();
+                start = Instant::now();
+
                 let tree = analyze(&text, &path)?;
+
+                let analyze_time = start.elapsed();
+                start = Instant::now();
 
                 let exit_code = match args.backend {
                     RunnableBackend::Tree => match Interpreter::new().run(tree) {
@@ -73,17 +100,38 @@ fn main() -> anyhow::Result<()> {
                     }
                 };
 
+                if root_args.time {
+                    println!("file read: {file_read_time:?}");
+                    println!("analyze:   {analyze_time:?}");
+                    println!("run:       {:?}", start.elapsed());
+                    println!("\x1b[90mtotal:     {:?}\x1b[0m", total_start.elapsed());
+                }
+
                 Ok(exit_code)
             };
 
             let code = run_func().with_context(|| format!("running `{path}` failed",))?;
             process::exit(code as i32);
         }
-        Cli::Check { file: path } => {
+        Command::Check { file: path } => {
             let check_func = || -> anyhow::Result<()> {
+                let total_start = Instant::now();
+                let mut start = Instant::now();
+
                 let text = fs::read_to_string(&path)?;
+
+                let file_read_time = start.elapsed();
+                start = Instant::now();
+
                 let path = path.to_string_lossy();
                 analyze(&text, &path)?;
+
+                if root_args.time {
+                    println!("file read: {file_read_time:?}");
+                    println!("analyze:   {:?}", start.elapsed());
+                    println!("\x1b[90mtotal:     {:?}\x1b[0m", total_start.elapsed());
+                }
+
                 Ok(())
             };
 

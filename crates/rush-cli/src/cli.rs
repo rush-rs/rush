@@ -1,11 +1,21 @@
 use std::{fmt::Display, path::PathBuf};
 
-use clap::{Args, Parser, ValueEnum};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use rush_compiler_llvm::inkwell::OptimizationLevel;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about)]
-pub enum Cli {
+pub struct Cli {
+    /// rush Subcommands
+    #[clap(subcommand)]
+    pub command: Command,
+    /// Enables time tracking for benchmarking
+    #[clap(short, long, value_parser)]
+    pub time: bool,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum Command {
     /// Build a binary using the specified backend
     #[clap(alias = "b")]
     Build(BuildArgs),
@@ -64,11 +74,13 @@ pub struct BuildArgs {
 pub enum CompilerBackend {
     /// LLVM compiler: requires GCC
     Llvm,
-    /// WASM compiler: requires wasm runtime for later execution
+    /// WebAssembly compiler: requires wasm runtime for later execution
     Wasm,
-    /// RISC-V compiler: requires RISC-V toolchain
+    /// RISC-V compiler: requires RISC-V toolchain (alias = riscv)
+    #[clap(alias = "riscv")]
     RiscV,
-    /// X86_64 compiler: requires x86 toolchain
+    /// X86_64 compiler: requires x86 toolchain (alias = x64)
+    #[clap(alias = "x64")]
     X86_64,
 }
 
