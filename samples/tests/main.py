@@ -13,7 +13,7 @@ tests = {
     './globals.rush': 44,
     './if_else.rush': 20,
     './nan.rush': 11,
-    './char.rush': 194,
+    './char.rush': 100,
     './wrapping.rush': 42,
 }
 
