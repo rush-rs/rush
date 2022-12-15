@@ -1,18 +1,19 @@
 fn main() {
-    let sixteen = (2 ** 4);
+    let sixteen = 2 ** 4;
 
     let two = 2;
     let three = 3;
     let eight = two ** three;
 
-    let exp = 4294967297; // larger than u32::MAX
-    let high_exp_eq = 2 ** 4294967297 == 2 ** exp;
+    let high_exp = 4294967298; // larger than u32::MAX
 
+    // = 26
     exit(
         sixteen
         - eight
-        - high_exp_eq as int
-        + 2 ** -2
-        + 2 ** -two
+        + 3 ** 4294967298 // = 9
+        + 3 ** high_exp   // = 9
+        + 2 ** -2         // = 0
+        + 2 ** -two       // = 0
     )
 }

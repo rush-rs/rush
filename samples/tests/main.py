@@ -8,7 +8,7 @@ tests = {
     './complete.rush': 50,
     './loops.rush': 45,
     './float_casts.rush': 2,
-    './pow.rush': 7,
+    './pow.rush': 26,
     './fib.rush': 110,
     './globals.rush': 44,
     './if_else.rush': 20,

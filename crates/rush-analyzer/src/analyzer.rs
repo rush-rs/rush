@@ -1391,7 +1391,7 @@ impl<'src> Analyzer<'src> {
                     return AnalyzedExpression::Int(if *right < 0 {
                         0
                     } else {
-                        left.wrapping_pow((*right).try_into().unwrap_or(u32::MAX))
+                        left.wrapping_pow(*right as u32)
                     })
                 }
                 InfixOp::Eq => return AnalyzedExpression::Bool(left == right),

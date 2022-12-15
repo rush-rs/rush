@@ -96,9 +96,7 @@ impl Value {
     pub fn pow(self, exp: Self) -> Self {
         match (self, exp) {
             (Value::Int(_), Value::Int(exp)) if exp < 0 => 0_i64.into(),
-            (Value::Int(base), Value::Int(exp)) => base
-                .wrapping_pow((exp).try_into().unwrap_or(u32::MAX))
-                .into(),
+            (Value::Int(base), Value::Int(exp)) => base.wrapping_pow(exp as u32).into(),
             _ => unreachable!("the analyzer guarantees one of the above to match"),
         }
     }

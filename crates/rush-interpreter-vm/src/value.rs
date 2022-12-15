@@ -71,10 +71,7 @@ impl Value {
     }
 
     pub(crate) fn pow(&self, rhs: Value) -> Value {
-        Value::Int(
-            self.unwrap_int()
-                .wrapping_pow(rhs.unwrap_int().try_into().unwrap_or(u32::MAX)),
-        )
+        Value::Int(self.unwrap_int().wrapping_pow(rhs.unwrap_int() as u32))
     }
 
     pub(crate) fn div(&self, rhs: Value) -> Result<Value, RuntimeError> {
