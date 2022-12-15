@@ -18,6 +18,6 @@ repos:
     hooks:
       - id: dprint
   - repo: https://github.com/crate-ci/typos
-    rev: v1.13.1
+    rev: typos-dict-v0.9.13
     hooks:
       - id: typos
