@@ -227,7 +227,7 @@ impl<'src> Compiler<'src> {
                 ));
 
                 // consider unordered results for equality checks
-                if op == InfixOp::Eq {
+                if matches!(op, InfixOp::Eq | InfixOp::Lt | InfixOp::Lte) {
                     // save parity
                     let parity_reg = self.get_tmp_register(Size::Byte);
                     self.function_body
