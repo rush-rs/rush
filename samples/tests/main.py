@@ -1,5 +1,6 @@
 import subprocess
 import os
+import sys
 
 
 # maps an input file to a desired exit-code
@@ -35,6 +36,8 @@ backends = {
 def run():
     failed = []
     for name, cmd in backends.items():
+        if not name.endswith(sys.argv[1] if len(sys.argv) >= 2 else ''):
+            continue
         os.chdir(f'../../crates/{name}')
         for file, code in tests.items():
             if not run_test(file, code, name, cmd):
