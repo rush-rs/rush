@@ -1,0 +1,12 @@
+fn main() {
+    let int_max = !(1 << 63);
+    let char_max = '\x7f';
+
+    let four = int_max + 6 + int_max;
+    let eight = 6 - int_max - int_max;
+    let ten = char_max + '\x0b';
+    let three = '\x02' - char_max;
+
+    // = 42
+    exit(ten as int * three as int + eight + four);
+}
