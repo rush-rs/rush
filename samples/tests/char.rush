@@ -1,0 +1,24 @@
+fn main() {
+    let a = 'a';
+    let b = 'b';
+    let c = 'c';
+
+    let true_ = a < b
+        && b <= b
+        && a >= a
+        && b > a
+        && !(a > b)
+        && !(b < a)
+        && !(b >= c)
+        && !(c <= a);
+
+    let add_overflow = a + b;   // 67
+    let sub_overflow = a - c;   // 126
+
+    // expected exit-code: 194
+    exit(
+        add_overflow as int
+        + sub_overflow as int
+        + true_ as int
+    )
+}
