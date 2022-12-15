@@ -65,7 +65,7 @@ __rush_internal_cast_float_to_char:
 	ret
 # }
 
-# fn __rush_internal_pow_int(base: int, mut exponent: int) -> int {
+# fn __rush_internal_pow_int(mut base: int, mut exponent: int) -> int {
 __rush_internal_pow_int:
 	# if exponent < 0 { return 0; }
 	cmp %rsi, 0
@@ -76,22 +76,34 @@ __rush_internal_pow_int:
 
 	# loop {
 	loop:
-		# if exponent == 0 { break; }
-		cmp %rsi, 0
-		je after_loop
+		# if exponent <= 1 { break; }
+		cmp %rsi, 1
+		jle after_loop
 
-		# exponent -= 1
-		sub %rsi, 1
-
-		# accumulator *= base
+		# if (exponent & 1) == 1 { accumulator *= base; }
+		mov %rdx, %rsi
+		and %rdx, 1
+		cmp %rdx, 1
+		jne after_if
+		## accumulator *= base
 		imul %rax, %rdi
+	after_if:
+
+		# exponent >> 1;
+		shr %rsi, 1
+
+		# base *= base;
+		imul %rdi, %rdi
 
 		# continue;
 		jmp loop
 	after_loop:
 	# }
 
-	# return accumulator
+	# accumulator *= base;
+	imul %rax, %rdi
+
+	# return accumulator;
 	ret
 # }
 
