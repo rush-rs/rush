@@ -44,15 +44,25 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
 
     /// Declares a rush core function for calculating the power of integer values.
     /// fn pow(base: int, mut exp: int) -> int {
-    ///     let mut res = 1;
+    ///     if exp == 0 {
+    ///         return 1;
+    ///     }
     ///     if exp < 0 {
     ///         return 0;
     ///     }
-    ///     while exp != 0 {
-    ///         res *= base;
-    ///         exp -= 1;
+    ///
+    ///     let mut base = base;
+    ///     let mut acc = 1;
+    ///
+    ///     while exp > 1 {
+    ///         if (exp & 1) == 1 {
+    ///             acc *= base
+    ///         }
+    ///         exp /= 2;
+    ///         base *= base;
     ///     }
-    ///     res
+    ///
+    ///     acc * base
     /// }
     pub(crate) fn declare_rush_internal_pow(&mut self) {
         // save the basic block to jump to when done
@@ -75,73 +85,114 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         let function = self.module.add_function("core::pow", pow_type, None);
 
         // add basic blocks for the function
-        let fn_body = self.context.append_basic_block(function, "entry");
+        let entry = self.context.append_basic_block(function, "entry");
+        let return_1_block = self.context.append_basic_block(function, "ret_1");
         let return_0_block = self.context.append_basic_block(function, "ret_0");
 
         // add basic blocks for the loop
-        let loop_head = self.context.append_basic_block(function, "loop_head");
+        let loop_head = self.context.append_basic_block(function, "loop_lead");
         let loop_body = self.context.append_basic_block(function, "loop_body");
         let after_loop = self.context.append_basic_block(function, "after_loop");
 
-        //// Before loop ////
-        self.builder.position_at_end(fn_body);
+        self.builder.position_at_end(entry);
 
         // get the base and exp from the args
         let base = function.get_params()[0].into_int_value();
-        let exp = function.get_params()[1];
-        let exp_ptr = self.builder.build_alloca(i64, "exp_ptr");
+        let base_ptr = self.builder.build_alloca(i64, "base");
+        self.builder.build_store(base_ptr, base);
+
+        let exp = function.get_params()[1].into_int_value();
+        let exp_ptr = self.builder.build_alloca(i64, "exp");
         self.builder.build_store(exp_ptr, exp);
 
         // create the accumulator variable
-        self.builder.position_at_end(fn_body);
-        let acc_ptr = self.builder.build_alloca(i64, "accumulator");
+        let acc_ptr = self.builder.build_alloca(i64, "acc");
         self.builder.build_store(acc_ptr, i64.const_int(1, false));
 
-        //// Edge case: exp < 0 ////
-        let exp_lt_0 = self.builder.build_int_compare(
-            IntPredicate::SLT,
-            exp.into_int_value(),
-            i64.const_zero(),
-            "exp_lt_0",
-        );
+        //// edge case: exp < 0 ////
+        let body = self.context.append_basic_block(function, "body");
+        let exp_lt_0 =
+            self.builder
+                .build_int_compare(IntPredicate::SLT, exp, i64.const_zero(), "exp_lt_0");
         self.builder
-            .build_conditional_branch(exp_lt_0, return_0_block, loop_head);
-        self.builder.position_at_end(return_0_block);
-        self.builder.build_return(Some(&i64.const_zero()));
+            .build_conditional_branch(exp_lt_0, return_0_block, body);
+
+        //// edge case: exp == 0 ////;
+        self.builder.position_at_end(body);
+        let exp_eq_0 =
+            self.builder
+                .build_int_compare(IntPredicate::EQ, exp, i64.const_zero(), "exp_eq_0");
+        self.builder
+            .build_conditional_branch(exp_eq_0, return_1_block, loop_head);
 
         //// Loop head ////
         self.builder.position_at_end(loop_head);
 
-        // if the exponent is 0, quit the loop
+        // if the exponent is < 2, quit the loop
         let exp = self.builder.build_load(exp_ptr, "exp").into_int_value();
-        let break_cond =
-            self.builder
-                .build_int_compare(IntPredicate::EQ, exp, i64.const_zero(), "break_cond");
+        let break_cond = self.builder.build_int_compare(
+            IntPredicate::SLT,
+            exp,
+            i64.const_int(2, false),
+            "break_cond",
+        );
         self.builder
             .build_conditional_branch(break_cond, after_loop, loop_body);
 
         //// Loop body ////
         self.builder.position_at_end(loop_body);
 
-        // accumulator *= base
-        let acc = self.builder.build_load(acc_ptr, "acc").into_int_value();
-        let acc_mul_ass = self.builder.build_int_mul(acc, base, "acc_mul_ass");
-        self.builder.build_store(acc_ptr, acc_mul_ass);
-
-        // exp -= 1
         let exp = self.builder.build_load(exp_ptr, "exp").into_int_value();
-        let exp_sub_ass = self
+        let res = self.builder.build_and(exp, i64.const_int(1, false), "res");
+        let cond =
+            self.builder
+                .build_int_compare(IntPredicate::EQ, res, i64.const_int(1, false), "res");
+
+        let merge_block = self.context.append_basic_block(function, "merge");
+        let cond_true = self.context.append_basic_block(function, "cond_true");
+
+        self.builder
+            .build_conditional_branch(cond, cond_true, merge_block);
+
+        // acc *= base
+        self.builder.position_at_end(cond_true);
+        let acc = self.builder.build_load(acc_ptr, "acc").into_int_value();
+        let base = self.builder.build_load(base_ptr, "base").into_int_value();
+        let res = self.builder.build_int_mul(acc, base, "res");
+        self.builder.build_store(acc_ptr, res);
+        self.builder.build_unconditional_branch(merge_block);
+
+        // exp /= 2
+        self.builder.position_at_end(merge_block);
+        let exp = self.builder.build_load(exp_ptr, "exp").into_int_value();
+        let res = self
             .builder
-            .build_int_sub(exp, i64.const_int(1, false), "exp_sub_ass");
-        self.builder.build_store(exp_ptr, exp_sub_ass);
+            .build_int_signed_div(exp, i64.const_int(2, false), "res");
+        self.builder.build_store(exp_ptr, res);
+
+        // base *= base
+        let base = self.builder.build_load(base_ptr, "base").into_int_value();
+        let res = self.builder.build_int_mul(base, base, "res");
+        self.builder.build_store(base_ptr, res);
 
         // repeat iteration (jump to loop head)
         self.builder.build_unconditional_branch(loop_head);
 
         //// After loop ////
         self.builder.position_at_end(after_loop);
-        let res = self.builder.build_load(acc_ptr, "res");
+
+        // acc * base
+        let acc = self.builder.build_load(acc_ptr, "acc").into_int_value();
+        let base = self.builder.build_load(base_ptr, "base").into_int_value();
+        let res = self.builder.build_int_mul(acc, base, "res");
         self.builder.build_return(Some(&res));
+
+        // create the body of the early return labels
+        self.builder.position_at_end(return_0_block);
+        self.builder.build_return(Some(&i64.const_zero()));
+
+        self.builder.position_at_end(return_1_block);
+        self.builder.build_return(Some(&i64.const_int(1, false)));
 
         // jump back to the origin basic block
         self.builder.position_at_end(origin_block);
