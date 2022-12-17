@@ -1,0 +1,5 @@
+fn main() {
+    let one = 1;
+    let res = one + exit(5);
+    exit(res)
+}

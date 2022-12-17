@@ -1,0 +1,7 @@
+fn main() {
+    let _ = do_something();
+}
+
+fn do_something() -> int {
+    exit(15) + 42
+}

@@ -1,0 +1,7 @@
+fn main() {
+    let true_ = true;
+    for _ = exit(9); true_; {} {
+        // unreachable
+        exit(99)
+    }
+}

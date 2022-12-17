@@ -1,0 +1,6 @@
+fn main() {
+    for i = 10; exit(i); i += 1 {
+        // unreachable
+        exit(i)
+    }
+}

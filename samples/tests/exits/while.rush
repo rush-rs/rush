@@ -1,0 +1,6 @@
+fn main() {
+    while exit(8) {
+        // unreachable
+        exit(99)
+    }
+}

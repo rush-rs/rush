@@ -15,6 +15,18 @@ tests = {
     './nan.rush': 11,
     './char.rush': 100,
     './wrapping.rush': 42,
+    # 'evil exits' test if the `!` type can occur everywhere
+    './exits/infix.rush': 5,
+    './exits/if_else.rush': 6,
+    './exits/calls.rush': 7,
+    './exits/while.rush': 8,
+    './exits/for_1.rush': 9,
+    './exits/for_2.rush': 10,
+    './exits/for_3.rush': 11,
+    './exits/logical_or.rush': 12,
+    './exits/logical_and.rush': 13,
+    './exits/let.rush': 14,
+    './exits/final_fn_expr.rush': 15,
 }
 
 # saves the backend an any additional commands to be executed after `cargo r`

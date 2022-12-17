@@ -1,0 +1,5 @@
+fn main() {
+    let true_ = true;
+    let is_true = true_ || exit(99);
+    exit( (!true_ || exit(is_true as int + 11)) as int);
+}

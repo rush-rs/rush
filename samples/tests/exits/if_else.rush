@@ -1,0 +1,7 @@
+fn main() {
+    if exit(6) {
+        exit(99)
+    } else {
+        exit(100)
+    }
+}
