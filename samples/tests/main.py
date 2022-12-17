@@ -15,6 +15,7 @@ tests = {
     './nan.rush': 11,
     './char.rush': 100,
     './wrapping.rush': 42,
+    './exit_0.rush': 0,
     # 'evil exits' test if the `!` type can occur everywhere
     './exits/infix.rush': 5,
     './exits/if_else.rush': 6,
@@ -33,7 +34,7 @@ tests = {
 backends = {
     'rush-interpreter-tree': '',
     'rush-interpreter-vm': '',
-    'rush-compiler-wasm': 'wasmtime output.wasm',
+    'rush-compiler-wasm': 'exit $(wasmer output.wasm 2>&1 >/dev/null | cut -d ":" -f 4 )',
     'rush-compiler-llvm': 'gcc output.o -o test && ./test',
     'rush-compiler-x86-64': """
         gcc output.s -L corelib/ -lcore -nostdlib -o output \
