@@ -61,6 +61,7 @@ def run():
         print(f'=== {len(failed)} test(s) failed ===')
         for test in failed:
             print(f'    {test[1].ljust(15)} {test[0]}')
+        sys.exit(1)
 
 
 def run_test(file: str, code: int, name: str, cmd: str):
