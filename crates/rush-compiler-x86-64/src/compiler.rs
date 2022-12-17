@@ -502,7 +502,7 @@ impl<'src> Compiler<'src> {
         self.text_section
             .push(Instruction::Call(Rc::clone(&main_fn_symbol)));
         self.text_section
-            .push(Instruction::Mov(IntRegister::Rax.into(), 0.into()));
+            .push(Instruction::Mov(IntRegister::Rdi.into(), 0.into()));
         self.text_section.push(Instruction::Call("exit".into()));
 
         self.text_section
