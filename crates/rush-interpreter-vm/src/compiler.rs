@@ -474,11 +474,7 @@ impl<'src> Compiler<'src> {
     }
 
     fn call_expr(&mut self, node: AnalyzedCallExpr<'src>) {
-        for arg in node
-            .args
-            .into_iter()
-            .filter(|a| !matches!(a.result_type(), Type::Unit | Type::Never))
-        {
+        for arg in node.args {
             self.expression(arg);
         }
 
