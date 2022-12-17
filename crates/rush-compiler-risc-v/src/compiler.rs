@@ -1141,9 +1141,7 @@ impl<'tree> Compiler<'tree> {
     /// The result of the expression is saved in a single register (corresponding to the result type).
     fn if_expr(&mut self, node: AnalyzedIfExpr<'tree>) -> Option<Register> {
         // (bool) result of the condition
-        let cond_reg = self
-            .expression(node.cond)
-            .expect("analyzer guarantees that cond is not unit / never");
+        let cond_reg = self.expression(node.cond)?;
 
         // will later hold the result of the branch
         let res_reg = match node.result_type {

@@ -111,12 +111,9 @@ impl<'tree> Compiler<'tree> {
 
         // calculate the total byte size of spilled params
         let mut spill_param_size = 0;
-        for arg in node
-            .args
-            .iter()
-            .filter(|a| !matches!(a.result_type(), Type::Unit | Type::Never))
-        {
+        for arg in &node.args {
             match arg.result_type() {
+                Type::Unit | Type::Never | Type::Unknown => continue,
                 Type::Int | Type::Bool | Type::Char => {
                     if IntRegister::nth_param(int_cnt).is_none() {
                         spill_param_size += 8;
@@ -130,7 +127,6 @@ impl<'tree> Compiler<'tree> {
 
                     float_cnt += 1;
                 }
-                _ => unreachable!("either filtered out or unreachable"),
             }
         }
 
@@ -155,7 +151,9 @@ impl<'tree> Compiler<'tree> {
 
         for arg in node.args {
             match arg.result_type() {
-                Type::Unit | Type::Never => continue,
+                Type::Unit | Type::Never | Type::Unknown => {
+                    self.expression(arg);
+                }
                 Type::Int | Type::Bool | Type::Char => {
                     let type_ = arg.result_type();
 
@@ -229,7 +227,6 @@ impl<'tree> Compiler<'tree> {
                     }
                     float_cnt += 1;
                 }
-                _ => unreachable!("either filtered out or impossible"),
             }
         }
 
