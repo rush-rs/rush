@@ -1051,6 +1051,8 @@ impl<'src> Compiler<'src> {
             AnalyzedExpression::Bool(bool) => Some(Value::Int(IntValue::Immediate(bool as i64))),
             AnalyzedExpression::Char(num) => Some(Value::Int(IntValue::Immediate(num as i64))),
             AnalyzedExpression::Ident(node) => self.ident_expr(node),
+            AnalyzedExpression::Ref(_) => todo!(), // TODO: implement this
+            AnalyzedExpression::Deref(_) => todo!(), // TODO: implement this
             AnalyzedExpression::Prefix(node) => self.prefix_expr(*node),
             AnalyzedExpression::Infix(node) => self.infix_expr(*node),
             AnalyzedExpression::Assign(node) => self.assign_expr(*node),

@@ -148,6 +148,7 @@ impl<'src> Compiler<'src> {
         self.used_float_registers = prev_used_float_registers.clone();
         let result_reg = match result_type {
             Type::Unit | Type::Never => None,
+            Type::Pointer => todo!(), // TODO: implement this
             Type::Int | Type::Char | Type::Bool => {
                 let size = Size::try_from(result_type).expect("int, char and bool have a size");
                 let reg = self.get_free_register(size);

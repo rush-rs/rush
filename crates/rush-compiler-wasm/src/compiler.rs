@@ -678,6 +678,8 @@ impl<'src> Compiler<'src> {
                 // unit type requires no instructions
                 Variable::Local(None) => {}
             },
+            AnalyzedExpression::Ref(_) => todo!(), // TODO: implement this,
+            AnalyzedExpression::Deref(_) => todo!(), // TODO: implement this,
             AnalyzedExpression::Prefix(node) => self.prefix_expr(*node),
             AnalyzedExpression::Infix(node) => self.infix_expr(*node),
             AnalyzedExpression::Assign(node) => self.assign_expr(*node),

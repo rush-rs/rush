@@ -30,6 +30,6 @@ fn main() {
     );
 
     let (obj, ir) = compiler.compile(&ast).unwrap();
-    fs::write("./output.ll", &ir).unwrap();
+    fs::write("./output.ll", ir).unwrap();
     fs::write("./output.o", obj.as_slice()).unwrap();
 }

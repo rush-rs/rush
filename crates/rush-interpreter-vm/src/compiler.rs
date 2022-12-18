@@ -387,6 +387,8 @@ impl<'src> Compiler<'src> {
             AnalyzedExpression::Bool(value) => self.insert(Instruction::Push(Value::Bool(value))),
             AnalyzedExpression::Char(value) => self.insert(Instruction::Push(Value::Char(value))),
             AnalyzedExpression::Ident(node) => self.load_var(node.ident),
+            AnalyzedExpression::Ref(_) => todo!(), // TODO: implement this,
+            AnalyzedExpression::Deref(_) => todo!(), // TODO: implement this,
             AnalyzedExpression::Block(node) => self.block(*node, true),
             AnalyzedExpression::If(node) => self.if_expr(*node),
             AnalyzedExpression::Prefix(node) => self.prefix_expr(*node),

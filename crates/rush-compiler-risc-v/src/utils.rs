@@ -45,6 +45,7 @@ impl Size {
 impl From<Type> for Size {
     fn from(src: Type) -> Self {
         match src {
+            Type::Pointer => todo!(), // TODO: implement this
             Type::Int | Type::Float => Size::Dword,
             Type::Bool | Type::Char => Size::Byte,
             Type::Unknown | Type::Never | Type::Unit => unreachable!("these types have no size"),
@@ -67,8 +68,8 @@ impl<'tree> Compiler<'tree> {
     pub(crate) fn get_offset(&mut self, size: Size) -> i64 {
         let size = size.byte_count();
         Self::align(&mut self.curr_fn_mut().stack_allocs, size);
-        self.curr_fn_mut().stack_allocs += size as i64;
-        -self.curr_fn().stack_allocs as i64 - 16
+        self.curr_fn_mut().stack_allocs += size;
+        -self.curr_fn().stack_allocs - 16
     }
 
     /// Saves a [`Register`] to memory and returns its fp-offset.

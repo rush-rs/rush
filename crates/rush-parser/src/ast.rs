@@ -8,6 +8,9 @@ pub enum Type {
     Float,
     Bool,
     Char,
+    // TODO: use real implementation when ready
+    // Pointer(Box<Type>),
+    Pointer,
     Unit,
     /// Internal use only, used for diverging expressions
     Never,
@@ -15,21 +18,33 @@ pub enum Type {
     Unknown,
 }
 
+// TODO: uncomment when ready
+/*
+impl Type {
+    /// Can be called on [`Type::Pointer`] in order to get the inner type of the pointer.
+    /// If called on non-pointers, this function will panic
+    pub fn deref(self) -> Self {
+        match self {
+            Type::Pointer(inner) => *inner,
+            _ => panic!("called `Type::deref` on a non-pointer variant"),
+        }
+    }
+}
+*/
+
 impl Display for Type {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Self::Int => "int",
-                Self::Float => "float",
-                Self::Bool => "bool",
-                Self::Char => "char",
-                Self::Unit => "()",
-                Self::Never => "!",
-                Self::Unknown => "{unknown}",
-            }
-        )
+        match self {
+            Self::Int => write!(f, "int"),
+            Self::Float => write!(f, "float"),
+            Self::Bool => write!(f, "bool"),
+            Self::Char => write!(f, "char"),
+            // TODO: use real implementation
+            Self::Pointer => write!(f, "*inner"),
+            Self::Unit => write!(f, "()"),
+            Self::Never => write!(f, "!"),
+            Self::Unknown => write!(f, "{{unknown}}"),
+        }
     }
 }
 
@@ -169,6 +184,8 @@ pub enum Expression<'src> {
     Bool(Spanned<'src, bool>),
     Char(Spanned<'src, u8>),
     Ident(Spanned<'src, &'src str>),
+    Ref(Spanned<'src, &'src str>),
+    Deref(Spanned<'src, &'src str>),
     Prefix(Box<PrefixExpr<'src>>),
     Infix(Box<InfixExpr<'src>>),
     Assign(Box<AssignExpr<'src>>),
@@ -187,6 +204,8 @@ impl<'src> Expression<'src> {
             Self::Bool(expr) => expr.span,
             Self::Char(expr) => expr.span,
             Self::Ident(expr) => expr.span,
+            Self::Ref(expr) => expr.span,
+            Self::Deref(expr) => expr.span,
             Self::Prefix(expr) => expr.span,
             Self::Infix(expr) => expr.span,
             Self::Assign(expr) => expr.span,
@@ -326,6 +345,7 @@ impl Display for InfixOp {
 pub struct AssignExpr<'src> {
     pub span: Span<'src>,
     pub assignee: Spanned<'src, &'src str>,
+    pub assignee_is_ptr: bool,
     pub op: AssignOp,
     pub expr: Expression<'src>,
 }

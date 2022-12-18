@@ -1019,6 +1019,8 @@ impl<'src> Analyzer<'src> {
                 AnalyzedExpression::Char(node.inner)
             }
             Expression::Ident(node) => self.ident_expr(node),
+            Expression::Ref(node) => self.ref_expr(node),
+            Expression::Deref(node) => self.deref_expr(node),
             Expression::Prefix(node) => self.prefix_expr(*node),
             Expression::Infix(node) => self.infix_expr(*node),
             Expression::Assign(node) => self.assign_expr(*node),
@@ -1199,6 +1201,68 @@ impl<'src> Analyzer<'src> {
         })
     }
 
+    fn ref_expr(&mut self, node: Spanned<'src, &'src str>) -> AnalyzedExpression<'src> {
+        for scope in self.scopes.iter_mut().rev() {
+            if let Some(var) = scope.get_mut(node.inner) {
+                var.used = true;
+                return AnalyzedExpression::Ref(AnalyzedIdentExpr {
+                    result_type: var.type_,
+                    ident: node.inner,
+                });
+            };
+        }
+        self.error(
+            ErrorKind::Reference,
+            format!("use of undeclared variable `{}`", node.inner),
+            vec![],
+            node.span,
+        );
+        AnalyzedExpression::Ref(AnalyzedIdentExpr {
+            result_type: Type::Unknown,
+            ident: node.inner,
+        })
+    }
+
+    fn deref_expr(&mut self, node: Spanned<'src, &'src str>) -> AnalyzedExpression<'src> {
+        for scope in self.scopes.iter_mut().rev() {
+            if let Some(var) = scope.get_mut(node.inner) {
+                var.used = true;
+
+                let type_ = var.type_;
+
+                let res = AnalyzedExpression::Deref(AnalyzedIdentExpr {
+                    result_type: var.type_,
+                    ident: node.inner,
+                });
+
+                if !matches!(&var.type_, &Type::Pointer) {
+                    self.error(
+                        ErrorKind::Type,
+                        format!("cannot dereference variable of type `{type_}`"),
+                        vec![],
+                        node.span,
+                    );
+                    return AnalyzedExpression::Deref(AnalyzedIdentExpr {
+                        result_type: Type::Unknown,
+                        ident: node.inner,
+                    });
+                }
+
+                return res;
+            };
+        }
+        self.error(
+            ErrorKind::Reference,
+            format!("use of undeclared variable `{}`", node.inner),
+            vec![],
+            node.span,
+        );
+        AnalyzedExpression::Deref(AnalyzedIdentExpr {
+            result_type: Type::Unknown,
+            ident: node.inner,
+        })
+    }
+
     fn prefix_expr(&mut self, node: PrefixExpr<'src>) -> AnalyzedExpression<'src> {
         let expr_span = node.expr.span();
         let expr = self.expression(node.expr);
@@ -1212,7 +1276,7 @@ impl<'src> Analyzer<'src> {
                     self.warn_unreachable(node.span, expr_span, true);
                     Type::Never
                 }
-                Type::Float | Type::Char | Type::Unit => {
+                Type::Float | Type::Char | Type::Unit | Type::Pointer => {
                     self.error(
                         ErrorKind::Type,
                         format!(
@@ -1233,7 +1297,7 @@ impl<'src> Analyzer<'src> {
                     self.warn_unreachable(node.span, expr_span, true);
                     Type::Never
                 }
-                Type::Bool | Type::Char | Type::Unit => {
+                Type::Bool | Type::Char | Type::Unit | Type::Pointer => {
                     self.error(
                         ErrorKind::Type,
                         format!(

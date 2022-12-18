@@ -62,7 +62,7 @@ pub fn compile(ast: AnalyzedProgram, args: BuildArgs) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    fs::write(&out.to_string(), obj.as_slice())
+    fs::write(out.to_string(), obj.as_slice())
         .with_context(|| format!("cannot write to `{file}`", file = out))?;
 
     // invoke gcc to link the file

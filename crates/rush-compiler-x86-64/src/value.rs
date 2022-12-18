@@ -79,6 +79,7 @@ impl TryFrom<Type> for Size {
 
     fn try_from(value: Type) -> Result<Self, Self::Error> {
         match value {
+            Type::Pointer => todo!(), // TODO: implement this
             Type::Int | Type::Float => Ok(Size::Qword),
             Type::Bool | Type::Char => Ok(Size::Byte),
             Type::Unit | Type::Never => Err(()),

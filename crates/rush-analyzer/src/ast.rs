@@ -118,6 +118,8 @@ pub enum AnalyzedExpression<'src> {
     Bool(bool),
     Char(u8),
     Ident(AnalyzedIdentExpr<'src>),
+    Ref(AnalyzedIdentExpr<'src>),
+    Deref(AnalyzedIdentExpr<'src>),
     Prefix(Box<AnalyzedPrefixExpr<'src>>),
     Infix(Box<AnalyzedInfixExpr<'src>>),
     Assign(Box<AnalyzedAssignExpr<'src>>),
@@ -135,6 +137,8 @@ impl AnalyzedExpression<'_> {
             Self::Bool(_) => Type::Bool,
             Self::Char(_) => Type::Char,
             Self::Ident(expr) => expr.result_type,
+            Self::Ref(_expr) => Type::Pointer,
+            Self::Deref(_expr) => Type::Unknown, // TODO: would use inner pointer type
             Self::If(expr) => expr.result_type,
             Self::Prefix(expr) => expr.result_type,
             Self::Infix(expr) => expr.result_type,

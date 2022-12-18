@@ -138,12 +138,14 @@ macro_rules! tree {
     ((
         AssignExpr @ $start:literal .. $end:literal,
         assignee: $assignee:tt,
+        assignee_is_ptr: $assignee_is_ptr:expr,
         op: $op:expr,
         expr: $expr:tt $(,)?
     )) => {
         Expression::Assign(AssignExpr {
             span: span!($start..$end),
             assignee: tree!($assignee),
+            assignee_is_ptr: $assignee_is_ptr,
             op: $op,
             expr: tree!($expr),
         }.into())

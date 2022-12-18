@@ -28,7 +28,7 @@ impl<'tree> Compiler<'tree> {
                 Instruction::Addi(
                     IntRegister::Sp,
                     IntRegister::Sp,
-                    -(self.curr_fn().stack_allocs as i64) - BASE_STACK_ALLOCATIONS,
+                    -self.curr_fn().stack_allocs - BASE_STACK_ALLOCATIONS,
                 ),
                 None,
             ),
@@ -53,7 +53,7 @@ impl<'tree> Compiler<'tree> {
                 Instruction::Addi(
                     IntRegister::Fp,
                     IntRegister::Sp,
-                    self.curr_fn().stack_allocs as i64 + BASE_STACK_ALLOCATIONS,
+                    self.curr_fn().stack_allocs + BASE_STACK_ALLOCATIONS,
                 ),
                 None,
             ),
@@ -80,7 +80,7 @@ impl<'tree> Compiler<'tree> {
         self.insert(Instruction::Addi(
             IntRegister::Sp,
             IntRegister::Sp,
-            self.curr_fn().stack_allocs as i64 + BASE_STACK_ALLOCATIONS,
+            self.curr_fn().stack_allocs + BASE_STACK_ALLOCATIONS,
         ));
         // return control back to caller
         self.insert(Instruction::Ret);
@@ -114,6 +114,7 @@ impl<'tree> Compiler<'tree> {
         for arg in &node.args {
             match arg.result_type() {
                 Type::Unit | Type::Never | Type::Unknown => continue,
+                Type::Pointer => todo!(), // TODO: implement this
                 Type::Int | Type::Bool | Type::Char => {
                     if IntRegister::nth_param(int_cnt).is_none() {
                         spill_param_size += 8;
@@ -154,6 +155,7 @@ impl<'tree> Compiler<'tree> {
                 Type::Unit | Type::Never | Type::Unknown => {
                     self.expression(arg);
                 }
+                Type::Pointer => todo!(), // TODO: implement this
                 Type::Int | Type::Bool | Type::Char => {
                     let type_ = arg.result_type();
 
@@ -255,6 +257,7 @@ impl<'tree> Compiler<'tree> {
 
         let res_reg = match node.result_type {
             Type::Int | Type::Char | Type::Bool => Some(IntRegister::A0.to_reg()),
+            Type::Pointer => todo!(), // TODO: implement this
             Type::Float => Some(FloatRegister::Fa0.to_reg()),
             Type::Unit | Type::Never => None,
             Type::Unknown => unreachable!("analyzer would have failed"),

@@ -60,7 +60,7 @@ pub(crate) struct Function<'ctx, 'src> {
     entry_block: BasicBlock<'ctx>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(crate) struct Variable<'ctx> {
     value: VariableValue<'ctx>,
     type_: Type,
@@ -238,8 +238,8 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
     /// Searches the scopes first. If no match was found, the fitting global variable is returned.
     fn resolve_name(&self, name: &str) -> Variable<'ctx> {
         for scope in self.scopes.iter().rev() {
-            if let Some(&variable) = scope.get(name) {
-                return variable;
+            if let Some(variable) = scope.get(name) {
+                return (*variable).clone();
             }
         }
         match self.module.get_global(name) {
@@ -375,6 +375,7 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                 Type::Bool => BasicMetadataTypeEnum::IntType(self.context.bool_type()),
                 Type::Char => BasicMetadataTypeEnum::IntType(self.context.i8_type()),
                 Type::Unit => BasicMetadataTypeEnum::IntType(self.context.bool_type()),
+                Type::Pointer => todo!(), // TODO: implement this
                 Type::Never | Type::Unknown => {
                     unreachable!("the analyzer disallows these types to be used as parameters")
                 }
@@ -388,6 +389,7 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
             Type::Unit => self.context.bool_type().fn_type(&params, false),
             Type::Char => self.context.i8_type().fn_type(&params, false),
             Type::Bool => self.context.bool_type().fn_type(&params, false),
+            Type::Pointer => todo!(), // TODO: implement this
             Type::Unknown | Type::Never => {
                 unreachable!("functions do not return values of these types")
             }
@@ -433,6 +435,7 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                             Type::Char => self.context.i8_type().as_basic_type_enum(),
                             Type::Bool => self.context.bool_type().as_basic_type_enum(),
                             Type::Unit => self.context.bool_type().as_basic_type_enum(),
+                            Type::Pointer => todo!(), // TODO: implement this
                             Type::Never | Type::Unknown => {
                                 unreachable!("such function params cannot exist")
                             }
@@ -827,6 +830,8 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                     VariableValue::Unit => self.unit_value(),
                 }
             }
+            AnalyzedExpression::Ref(_) => todo!(), // TODO: implement this
+            AnalyzedExpression::Deref(_) => todo!(), // TODO: implement this
             AnalyzedExpression::Call(node) => self.call_expr(node),
             AnalyzedExpression::Grouped(node) => self.expression(node),
             AnalyzedExpression::Block(node) => self.block(node, true),
@@ -975,6 +980,7 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                 }
                 .as_basic_value_enum()
             }
+            Type::Pointer => todo!(), // TODO: implement this
             Type::Unknown | Type::Unit => {
                 unreachable!("these types cannot be used in an infix expression")
             }

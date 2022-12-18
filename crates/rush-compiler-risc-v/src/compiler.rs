@@ -229,6 +229,7 @@ impl<'tree> Compiler<'tree> {
         // save all param values in the current scope / on the stack
         for param in &node.params {
             match param.type_ {
+                Type::Pointer => todo!(), // TODO: implement this
                 Type::Int | Type::Char | Type::Bool => {
                     match IntRegister::nth_param(int_cnt) {
                         Some(reg) => {
@@ -679,6 +680,8 @@ impl<'tree> Compiler<'tree> {
                 // `clone` is okay here, since it only clones a `Rc`
                 self.load_value_from_variable(var.clone(), ident.ident)
             }
+            AnalyzedExpression::Ref(_) => todo!(), // TODO: implement this
+            AnalyzedExpression::Deref(_) => todo!(), // TODO: implement this
             AnalyzedExpression::Prefix(node) => self.prefix_expr(*node),
             AnalyzedExpression::Infix(node) => self.infix_expr(*node),
             AnalyzedExpression::Assign(node) => {

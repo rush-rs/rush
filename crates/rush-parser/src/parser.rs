@@ -151,6 +151,14 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             TokenKind::Ident("float") => Type::Float,
             TokenKind::Ident("bool") => Type::Bool,
             TokenKind::Ident("char") => Type::Char,
+            TokenKind::Star => {
+                self.next()?;
+                let _inner = self.type_()?;
+                return Ok(Spanned {
+                    span: start_loc.until(self.prev_tok.span.end),
+                    inner: Type::Pointer,
+                });
+            } // would use the result of the recursive call here
             TokenKind::Ident(ident) => {
                 self.errors.push(Error::new(
                     format!("unknown type `{ident}`"),
@@ -541,6 +549,16 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             TokenKind::False => Expression::Bool(self.atom(false)?),
             TokenKind::Char(char) => Expression::Char(self.atom(char)?),
             TokenKind::Ident(ident) => Expression::Ident(self.atom(ident)?),
+            TokenKind::BitAnd | TokenKind::Star => {
+                let kind = self.curr_tok.kind;
+                self.next()?;
+                let ident = self.expect_ident()?;
+
+                match kind == TokenKind::BitAnd {
+                    true => Expression::Ref(ident),
+                    false => Expression::Deref(ident),
+                }
+            }
             TokenKind::Not => Expression::Prefix(self.prefix_expr(PrefixOp::Not)?.into()),
             TokenKind::Minus => Expression::Prefix(self.prefix_expr(PrefixOp::Neg)?.into()),
             TokenKind::LParen => Expression::Grouped(self.grouped_expr()?),
@@ -707,18 +725,22 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         lhs: Expression<'src>,
         op: AssignOp,
     ) -> Result<'src, Expression<'src>> {
-        let assignee = match lhs {
-            Expression::Ident(item) => item,
+        let (assignee, assignee_is_ptr) = match lhs {
+            Expression::Ident(item) => (item, false),
+            Expression::Deref(item) => (item, true),
             _ => {
                 self.errors.push(Error::new(
                     "left hand side of assignment must be an identifier".to_string(),
                     lhs.span(),
                     self.lexer.source(),
                 ));
-                Spanned {
-                    span: Span::dummy(),
-                    inner: "",
-                }
+                (
+                    Spanned {
+                        span: Span::dummy(),
+                        inner: "",
+                    },
+                    false,
+                )
             }
         };
 
@@ -730,6 +752,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             AssignExpr {
                 span: start_loc.until(self.prev_tok.span.end),
                 assignee,
+                assignee_is_ptr,
                 op,
                 expr,
             }
@@ -946,6 +969,7 @@ mod tests {
             tree! {
                 (AssignExpr @ 0..3,
                     assignee: ("a", @ 0..1),
+                    assignee_is_ptr: false,
                     op: AssignOp::Basic,
                     expr: (Int 1, @ 2..3))
             },
@@ -963,6 +987,7 @@ mod tests {
             tree! {
                 (AssignExpr @ 0..19,
                     assignee: ("answer", @ 0..6),
+                    assignee_is_ptr: false,
                     op: AssignOp::Plus,
                     expr: (InfixExpr @ 10..19,
                         lhs: (Float 42.0, @ 10..14),
@@ -1137,6 +1162,7 @@ mod tests {
             tree! {
                 (AssignExpr @ 0..3,
                     assignee: ("a", @ 0..1),
+                    assignee_is_ptr: false,
                     op: op,
                     expr: (Int 2, @ 2..3))
             },

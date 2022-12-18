@@ -198,6 +198,8 @@ impl<'src> Interpreter<'src> {
             AnalyzedExpression::Bool(bool) => Ok(bool.into()),
             AnalyzedExpression::Char(num) => Ok(num.into()),
             AnalyzedExpression::Ident(name) => Ok(*self.get_var(name.ident)),
+            AnalyzedExpression::Ref(_) => todo!(), // TODO: implement this
+            AnalyzedExpression::Deref(_) => todo!(), // TODO: implement this
             AnalyzedExpression::Prefix(node) => self.visit_prefix_expr(node),
             AnalyzedExpression::Infix(node) => self.visit_infix_expr(node),
             AnalyzedExpression::Assign(node) => self.visit_assign_expr(node),
