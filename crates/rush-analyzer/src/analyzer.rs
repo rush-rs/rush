@@ -1277,13 +1277,14 @@ impl<'src> Analyzer<'src> {
                 _ => unreachable!("can only reference identifiers"),
             },
             PrefixOp::Deref => match &expr {
+                // TODO: improve this
                 AnalyzedExpression::Ident(ident) => match ident.result_type.sub_deref() {
                     Some(res) => res,
                     None => {
                         self.error(
                             ErrorKind::Type,
                             format!("cannot dereference a value of type `{}`", ident.result_type),
-                            vec![],
+                            vec!["only pointers `*` can be dereferenced".into()],
                             node.span,
                         );
                         dbg!(ident);
@@ -1296,7 +1297,7 @@ impl<'src> Analyzer<'src> {
                         self.error(
                             ErrorKind::Type,
                             format!("cannot dereference a value of type `{}`", expr.result_type),
-                            vec![],
+                            vec!["only pointers `*` can be dereferenced".into()],
                             node.span,
                         );
                         Type::Unknown
@@ -1534,7 +1535,7 @@ impl<'src> Analyzer<'src> {
             Some(var) => {
                 var.mutated = true;
                 let mut type_ = var.type_;
-                if !var.mutable {
+                if !var.mutable && node.assignee_ptr_count == 0 {
                     let span = var.span;
                     self.error(
                         ErrorKind::Semantic,
@@ -1549,9 +1550,19 @@ impl<'src> Analyzer<'src> {
                 }
 
                 for _ in 0..node.assignee_ptr_count {
-                    type_ = type_
-                        .sub_deref()
-                        .expect("this is validated in `prefix_expr`");
+                    type_ = match type_.sub_deref() {
+                        Some(type_) => type_,
+                        None => {
+                            self.error(
+                                ErrorKind::Type,
+                                format!("cannot dereference a value of type `{type_}`"),
+                                vec!["only pointers `*` can be dereferenced".into()],
+                                node.assignee.span,
+                            );
+                            Type::Unknown
+                        }
+                    };
+
                     println!("derefed type")
                 }
 
