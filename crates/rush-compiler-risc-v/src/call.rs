@@ -36,7 +36,7 @@ impl<'tree> Compiler<'tree> {
             (
                 Instruction::Sd(
                     IntRegister::Fp,
-                    Pointer::Stack(IntRegister::Sp, self.curr_fn().stack_allocs + 8),
+                    Pointer::Register(IntRegister::Sp, self.curr_fn().stack_allocs + 8),
                 ),
                 None,
             ),
@@ -44,7 +44,7 @@ impl<'tree> Compiler<'tree> {
             (
                 Instruction::Sd(
                     IntRegister::Ra,
-                    Pointer::Stack(IntRegister::Sp, self.curr_fn().stack_allocs),
+                    Pointer::Register(IntRegister::Sp, self.curr_fn().stack_allocs),
                 ),
                 None,
             ),
@@ -69,12 +69,12 @@ impl<'tree> Compiler<'tree> {
         // restore `fp` from the stack
         self.insert(Instruction::Ld(
             IntRegister::Fp,
-            Pointer::Stack(IntRegister::Sp, self.curr_fn().stack_allocs + 8),
+            Pointer::Register(IntRegister::Sp, self.curr_fn().stack_allocs + 8),
         ));
         // restore `ra` from the stack
         self.insert(Instruction::Ld(
             IntRegister::Ra,
-            Pointer::Stack(IntRegister::Sp, self.curr_fn().stack_allocs),
+            Pointer::Register(IntRegister::Sp, self.curr_fn().stack_allocs),
         ));
         // deallocate stack space
         self.insert(Instruction::Addi(
@@ -114,12 +114,6 @@ impl<'tree> Compiler<'tree> {
         for arg in &node.args {
             match arg.result_type() {
                 Type::Unit | Type::Never | Type::Unknown => continue,
-                Type::Int(0) | Type::Bool(0) | Type::Char(0) => {
-                    if IntRegister::nth_param(int_cnt).is_none() {
-                        spill_param_size += 8;
-                    }
-                    int_cnt += 1;
-                }
                 Type::Float(0) => {
                     if IntRegister::nth_param(float_cnt).is_none() {
                         spill_param_size += 8;
@@ -127,7 +121,12 @@ impl<'tree> Compiler<'tree> {
 
                     float_cnt += 1;
                 }
-                _ => todo!(), // TODO: handle pointers
+                Type::Int(_) | Type::Bool(_) | Type::Char(_) | Type::Float(_) => {
+                    if IntRegister::nth_param(int_cnt).is_none() {
+                        spill_param_size += 8;
+                    }
+                    int_cnt += 1;
+                }
             }
         }
 
@@ -155,7 +154,41 @@ impl<'tree> Compiler<'tree> {
                 Type::Unit | Type::Never | Type::Unknown => {
                     self.expression(arg);
                 }
-                Type::Int(0) | Type::Bool(0) | Type::Char(0) => {
+                Type::Float(0) => {
+                    let res_reg = self
+                        .expression(arg)
+                        .expect("none variants filtered out above");
+
+                    match FloatRegister::nth_param(float_cnt) {
+                        Some(curr_reg) => {
+                            param_regs.push(curr_reg.to_reg());
+                            self.use_reg(curr_reg.to_reg(), Size::Dword);
+
+                            // if the reg from the expr is not the expected one, move it
+                            // TODO: if this is broken, uncomment following code
+                            if curr_reg.to_reg() != res_reg {
+                                unreachable!("experimental edge case happened");
+                                /* self.insert_w_comment(
+                                    Instruction::Fmv(curr_reg, res_reg.into()),
+                                    format!("{res_reg} not expected {curr_reg}"),
+                                ) */
+                            }
+                        }
+                        None => {
+                            // no more params: spilling required
+                            self.insert_w_comment(
+                                Instruction::Fsd(
+                                    res_reg.into(),
+                                    Pointer::Register(IntRegister::Sp, spill_count * 8),
+                                ),
+                                format!("{} byte param spill", Size::Dword.byte_count()).into(),
+                            );
+                            spill_count += 1;
+                        }
+                    }
+                    float_cnt += 1;
+                }
+                Type::Int(_) | Type::Bool(_) | Type::Char(_) | Type::Float(_) => {
                     let type_ = arg.result_type();
 
                     let res_reg = match self.expression(arg) {
@@ -183,7 +216,7 @@ impl<'tree> Compiler<'tree> {
                             self.insert_w_comment(
                                 Instruction::Sd(
                                     res_reg.into(),
-                                    Pointer::Stack(IntRegister::Sp, spill_count * 8),
+                                    Pointer::Register(IntRegister::Sp, spill_count * 8),
                                 ),
                                 format!("{} byte param spill", Size::from(type_).byte_count())
                                     .into(),
@@ -194,41 +227,6 @@ impl<'tree> Compiler<'tree> {
 
                     int_cnt += 1;
                 }
-                Type::Float(0) => {
-                    let res_reg = self
-                        .expression(arg)
-                        .expect("none variants filtered out above");
-
-                    match FloatRegister::nth_param(float_cnt) {
-                        Some(curr_reg) => {
-                            param_regs.push(curr_reg.to_reg());
-                            self.use_reg(curr_reg.to_reg(), Size::Dword);
-
-                            // if the reg from the expr is not the expected one, move it
-                            // TODO: if this is broken, uncomment following code
-                            if curr_reg.to_reg() != res_reg {
-                                unreachable!("experimental edge case happened");
-                                /* self.insert_w_comment(
-                                    Instruction::Fmv(curr_reg, res_reg.into()),
-                                    format!("{res_reg} not expected {curr_reg}"),
-                                ) */
-                            }
-                        }
-                        None => {
-                            // no more params: spilling required
-                            self.insert_w_comment(
-                                Instruction::Fsd(
-                                    res_reg.into(),
-                                    Pointer::Stack(IntRegister::Sp, spill_count * 8),
-                                ),
-                                format!("{} byte param spill", Size::Dword.byte_count()).into(),
-                            );
-                            spill_count += 1;
-                        }
-                    }
-                    float_cnt += 1;
-                }
-                _ => todo!(), // TODO: handle pointers
             }
         }
 

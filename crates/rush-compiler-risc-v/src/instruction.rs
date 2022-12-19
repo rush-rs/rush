@@ -161,19 +161,19 @@ impl Display for Instruction {
             Instruction::Lb(dest, ptr) => write!(f, "lb {dest}, {ptr}"),
             Instruction::Ld(dest, ptr) => write!(f, "ld {dest}, {ptr}"),
             Instruction::Sb(src, ptr) => match ptr {
-                Pointer::Stack(_, _) => write!(f, "sb {src}, {ptr}"),
+                Pointer::Register(_, _) => write!(f, "sb {src}, {ptr}"),
                 Pointer::Label(_) => write!(f, "sb {src}, {ptr}, t6"),
             },
             Instruction::Sd(src, ptr) => match ptr {
-                Pointer::Stack(_, _) => write!(f, "sd {src}, {ptr}"),
+                Pointer::Register(_, _) => write!(f, "sd {src}, {ptr}"),
                 Pointer::Label(_) => write!(f, "sd {src}, {ptr}, t6"),
             },
             Instruction::Fld(dest, ptr) => match ptr {
-                Pointer::Stack(_, _) => write!(f, "fld {dest}, {ptr}"),
+                Pointer::Register(_, _) => write!(f, "fld {dest}, {ptr}"),
                 Pointer::Label(_) => write!(f, "fld {dest}, {ptr}, t6"),
             },
             Instruction::Fsd(src, ptr) => match ptr {
-                Pointer::Stack(_, _) => write!(f, "fsd {src}, {ptr}"),
+                Pointer::Register(_, _) => write!(f, "fsd {src}, {ptr}"),
                 Pointer::Label(_) => write!(f, "fsd {src}, {ptr}, t6"),
             },
             Instruction::Fadd(dest, lhs, rhs) => write!(f, "fadd.d {dest}, {lhs}, {rhs}"),
@@ -260,14 +260,14 @@ impl From<InfixOp> for Condition {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Pointer {
-    Stack(IntRegister, i64),
+    Register(IntRegister, i64),
     Label(Rc<str>),
 }
 
 impl Display for Pointer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Stack(reg, offset) => write!(f, "{}({})", offset, reg),
+            Self::Register(reg, offset) => write!(f, "{}({})", offset, reg),
             Self::Label(label) => write!(f, "{label}"),
         }
     }
@@ -292,7 +292,7 @@ mod tests {
             ),
             (Instruction::Li(IntRegister::A0, 1), "li a0, 1"),
             (
-                Instruction::Ld(IntRegister::T0, Pointer::Stack(IntRegister::Sp, 16)),
+                Instruction::Ld(IntRegister::T0, Pointer::Register(IntRegister::Sp, 16)),
                 "ld t0, 16(sp)",
             ),
             (
@@ -306,7 +306,7 @@ mod tests {
                 "fld ft0, a, t6",
             ),
             (
-                Instruction::Fld(FloatRegister::Ft0, Pointer::Stack(IntRegister::Sp, 32)),
+                Instruction::Fld(FloatRegister::Ft0, Pointer::Register(IntRegister::Sp, 32)),
                 "fld ft0, 32(sp)",
             ),
             (

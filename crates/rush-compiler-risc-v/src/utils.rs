@@ -30,6 +30,15 @@ pub(crate) enum VariableValue {
     Unit,
 }
 
+impl VariableValue {
+    pub(crate) fn into_ptr(self) -> Pointer {
+        match self {
+            VariableValue::Pointer(ptr) => ptr,
+            _ => panic!("called `VariableValue::into_ptr` on a non-pointer variant"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum Size {
     Byte = 1,
@@ -45,10 +54,9 @@ impl Size {
 impl From<Type> for Size {
     fn from(src: Type) -> Self {
         match src {
-            Type::Int(0) | Type::Float(0) => Size::Dword,
             Type::Bool(0) | Type::Char(0) => Size::Byte,
+            Type::Int(_) | Type::Float(_) | Type::Bool(_) | Type::Char(_) => Size::Dword,
             Type::Unknown | Type::Never | Type::Unit => unreachable!("these types have no size"),
-            _ => todo!(), // TODO: handle pointers
         }
     }
 }
@@ -80,7 +88,7 @@ impl<'tree> Compiler<'tree> {
 
         match reg {
             Register::Int(reg) => {
-                let ptr = Pointer::Stack(IntRegister::Fp, offset);
+                let ptr = Pointer::Register(IntRegister::Fp, offset);
 
                 match size {
                     Size::Byte => self.insert_w_comment(Instruction::Sb(reg, ptr), comment),
@@ -89,7 +97,7 @@ impl<'tree> Compiler<'tree> {
             }
             Register::Float(reg) => self.insert(Instruction::Fsd(
                 reg,
-                Pointer::Stack(IntRegister::Fp, offset),
+                Pointer::Register(IntRegister::Fp, offset),
             )),
         };
 
@@ -122,11 +130,11 @@ impl<'tree> Compiler<'tree> {
                     // perform different load operations depending on the size
                     match size {
                         Size::Byte => self.insert_w_comment(
-                            Instruction::Lb(reg, Pointer::Stack(IntRegister::Fp, offset)),
+                            Instruction::Lb(reg, Pointer::Register(IntRegister::Fp, offset)),
                             comment,
                         ),
                         Size::Dword => self.insert_w_comment(
-                            Instruction::Ld(reg, Pointer::Stack(IntRegister::Fp, offset)),
+                            Instruction::Ld(reg, Pointer::Register(IntRegister::Fp, offset)),
                             comment,
                         ),
                     };
@@ -144,7 +152,7 @@ impl<'tree> Compiler<'tree> {
                     }
 
                     self.insert_w_comment(
-                        Instruction::Fld(reg, Pointer::Stack(IntRegister::Fp, offset)),
+                        Instruction::Fld(reg, Pointer::Register(IntRegister::Fp, offset)),
                         comment,
                     );
                 }
@@ -268,22 +276,23 @@ impl<'tree> Compiler<'tree> {
     /// Decides which load operation is to be used as it depends on the data size.
     pub(crate) fn load_value_from_variable(
         &mut self,
-        var: Variable,
+        var: VariableValue,
+        type_: Type,
         ident: &'tree str,
     ) -> Option<Register> {
-        match var.value {
-            VariableValue::Pointer(ptr) => match var.type_ {
-                Type::Bool(0) | Type::Char(0) => {
+        match var {
+            VariableValue::Pointer(ptr) => match type_ {
+                Type::Bool(_) | Type::Char(_) => {
                     let dest_reg = self.alloc_ireg();
                     self.insert_w_comment(Instruction::Lb(dest_reg, ptr), ident.into());
                     Some(Register::Int(dest_reg))
                 }
-                Type::Int(0) => {
+                Type::Int(_) => {
                     let dest_reg = self.alloc_ireg();
                     self.insert_w_comment(Instruction::Ld(dest_reg, ptr), ident.into());
                     Some(Register::Int(dest_reg))
                 }
-                Type::Float(0) => {
+                Type::Float(_) => {
                     let dest_reg = self.alloc_freg();
                     self.insert_w_comment(Instruction::Fld(dest_reg, ptr), ident.into());
                     Some(Register::Float(dest_reg))

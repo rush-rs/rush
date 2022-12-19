@@ -229,60 +229,13 @@ impl<'tree> Compiler<'tree> {
         // save all param values in the current scope / on the stack
         for param in &node.params {
             match param.type_ {
-                Type::Int(0) | Type::Char(0) | Type::Bool(0) => {
-                    match IntRegister::nth_param(int_cnt) {
-                        Some(reg) => {
-                            let size = Size::from(param.type_);
-                            let offset = self.get_offset(size);
-
-                            // use `sb` or `sd` depending on the size
-                            match size {
-                                Size::Byte => param_store_instructions.push((
-                                    Instruction::Sb(reg, Pointer::Stack(IntRegister::Fp, offset)),
-                                    Some(format!("param {} = {reg}", param.name).into()),
-                                )),
-                                Size::Dword => param_store_instructions.push((
-                                    Instruction::Sd(reg, Pointer::Stack(IntRegister::Fp, offset)),
-                                    Some(format!("param {} = {reg}", param.name).into()),
-                                )),
-                            }
-
-                            // insert the param into the scope
-                            self.scope_mut().insert(
-                                param.name,
-                                Variable {
-                                    type_: param.type_,
-                                    value: VariableValue::Pointer(Pointer::Stack(
-                                        IntRegister::Fp,
-                                        offset,
-                                    )),
-                                },
-                            );
-                        }
-                        None => {
-                            // if there are spilled params, insert their location into the scope
-                            self.scope_mut().insert(
-                                param.name,
-                                Variable {
-                                    type_: param.type_,
-                                    value: VariableValue::Pointer(Pointer::Stack(
-                                        IntRegister::Fp,
-                                        mem_offset,
-                                    )),
-                                },
-                            );
-                            mem_offset += 8;
-                        }
-                    }
-                    int_cnt += 1;
-                }
                 Type::Float(0) => {
                     match FloatRegister::nth_param(float_cnt) {
                         Some(reg) => {
                             let offset = self.get_offset(Size::Dword);
 
                             param_store_instructions.push((
-                                Instruction::Fsd(reg, Pointer::Stack(IntRegister::Fp, offset)),
+                                Instruction::Fsd(reg, Pointer::Register(IntRegister::Fp, offset)),
                                 Some(format!("param {} = {reg}", param.name).into()),
                             ));
 
@@ -291,7 +244,7 @@ impl<'tree> Compiler<'tree> {
                                 param.name,
                                 Variable {
                                     type_: param.type_,
-                                    value: VariableValue::Pointer(Pointer::Stack(
+                                    value: VariableValue::Pointer(Pointer::Register(
                                         IntRegister::Fp,
                                         offset,
                                     )),
@@ -304,7 +257,7 @@ impl<'tree> Compiler<'tree> {
                                 param.name,
                                 Variable {
                                     type_: param.type_,
-                                    value: VariableValue::Pointer(Pointer::Stack(
+                                    value: VariableValue::Pointer(Pointer::Register(
                                         IntRegister::Fp,
                                         mem_offset,
                                     )),
@@ -315,12 +268,64 @@ impl<'tree> Compiler<'tree> {
                     }
                     float_cnt += 1;
                 }
+                Type::Int(_) | Type::Char(_) | Type::Bool(_) | Type::Float(_) => {
+                    match IntRegister::nth_param(int_cnt) {
+                        Some(reg) => {
+                            let size = Size::from(param.type_);
+                            let offset = self.get_offset(size);
+
+                            // use `sb` or `sd` depending on the size
+                            match size {
+                                Size::Byte => param_store_instructions.push((
+                                    Instruction::Sb(
+                                        reg,
+                                        Pointer::Register(IntRegister::Fp, offset),
+                                    ),
+                                    Some(format!("param {} = {reg}", param.name).into()),
+                                )),
+                                Size::Dword => param_store_instructions.push((
+                                    Instruction::Sd(
+                                        reg,
+                                        Pointer::Register(IntRegister::Fp, offset),
+                                    ),
+                                    Some(format!("param {} = {reg}", param.name).into()),
+                                )),
+                            }
+
+                            // insert the param into the scope
+                            self.scope_mut().insert(
+                                param.name,
+                                Variable {
+                                    type_: param.type_,
+                                    value: VariableValue::Pointer(Pointer::Register(
+                                        IntRegister::Fp,
+                                        offset,
+                                    )),
+                                },
+                            );
+                        }
+                        None => {
+                            // if there are spilled params, insert their location into the scope
+                            self.scope_mut().insert(
+                                param.name,
+                                Variable {
+                                    type_: param.type_,
+                                    value: VariableValue::Pointer(Pointer::Register(
+                                        IntRegister::Fp,
+                                        mem_offset,
+                                    )),
+                                },
+                            );
+                            mem_offset += 8;
+                        }
+                    }
+                    int_cnt += 1;
+                }
                 Type::Unit | Type::Never => {
                     // insert a dummy value into the scope
                     self.scope_mut().insert(param.name, Variable::unit());
                 }
                 Type::Unknown => unreachable!("analyzer would have failed"),
-                _ => todo!(), // TODO: handle pointers
             }
         }
 
@@ -595,18 +600,18 @@ impl<'tree> Compiler<'tree> {
 
         match rhs_reg {
             Register::Int(reg) => match type_ {
-                Type::Bool(0) | Type::Char(0) => self.insert_w_comment(
-                    Instruction::Sb(reg, Pointer::Stack(IntRegister::Fp, offset)),
+                Type::Bool(_) | Type::Char(_) => self.insert_w_comment(
+                    Instruction::Sb(reg, Pointer::Register(IntRegister::Fp, offset)),
                     comment,
                 ),
-                Type::Int(0) => self.insert_w_comment(
-                    Instruction::Sd(reg, Pointer::Stack(IntRegister::Fp, offset)),
+                Type::Int(_) => self.insert_w_comment(
+                    Instruction::Sd(reg, Pointer::Register(IntRegister::Fp, offset)),
                     comment,
                 ),
                 _ => unreachable!("only the types above use int registers"),
             },
             Register::Float(reg) => self.insert_w_comment(
-                Instruction::Fsd(reg, Pointer::Stack(IntRegister::Fp, offset)),
+                Instruction::Fsd(reg, Pointer::Register(IntRegister::Fp, offset)),
                 comment,
             ),
         }
@@ -616,7 +621,7 @@ impl<'tree> Compiler<'tree> {
             node.name,
             Variable {
                 type_,
-                value: VariableValue::Pointer(Pointer::Stack(IntRegister::Fp, offset)),
+                value: VariableValue::Pointer(Pointer::Register(IntRegister::Fp, offset)),
             },
         );
     }
@@ -678,7 +683,7 @@ impl<'tree> Compiler<'tree> {
                     var => var,
                 };
                 // `clone` is okay here, since it only clones a `Rc`
-                self.load_value_from_variable(var.clone(), ident.ident)
+                self.load_value_from_variable(var.clone().value, var.type_, ident.ident)
             }
             AnalyzedExpression::Prefix(node) => self.prefix_expr(*node),
             AnalyzedExpression::Infix(node) => self.infix_expr(*node),
@@ -697,6 +702,29 @@ impl<'tree> Compiler<'tree> {
     /// Compiles an [`AnalyzedPrefixExpr`].
     fn prefix_expr(&mut self, node: AnalyzedPrefixExpr<'tree>) -> Option<Register> {
         let lhs_type = node.expr.result_type();
+
+        if node.op == PrefixOp::Ref {
+            if let AnalyzedExpression::Ident(ident) = node.expr {
+                let var = self.resolve_name(ident.ident);
+                let dest_reg = self.alloc_ireg();
+
+                let offset = match &var.value {
+                    VariableValue::Pointer(ptr) => match ptr {
+                        Pointer::Register(_, offset) => *offset,
+                        Pointer::Label(_) => todo!(), // TODO: implement this
+                    },
+                    _ => unreachable!("the analyzer guarantees valid pointers"),
+                };
+
+                self.insert_w_comment(
+                    Instruction::Addi(dest_reg, IntRegister::Fp, offset),
+                    format!("&{}", ident.ident).into(),
+                );
+                return Some(dest_reg.into());
+            }
+            unreachable!("can only reference identifiers")
+        }
+
         let lhs_reg = self.expression(node.expr)?;
 
         match (lhs_type, node.op) {
@@ -720,7 +748,21 @@ impl<'tree> Compiler<'tree> {
                 self.insert(Instruction::Seqz(dest_reg, lhs_reg.into()));
                 Some(dest_reg.to_reg())
             }
-            _ => unreachable!("other combinations cannot occur in prefix expressions"),
+            (Type::Int(_) | Type::Bool(_) | Type::Char(_), PrefixOp::Deref) => {
+                let dest_reg = self.alloc_ireg();
+
+                self.insert(Instruction::Mov(dest_reg, lhs_reg.into()));
+
+                self.insert_w_comment(
+                    Instruction::Ld(dest_reg, Pointer::Register(dest_reg, 0)),
+                    "deref".into(),
+                );
+
+                Some(dest_reg.into())
+            }
+            (t, o) => {
+                unreachable!("other combinations cannot occur in prefix expressions: {t}: {o}")
+            }
         }
     }
 
@@ -971,7 +1013,7 @@ impl<'tree> Compiler<'tree> {
                 self.insert(Instruction::Fdiv(dest_regf, lhs.into(), rhs.into()));
                 dest_regf.into()
             }
-            _ => unreachable!("the analyzer does not allow other combinations"),
+            (t, o) => unreachable!("the analyzer does not allow other combinations: {t}: {o}"),
         }
     }
 
@@ -985,68 +1027,99 @@ impl<'tree> Compiler<'tree> {
 
         let assignee = self.resolve_name(node.assignee).clone();
 
+        let mut src_ptr = assignee.value.clone();
+        let mut assignee_type = assignee.type_;
+        let ptr_reg = self.alloc_ireg();
+
+        // if the lhs is an indirected pointer, perform required indirections
+        if node.assignee_ptr_count > 0 {
+            let mut ptr_count = node.assignee_ptr_count;
+            self.use_reg(ptr_reg.into(), Size::Dword);
+
+            while ptr_count > 0 {
+                self.insert_w_comment(
+                    Instruction::Ld(ptr_reg, src_ptr.clone().into_ptr()),
+                    "deref".into(),
+                );
+                src_ptr = VariableValue::Pointer(Pointer::Register(ptr_reg, 0));
+                assignee_type = assignee_type
+                    .sub_deref()
+                    .expect("the analyzer guarantees valid usage of pointers");
+                ptr_count -= 1;
+            }
+        }
+
         // holds the value of the rhs (either simple or the result of an operation)
-        let rhs_reg = match node.op {
-            AssignOp::Basic => match self.expression(node.expr) {
-                Some(reg) => reg,
-                None => return,
-            },
-            AssignOp::Pow => {
-                // load value from the lhs
-                let lhs = self
-                    // `clone` only clones a [`Rc`]
-                    .load_value_from_variable(assignee.clone(), node.assignee)
-                    .expect("filtered above");
-                self.use_reg(lhs, Size::from(assignee.type_));
+        'outer: {
+            let rhs_reg = match node.op {
+                AssignOp::Basic => match self.expression(node.expr) {
+                    Some(reg) => reg,
+                    None => return,
+                },
+                AssignOp::Pow => {
+                    // load value from the lhs
+                    let lhs = self
+                        // `clone` only clones a [`Rc`]
+                        .load_value_from_variable(src_ptr.clone(), assignee_type, node.assignee)
+                        .expect("filtered above");
+                    self.use_reg(lhs, Size::from(assignee_type));
 
-                // compile the rhs
-                let Some(rhs) = self.expression(node.expr) else {return };
-                self.use_reg(rhs, Size::from(rhs_type));
+                    // compile the rhs
+                    let Some(rhs) = self.expression(node.expr) else { break 'outer };
+                    self.use_reg(rhs, Size::from(rhs_type));
 
-                // call the `pow` corelib function using the `infix_helper`
-                let res = self.infix_helper(lhs, rhs, InfixOp::from(node.op), assignee.type_);
+                    // call the `pow` corelib function using the `infix_helper`
+                    let res = self.infix_helper(lhs, rhs, InfixOp::from(node.op), assignee_type);
 
-                self.release_reg(lhs);
-                self.release_reg(rhs);
-                res
-            }
-            _ => {
-                // compile the rhs
-                let Some(rhs) = self.expression(node.expr) else {return };
-                self.use_reg(rhs, Size::from(rhs_type));
-
-                // load value from the lhs
-                let lhs = self
-                    // `clone` only clones a [`Rc`]
-                    .load_value_from_variable(assignee.clone(), node.assignee)
-                    .expect("filtered above");
-                self.use_reg(lhs, Size::from(assignee.type_));
-
-                // perform pre-assign operation using the infix helper
-                let res = self.infix_helper(lhs, rhs, InfixOp::from(node.op), assignee.type_);
-
-                self.release_reg(lhs);
-                self.release_reg(rhs);
-                res
-            }
-        };
-
-        match assignee.value {
-            VariableValue::Pointer(ptr) => match rhs_type {
-                Type::Int(0) => self.insert(Instruction::Sd(rhs_reg.into(), ptr)),
-                Type::Float(0) => self.insert(Instruction::Fsd(rhs_reg.into(), ptr)),
-                Type::Bool(0) | Type::Char(0) => self.insert(Instruction::Sb(rhs_reg.into(), ptr)),
-                Type::Unit | Type::Never => {} // ignore unit types
-                _ => unreachable!("the analyzer would have failed"),
-            },
-            VariableValue::Register(dest) => match rhs_type {
-                Type::Int(0) | Type::Bool(0) | Type::Char(0) => {
-                    self.insert(Instruction::Mov((dest).into(), rhs_reg.into()))
+                    self.release_reg(lhs);
+                    self.release_reg(rhs);
+                    res
                 }
-                Type::Float(0) => self.insert(Instruction::Fmv(dest.into(), rhs_reg.into())),
-                _ => unreachable!("other types cannot exist in an assignment"),
-            },
-            VariableValue::Unit => {} // do nothing for unit types
+                _ => {
+                    // compile the rhs
+                    let Some(rhs) = self.expression(node.expr) else { break 'outer};
+                    self.use_reg(rhs, Size::from(rhs_type));
+
+                    // load value from the lhs
+                    let lhs = self
+                        // `clone` only clones a [`Rc`]
+                        .load_value_from_variable(src_ptr.clone(), assignee_type, node.assignee)
+                        .expect("filtered above");
+                    self.use_reg(lhs, Size::from(assignee_type));
+
+                    // perform pre-assign operation using the infix helper
+                    let res = self.infix_helper(lhs, rhs, InfixOp::from(node.op), assignee_type);
+
+                    self.release_reg(lhs);
+                    self.release_reg(rhs);
+                    res
+                }
+            };
+
+            match src_ptr {
+                VariableValue::Pointer(ptr) => match rhs_type {
+                    Type::Int(0) => self.insert(Instruction::Sd(rhs_reg.into(), ptr)),
+                    Type::Float(0) => self.insert(Instruction::Fsd(rhs_reg.into(), ptr)),
+                    Type::Bool(0) | Type::Char(0) => {
+                        self.insert(Instruction::Sb(rhs_reg.into(), ptr))
+                    }
+                    Type::Unit | Type::Never => {} // ignore unit types
+                    _ => unreachable!("the analyzer would have failed"),
+                },
+                VariableValue::Register(dest) => match rhs_type {
+                    Type::Int(0) | Type::Bool(0) | Type::Char(0) => {
+                        self.insert(Instruction::Mov((dest).into(), rhs_reg.into()))
+                    }
+                    Type::Float(0) => self.insert(Instruction::Fmv(dest.into(), rhs_reg.into())),
+                    _ => unreachable!("other types cannot exist in an assignment"),
+                },
+                VariableValue::Unit => {} // do nothing for unit types
+            }
+        }
+
+        // release the ptr register if it was used
+        if node.assignee_ptr_count > 0 {
+            self.release_reg(ptr_reg.into());
         }
     }
 
