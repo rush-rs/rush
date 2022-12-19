@@ -707,7 +707,7 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
                     false => expr,
                 },
             }),
-            _ => {
+            (PrefixOp::Ref | PrefixOp::Deref, _) => {
                 self.errors.push(Error::new(
                     format!("prefix operator `{op}` requires an identifier on its right hand side"),
                     expr.span(),
@@ -722,6 +722,11 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
                     }),
                 })
             }
+            _ => Ok(PrefixExpr {
+                span: start_loc.until(self.prev_tok.span.end),
+                op,
+                expr,
+            }),
         }
     }
 
