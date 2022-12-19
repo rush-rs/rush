@@ -770,19 +770,21 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         lhs: Expression<'src>,
         op: AssignOp,
     ) -> Result<'src, Expression<'src>> {
-        let (assignee, assignee_ptr_count) = match self.reduce_prefix_expr_to_ident(lhs, 0) {
-            Ok(res) => res,
-            Err(err) => {
-                self.errors.push(*err);
-                (
-                    Spanned {
-                        span: Span::dummy(),
-                        inner: "",
-                    },
-                    0,
-                )
-            }
-        };
+        let lhs_start_loc = lhs.span().start;
+        let (assignee, assignee_ptr_count) =
+            match self.reduce_prefix_expr_to_ident(lhs, lhs_start_loc, 0) {
+                Ok(res) => res,
+                Err(err) => {
+                    self.errors.push(*err);
+                    (
+                        Spanned {
+                            span: Span::dummy(),
+                            inner: "",
+                        },
+                        0,
+                    )
+                }
+            };
 
         let right_prec = self.curr_tok.kind.prec().1;
         self.next()?;
@@ -805,11 +807,18 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
     fn reduce_prefix_expr_to_ident(
         &self,
         expr: Expression<'src>,
+        start_loc: Location<'src>,
         count: usize,
     ) -> Result<'src, (Spanned<'src, &'src str>, usize)> {
         match expr {
-            Expression::Ident(ident) => Ok((ident, count)),
-            Expression::Prefix(prefix) => self.reduce_prefix_expr_to_ident(prefix.expr, count + 1),
+            Expression::Ident(ident) => {
+                let mut ident = ident;
+                ident.span = start_loc.until(ident.span.end);
+                Ok((ident, count))
+            }
+            Expression::Prefix(prefix) => {
+                self.reduce_prefix_expr_to_ident(prefix.expr, start_loc, count + 1)
+            }
             _ => Err(Error::new_boxed(
                 "left hand side of assignment must be an identifier".to_string(),
                 expr.span(),
