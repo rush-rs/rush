@@ -4,13 +4,10 @@ use crate::Span;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Type {
-    Int,
-    Float,
-    Bool,
-    Char,
-    // TODO: use real implementation when ready
-    // Pointer(Box<Type>),
-    Pointer,
+    Int(usize),
+    Float(usize),
+    Bool(usize),
+    Char(usize),
     Unit,
     /// Internal use only, used for diverging expressions
     Never,
@@ -18,32 +15,53 @@ pub enum Type {
     Unknown,
 }
 
-// TODO: uncomment when ready
-/*
-impl Type {
-    /// Can be called on [`Type::Pointer`] in order to get the inner type of the pointer.
-    /// If called on non-pointers, this function will panic
-    pub fn deref(self) -> Self {
-        match self {
-            Type::Pointer(inner) => *inner,
-            _ => panic!("called `Type::deref` on a non-pointer variant"),
-        }
-    }
-}
-*/
-
 impl Display for Type {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Int => write!(f, "int"),
-            Self::Float => write!(f, "float"),
-            Self::Bool => write!(f, "bool"),
-            Self::Char => write!(f, "char"),
-            // TODO: use real implementation
-            Self::Pointer => write!(f, "*inner"),
+            Self::Int(indirections) => write!(f, "{}int", "*".repeat(*indirections)),
+            Self::Float(indirections) => write!(f, "{}float", "*".repeat(*indirections)),
+            Self::Bool(indirections) => write!(f, "{}bool", "*".repeat(*indirections)),
+            Self::Char(indirections) => write!(f, "{}char", "*".repeat(*indirections)),
             Self::Unit => write!(f, "()"),
             Self::Never => write!(f, "!"),
             Self::Unknown => write!(f, "{{unknown}}"),
+        }
+    }
+}
+
+impl Type {
+    pub fn add_ref(self) -> Option<Self> {
+        Some(match self {
+            Type::Int(ptr) => Type::Int(ptr + 1),
+            Type::Float(ptr) => Type::Float(ptr + 1),
+            Type::Bool(ptr) => Type::Bool(ptr + 1),
+            Type::Char(ptr) => Type::Char(ptr + 1),
+            _ => return None,
+        })
+    }
+
+    pub fn sub_deref(self) -> Option<Self> {
+        Some(match self {
+            Type::Int(ptr) | Type::Float(ptr) | Type::Bool(ptr) | Type::Char(ptr) if ptr == 0 => {
+                return None
+            }
+            Type::Int(ptr) => Type::Int(ptr - 1),
+            Type::Float(ptr) => Type::Float(ptr - 1),
+            Type::Bool(ptr) => Type::Bool(ptr - 1),
+            Type::Char(ptr) => Type::Char(ptr - 1),
+            _ => return None,
+        })
+    }
+
+    pub fn ptr_count(&self) -> Option<usize> {
+        match self {
+            Type::Int(ptr) => Some(*ptr),
+            Type::Float(ptr) => Some(*ptr),
+            Type::Bool(ptr) => Some(*ptr),
+            Type::Char(ptr) => Some(*ptr),
+            Type::Unit => None,
+            Type::Never => None,
+            Type::Unknown => None,
         }
     }
 }
@@ -184,8 +202,6 @@ pub enum Expression<'src> {
     Bool(Spanned<'src, bool>),
     Char(Spanned<'src, u8>),
     Ident(Spanned<'src, &'src str>),
-    Ref(Spanned<'src, &'src str>),
-    Deref(Spanned<'src, &'src str>),
     Prefix(Box<PrefixExpr<'src>>),
     Infix(Box<InfixExpr<'src>>),
     Assign(Box<AssignExpr<'src>>),
@@ -204,8 +220,6 @@ impl<'src> Expression<'src> {
             Self::Bool(expr) => expr.span,
             Self::Char(expr) => expr.span,
             Self::Ident(expr) => expr.span,
-            Self::Ref(expr) => expr.span,
-            Self::Deref(expr) => expr.span,
             Self::Prefix(expr) => expr.span,
             Self::Infix(expr) => expr.span,
             Self::Assign(expr) => expr.span,
@@ -237,6 +251,25 @@ pub enum PrefixOp {
     Not,
     /// -
     Neg,
+    /// &
+    Ref,
+    /// *
+    Deref,
+}
+
+impl Display for PrefixOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                PrefixOp::Not => "!",
+                PrefixOp::Neg => "-",
+                PrefixOp::Ref => "&",
+                PrefixOp::Deref => "*",
+            }
+        )
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -345,7 +378,7 @@ impl Display for InfixOp {
 pub struct AssignExpr<'src> {
     pub span: Span<'src>,
     pub assignee: Spanned<'src, &'src str>,
-    pub assignee_is_ptr: bool,
+    pub assignee_ptr_count: usize,
     pub op: AssignOp,
     pub expr: Expression<'src>,
 }

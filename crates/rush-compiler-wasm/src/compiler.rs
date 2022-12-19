@@ -678,8 +678,6 @@ impl<'src> Compiler<'src> {
                 // unit type requires no instructions
                 Variable::Local(None) => {}
             },
-            AnalyzedExpression::Ref(_) => todo!(), // TODO: implement this,
-            AnalyzedExpression::Deref(_) => todo!(), // TODO: implement this,
             AnalyzedExpression::Prefix(node) => self.prefix_expr(*node),
             AnalyzedExpression::Infix(node) => self.infix_expr(*node),
             AnalyzedExpression::Assign(node) => self.assign_expr(*node),
@@ -729,14 +727,14 @@ impl<'src> Compiler<'src> {
         // match op and expr type
         match (node.op, node.expr.result_type()) {
             (_, Type::Never) => self.expression(node.expr),
-            (PrefixOp::Not, Type::Bool) => {
+            (PrefixOp::Not, Type::Bool(0)) => {
                 // compile expression
                 self.expression(node.expr);
 
                 // negate
                 self.function_body.push(instructions::I32_EQZ);
             }
-            (PrefixOp::Neg, Type::Int) => {
+            (PrefixOp::Neg, Type::Int(0)) => {
                 // push constant 0
                 self.function_body.push(instructions::I64_CONST);
                 self.function_body.push(0);
@@ -747,7 +745,7 @@ impl<'src> Compiler<'src> {
                 // push subtract
                 self.function_body.push(instructions::I64_SUB);
             }
-            (PrefixOp::Neg, Type::Float) => {
+            (PrefixOp::Neg, Type::Float(0)) => {
                 // compile expression
                 self.expression(node.expr);
 
@@ -810,56 +808,56 @@ impl<'src> Compiler<'src> {
         // match on op and type (analyzer guarantees same type for lhs and rhs)
         let instruction = match (node.op, lhs_type) {
             _ if lhs_type == Type::Never || rhs_type == Type::Never => return,
-            (InfixOp::Plus, Type::Int) => instructions::I64_ADD,
-            (InfixOp::Plus, Type::Float) => instructions::F64_ADD,
-            (InfixOp::Plus, Type::Char) => {
+            (InfixOp::Plus, Type::Int(0)) => instructions::I64_ADD,
+            (InfixOp::Plus, Type::Float(0)) => instructions::F64_ADD,
+            (InfixOp::Plus, Type::Char(0)) => {
                 self.function_body.push(instructions::I32_ADD);
                 self.function_body.push(instructions::I32_CONST);
                 0x7f.write_sleb128(&mut self.function_body);
                 self.function_body.push(instructions::I32_AND);
                 return;
             }
-            (InfixOp::Minus, Type::Int) => instructions::I64_SUB,
-            (InfixOp::Minus, Type::Float) => instructions::F64_SUB,
-            (InfixOp::Minus, Type::Char) => {
+            (InfixOp::Minus, Type::Int(0)) => instructions::I64_SUB,
+            (InfixOp::Minus, Type::Float(0)) => instructions::F64_SUB,
+            (InfixOp::Minus, Type::Char(0)) => {
                 self.function_body.push(instructions::I32_SUB);
                 self.function_body.push(instructions::I32_CONST);
                 0x7f.write_sleb128(&mut self.function_body);
                 self.function_body.push(instructions::I32_AND);
                 return;
             }
-            (InfixOp::Mul, Type::Int) => instructions::I64_MUL,
-            (InfixOp::Mul, Type::Float) => instructions::F64_MUL,
-            (InfixOp::Div, Type::Int) => instructions::I64_DIV_S,
-            (InfixOp::Div, Type::Float) => instructions::F64_DIV,
-            (InfixOp::Rem, Type::Int) => instructions::I64_REM_S,
-            (InfixOp::Pow, Type::Int) => return self.__rush_internal_pow_int(),
-            (InfixOp::Eq, Type::Int) => instructions::I64_EQ,
-            (InfixOp::Eq, Type::Float) => instructions::F64_EQ,
-            (InfixOp::Eq, Type::Bool | Type::Char) => instructions::I32_EQ,
-            (InfixOp::Neq, Type::Int) => instructions::I64_NE,
-            (InfixOp::Neq, Type::Float) => instructions::F64_NE,
-            (InfixOp::Neq, Type::Bool | Type::Char) => instructions::I32_NE,
-            (InfixOp::Lt, Type::Int) => instructions::I64_LT_S,
-            (InfixOp::Lt, Type::Float) => instructions::F64_LT,
-            (InfixOp::Lt, Type::Char) => instructions::I32_LT_U,
-            (InfixOp::Gt, Type::Int) => instructions::I64_GT_S,
-            (InfixOp::Gt, Type::Float) => instructions::F64_GT,
-            (InfixOp::Gt, Type::Char) => instructions::I32_GT_U,
-            (InfixOp::Lte, Type::Int) => instructions::I64_LE_S,
-            (InfixOp::Lte, Type::Float) => instructions::F64_LE,
-            (InfixOp::Lte, Type::Char) => instructions::I32_LE_U,
-            (InfixOp::Gte, Type::Int) => instructions::I64_GE_S,
-            (InfixOp::Gte, Type::Float) => instructions::F64_GE,
-            (InfixOp::Gte, Type::Char) => instructions::I32_GE_U,
-            (InfixOp::Shl, Type::Int) => instructions::I64_SHL,
-            (InfixOp::Shr, Type::Int) => instructions::I64_SHR_S,
-            (InfixOp::BitOr, Type::Int) => instructions::I64_OR,
-            (InfixOp::BitOr, Type::Bool) => instructions::I32_OR,
-            (InfixOp::BitAnd, Type::Int) => instructions::I64_AND,
-            (InfixOp::BitAnd, Type::Bool) => instructions::I32_AND,
-            (InfixOp::BitXor, Type::Int) => instructions::I64_XOR,
-            (InfixOp::BitXor, Type::Bool) => instructions::I32_XOR,
+            (InfixOp::Mul, Type::Int(0)) => instructions::I64_MUL,
+            (InfixOp::Mul, Type::Float(0)) => instructions::F64_MUL,
+            (InfixOp::Div, Type::Int(0)) => instructions::I64_DIV_S,
+            (InfixOp::Div, Type::Float(0)) => instructions::F64_DIV,
+            (InfixOp::Rem, Type::Int(0)) => instructions::I64_REM_S,
+            (InfixOp::Pow, Type::Int(0)) => return self.__rush_internal_pow_int(),
+            (InfixOp::Eq, Type::Int(0)) => instructions::I64_EQ,
+            (InfixOp::Eq, Type::Float(0)) => instructions::F64_EQ,
+            (InfixOp::Eq, Type::Bool(0) | Type::Char(0)) => instructions::I32_EQ,
+            (InfixOp::Neq, Type::Int(0)) => instructions::I64_NE,
+            (InfixOp::Neq, Type::Float(0)) => instructions::F64_NE,
+            (InfixOp::Neq, Type::Bool(0) | Type::Char(0)) => instructions::I32_NE,
+            (InfixOp::Lt, Type::Int(0)) => instructions::I64_LT_S,
+            (InfixOp::Lt, Type::Float(0)) => instructions::F64_LT,
+            (InfixOp::Lt, Type::Char(0)) => instructions::I32_LT_U,
+            (InfixOp::Gt, Type::Int(0)) => instructions::I64_GT_S,
+            (InfixOp::Gt, Type::Float(0)) => instructions::F64_GT,
+            (InfixOp::Gt, Type::Char(0)) => instructions::I32_GT_U,
+            (InfixOp::Lte, Type::Int(0)) => instructions::I64_LE_S,
+            (InfixOp::Lte, Type::Float(0)) => instructions::F64_LE,
+            (InfixOp::Lte, Type::Char(0)) => instructions::I32_LE_U,
+            (InfixOp::Gte, Type::Int(0)) => instructions::I64_GE_S,
+            (InfixOp::Gte, Type::Float(0)) => instructions::F64_GE,
+            (InfixOp::Gte, Type::Char(0)) => instructions::I32_GE_U,
+            (InfixOp::Shl, Type::Int(0)) => instructions::I64_SHL,
+            (InfixOp::Shr, Type::Int(0)) => instructions::I64_SHR_S,
+            (InfixOp::BitOr, Type::Int(0)) => instructions::I64_OR,
+            (InfixOp::BitOr, Type::Bool(0)) => instructions::I32_OR,
+            (InfixOp::BitAnd, Type::Int(0)) => instructions::I64_AND,
+            (InfixOp::BitAnd, Type::Bool(0)) => instructions::I32_AND,
+            (InfixOp::BitXor, Type::Int(0)) => instructions::I64_XOR,
+            (InfixOp::BitXor, Type::Bool(0)) => instructions::I32_XOR,
             _ => unreachable!("the analyzer guarantees one of the above to match"),
         };
         self.function_body.push(instruction);
@@ -901,41 +899,41 @@ impl<'src> Compiler<'src> {
                 // match on op and type (analyzer guarantees same type for variable and expr)
                 let instruction = match (node.op, expr_type) {
                     (_, Type::Never) => break 'op,
-                    (AssignOp::Plus, Type::Int) => instructions::I64_ADD,
-                    (AssignOp::Plus, Type::Float) => instructions::F64_ADD,
-                    (AssignOp::Plus, Type::Char) => {
+                    (AssignOp::Plus, Type::Int(0)) => instructions::I64_ADD,
+                    (AssignOp::Plus, Type::Float(0)) => instructions::F64_ADD,
+                    (AssignOp::Plus, Type::Char(0)) => {
                         self.function_body.push(instructions::I32_ADD);
                         self.function_body.push(instructions::I32_CONST);
                         0x7f.write_sleb128(&mut self.function_body);
                         self.function_body.push(instructions::I32_AND);
                         break 'op;
                     }
-                    (AssignOp::Minus, Type::Int) => instructions::I64_SUB,
-                    (AssignOp::Minus, Type::Float) => instructions::F64_SUB,
-                    (AssignOp::Minus, Type::Char) => {
+                    (AssignOp::Minus, Type::Int(0)) => instructions::I64_SUB,
+                    (AssignOp::Minus, Type::Float(0)) => instructions::F64_SUB,
+                    (AssignOp::Minus, Type::Char(0)) => {
                         self.function_body.push(instructions::I32_SUB);
                         self.function_body.push(instructions::I32_CONST);
                         0x7f.write_sleb128(&mut self.function_body);
                         self.function_body.push(instructions::I32_AND);
                         break 'op;
                     }
-                    (AssignOp::Mul, Type::Int) => instructions::I64_MUL,
-                    (AssignOp::Mul, Type::Float) => instructions::F64_MUL,
-                    (AssignOp::Div, Type::Int) => instructions::I64_DIV_S,
-                    (AssignOp::Div, Type::Float) => instructions::F64_DIV,
-                    (AssignOp::Rem, Type::Int) => instructions::I64_REM_S,
-                    (AssignOp::Pow, Type::Int) => {
+                    (AssignOp::Mul, Type::Int(0)) => instructions::I64_MUL,
+                    (AssignOp::Mul, Type::Float(0)) => instructions::F64_MUL,
+                    (AssignOp::Div, Type::Int(0)) => instructions::I64_DIV_S,
+                    (AssignOp::Div, Type::Float(0)) => instructions::F64_DIV,
+                    (AssignOp::Rem, Type::Int(0)) => instructions::I64_REM_S,
+                    (AssignOp::Pow, Type::Int(0)) => {
                         self.__rush_internal_pow_int();
                         break 'op;
                     }
-                    (AssignOp::Shl, Type::Int) => instructions::I64_SHL,
-                    (AssignOp::Shr, Type::Int) => instructions::I64_SHR_S,
-                    (AssignOp::BitOr, Type::Int) => instructions::I64_OR,
-                    (AssignOp::BitOr, Type::Bool) => instructions::I32_OR,
-                    (AssignOp::BitAnd, Type::Int) => instructions::I64_AND,
-                    (AssignOp::BitAnd, Type::Bool) => instructions::I32_AND,
-                    (AssignOp::BitXor, Type::Int) => instructions::I64_XOR,
-                    (AssignOp::BitXor, Type::Bool) => instructions::I32_XOR,
+                    (AssignOp::Shl, Type::Int(0)) => instructions::I64_SHL,
+                    (AssignOp::Shr, Type::Int(0)) => instructions::I64_SHR_S,
+                    (AssignOp::BitOr, Type::Int(0)) => instructions::I64_OR,
+                    (AssignOp::BitOr, Type::Bool(0)) => instructions::I32_OR,
+                    (AssignOp::BitAnd, Type::Int(0)) => instructions::I64_AND,
+                    (AssignOp::BitAnd, Type::Bool(0)) => instructions::I32_AND,
+                    (AssignOp::BitXor, Type::Int(0)) => instructions::I64_XOR,
+                    (AssignOp::BitXor, Type::Bool(0)) => instructions::I32_XOR,
                     _ => unreachable!("the analyzer guarantees one of the above to match"),
                 };
                 self.function_body.push(instruction);
@@ -977,10 +975,12 @@ impl<'src> Compiler<'src> {
             (Type::Never, _) => {}
             // type does not change: do nothing
             (source, dest) if source == dest => {}
-            (Type::Bool, Type::Char) => {}
+            (Type::Bool(0), Type::Char(0)) => {}
 
-            (Type::Int, Type::Float) => self.function_body.push(instructions::F64_CONVERT_I64_S),
-            (Type::Int, Type::Bool) => {
+            (Type::Int(0), Type::Float(0)) => {
+                self.function_body.push(instructions::F64_CONVERT_I64_S)
+            }
+            (Type::Int(0), Type::Bool(0)) => {
                 // push constant 0
                 self.function_body.push(instructions::I64_CONST);
                 self.function_body.push(0);
@@ -988,11 +988,11 @@ impl<'src> Compiler<'src> {
                 // true if != 0
                 self.function_body.push(instructions::I64_NE);
             }
-            (Type::Int, Type::Char) => self.__rush_internal_cast_int_to_char(),
-            (Type::Float, Type::Int) => {
+            (Type::Int(0), Type::Char(0)) => self.__rush_internal_cast_int_to_char(),
+            (Type::Float(0), Type::Int(0)) => {
                 self.function_body.extend(instructions::I64_TRUNC_SAT_F64_S);
             }
-            (Type::Float, Type::Bool) => {
+            (Type::Float(0), Type::Bool(0)) => {
                 // push constant 0
                 self.function_body.push(instructions::F64_CONST);
                 self.function_body.extend(0_f64.to_le_bytes());
@@ -1000,12 +1000,20 @@ impl<'src> Compiler<'src> {
                 // true if != 0
                 self.function_body.push(instructions::F64_NE);
             }
-            (Type::Float, Type::Char) => self.__rush_internal_cast_float_to_char(),
-            (Type::Bool, Type::Int) => self.function_body.push(instructions::I64_EXTEND_I32_U),
-            (Type::Bool, Type::Float) => self.function_body.push(instructions::F64_CONVERT_I32_U),
-            (Type::Char, Type::Int) => self.function_body.push(instructions::I64_EXTEND_I32_U),
-            (Type::Char, Type::Float) => self.function_body.push(instructions::F64_CONVERT_I32_U),
-            (Type::Char, Type::Bool) => {
+            (Type::Float(0), Type::Char(0)) => self.__rush_internal_cast_float_to_char(),
+            (Type::Bool(0), Type::Int(0)) => {
+                self.function_body.push(instructions::I64_EXTEND_I32_U)
+            }
+            (Type::Bool(0), Type::Float(0)) => {
+                self.function_body.push(instructions::F64_CONVERT_I32_U)
+            }
+            (Type::Char(0), Type::Int(0)) => {
+                self.function_body.push(instructions::I64_EXTEND_I32_U)
+            }
+            (Type::Char(0), Type::Float(0)) => {
+                self.function_body.push(instructions::F64_CONVERT_I32_U)
+            }
+            (Type::Char(0), Type::Bool(0)) => {
                 // push constant 0
                 self.function_body.push(instructions::I32_CONST);
                 self.function_body.push(0);

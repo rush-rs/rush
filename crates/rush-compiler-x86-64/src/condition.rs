@@ -55,7 +55,7 @@ impl Condition {
                 AnalyzedExpression::Infix(infix_expr) => {
                     return match Self::try_from_op(
                         infix_expr.op,
-                        infix_expr.lhs.result_type() == Type::Int,
+                        infix_expr.lhs.result_type() == Type::Int(0),
                     ) {
                         Some(cond) => Ok((
                             if negate { cond.negated() } else { cond },
@@ -69,7 +69,7 @@ impl Condition {
                     return Err(match negate {
                         true => AnalyzedExpression::Prefix(
                             AnalyzedPrefixExpr {
-                                result_type: Type::Bool,
+                                result_type: Type::Bool(0),
                                 op: PrefixOp::Not,
                                 expr,
                             }

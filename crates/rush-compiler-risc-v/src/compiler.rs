@@ -167,10 +167,10 @@ impl<'tree> Compiler<'tree> {
     ) {
         let type_ = value.result_type();
         let data = match (type_, value) {
-            (Type::Int, AnalyzedExpression::Int(val)) => DataObjType::Dword(val),
-            (Type::Bool, AnalyzedExpression::Bool(val)) => DataObjType::Byte(val as i64),
-            (Type::Char, AnalyzedExpression::Char(val)) => DataObjType::Byte(val as i64),
-            (Type::Float, AnalyzedExpression::Float(val)) => DataObjType::Float(val),
+            (Type::Int(0), AnalyzedExpression::Int(val)) => DataObjType::Dword(val),
+            (Type::Bool(0), AnalyzedExpression::Bool(val)) => DataObjType::Byte(val as i64),
+            (Type::Char(0), AnalyzedExpression::Char(val)) => DataObjType::Byte(val as i64),
+            (Type::Float(0), AnalyzedExpression::Float(val)) => DataObjType::Float(val),
             _ => unreachable!("other types cannot occur in globals"),
         };
 
@@ -229,8 +229,7 @@ impl<'tree> Compiler<'tree> {
         // save all param values in the current scope / on the stack
         for param in &node.params {
             match param.type_ {
-                Type::Pointer => todo!(), // TODO: implement this
-                Type::Int | Type::Char | Type::Bool => {
+                Type::Int(0) | Type::Char(0) | Type::Bool(0) => {
                     match IntRegister::nth_param(int_cnt) {
                         Some(reg) => {
                             let size = Size::from(param.type_);
@@ -277,7 +276,7 @@ impl<'tree> Compiler<'tree> {
                     }
                     int_cnt += 1;
                 }
-                Type::Float => {
+                Type::Float(0) => {
                     match FloatRegister::nth_param(float_cnt) {
                         Some(reg) => {
                             let offset = self.get_offset(Size::Dword);
@@ -321,6 +320,7 @@ impl<'tree> Compiler<'tree> {
                     self.scope_mut().insert(param.name, Variable::unit());
                 }
                 Type::Unknown => unreachable!("analyzer would have failed"),
+                _ => todo!(), // TODO: handle pointers
             }
         }
 
@@ -595,11 +595,11 @@ impl<'tree> Compiler<'tree> {
 
         match rhs_reg {
             Register::Int(reg) => match type_ {
-                Type::Bool | Type::Char => self.insert_w_comment(
+                Type::Bool(0) | Type::Char(0) => self.insert_w_comment(
                     Instruction::Sb(reg, Pointer::Stack(IntRegister::Fp, offset)),
                     comment,
                 ),
-                Type::Int => self.insert_w_comment(
+                Type::Int(0) => self.insert_w_comment(
                     Instruction::Sd(reg, Pointer::Stack(IntRegister::Fp, offset)),
                     comment,
                 ),
@@ -680,8 +680,6 @@ impl<'tree> Compiler<'tree> {
                 // `clone` is okay here, since it only clones a `Rc`
                 self.load_value_from_variable(var.clone(), ident.ident)
             }
-            AnalyzedExpression::Ref(_) => todo!(), // TODO: implement this
-            AnalyzedExpression::Deref(_) => todo!(), // TODO: implement this
             AnalyzedExpression::Prefix(node) => self.prefix_expr(*node),
             AnalyzedExpression::Infix(node) => self.infix_expr(*node),
             AnalyzedExpression::Assign(node) => {
@@ -702,22 +700,22 @@ impl<'tree> Compiler<'tree> {
         let lhs_reg = self.expression(node.expr)?;
 
         match (lhs_type, node.op) {
-            (Type::Int, PrefixOp::Neg) => {
+            (Type::Int(0), PrefixOp::Neg) => {
                 let dest_reg = self.alloc_ireg();
                 self.insert(Instruction::Neg(dest_reg, lhs_reg.into()));
                 Some(dest_reg.to_reg())
             }
-            (Type::Float, PrefixOp::Neg) => {
+            (Type::Float(0), PrefixOp::Neg) => {
                 let dest_reg = self.alloc_freg();
                 self.insert(Instruction::FNeg(dest_reg, lhs_reg.into()));
                 Some(dest_reg.to_reg())
             }
-            (Type::Int, PrefixOp::Not) => {
+            (Type::Int(0), PrefixOp::Not) => {
                 let dest_reg = self.alloc_ireg();
                 self.insert(Instruction::Not(dest_reg, lhs_reg.into()));
                 Some(dest_reg.to_reg())
             }
-            (Type::Bool, PrefixOp::Not) => {
+            (Type::Bool(0), PrefixOp::Not) => {
                 let dest_reg = self.alloc_ireg();
                 self.insert(Instruction::Seqz(dest_reg, lhs_reg.into()));
                 Some(dest_reg.to_reg())
@@ -730,7 +728,7 @@ impl<'tree> Compiler<'tree> {
     /// After compiling the lhs and rhs, the `infix_helper` is invoked.
     fn infix_expr(&mut self, node: AnalyzedInfixExpr<'tree>) -> Option<Register> {
         match (node.lhs.result_type(), node.op) {
-            (Type::Bool, InfixOp::Or | InfixOp::And) => {
+            (Type::Bool(0), InfixOp::Or | InfixOp::And) => {
                 let lhs = self.expression(node.lhs)?;
                 let merge_block = self.gen_label("merge");
 
@@ -854,15 +852,15 @@ impl<'tree> Compiler<'tree> {
         let dest_regf = self.alloc_freg();
 
         match (type_, op) {
-            (Type::Int, InfixOp::Plus) => {
+            (Type::Int(0), InfixOp::Plus) => {
                 self.insert(Instruction::Add(dest_regi, lhs.into(), rhs.into()));
                 dest_regi.into()
             }
-            (Type::Int, InfixOp::Minus) => {
+            (Type::Int(0), InfixOp::Minus) => {
                 self.insert(Instruction::Sub(dest_regi, lhs.into(), rhs.into()));
                 dest_regi.into()
             }
-            (Type::Char, InfixOp::Plus) => {
+            (Type::Char(0), InfixOp::Plus) => {
                 self.insert(Instruction::Add(dest_regi, lhs.into(), rhs.into()));
 
                 self.use_reg(dest_regi.into(), Size::Byte);
@@ -874,7 +872,7 @@ impl<'tree> Compiler<'tree> {
 
                 dest_regi.into()
             }
-            (Type::Char, InfixOp::Minus) => {
+            (Type::Char(0), InfixOp::Minus) => {
                 self.insert(Instruction::Sub(dest_regi, lhs.into(), rhs.into()));
 
                 self.use_reg(dest_regi.into(), Size::Byte);
@@ -886,45 +884,45 @@ impl<'tree> Compiler<'tree> {
 
                 dest_regi.into()
             }
-            (Type::Int, InfixOp::Mul) => {
+            (Type::Int(0), InfixOp::Mul) => {
                 self.insert(Instruction::Mul(dest_regi, lhs.into(), rhs.into()));
                 dest_regi.into()
             }
-            (Type::Int, InfixOp::Div) => {
+            (Type::Int(0), InfixOp::Div) => {
                 self.insert(Instruction::Div(dest_regi, lhs.into(), rhs.into()));
                 dest_regi.into()
             }
-            (Type::Int, InfixOp::Rem) => {
+            (Type::Int(0), InfixOp::Rem) => {
                 self.insert(Instruction::Rem(dest_regi, lhs.into(), rhs.into()));
                 dest_regi.into()
             }
-            (Type::Int, InfixOp::Pow) => self
+            (Type::Int(0), InfixOp::Pow) => self
                 .__rush_internal_pow_int(lhs.into(), rhs.into())
                 .to_reg(),
-            (Type::Int, InfixOp::Shl) => {
+            (Type::Int(0), InfixOp::Shl) => {
                 self.insert(Instruction::Sll(dest_regi, lhs.into(), rhs.into()));
                 dest_regi.into()
             }
-            (Type::Int, InfixOp::Shr) => {
+            (Type::Int(0), InfixOp::Shr) => {
                 self.insert(Instruction::Sra(dest_regi, lhs.into(), rhs.into()));
                 dest_regi.into()
             }
-            (Type::Int | Type::Bool, InfixOp::BitOr | InfixOp::Or) => {
+            (Type::Int(0) | Type::Bool(0), InfixOp::BitOr | InfixOp::Or) => {
                 self.insert(Instruction::Or(dest_regi, lhs.into(), rhs.into()));
                 dest_regi.into()
             }
-            (Type::Int | Type::Bool, InfixOp::BitAnd | InfixOp::And) => {
+            (Type::Int(0) | Type::Bool(0), InfixOp::BitAnd | InfixOp::And) => {
                 self.insert(Instruction::And(dest_regi, lhs.into(), rhs.into()));
                 dest_regi.into()
             }
-            (Type::Int | Type::Bool, InfixOp::BitXor) => {
+            (Type::Int(0) | Type::Bool(0), InfixOp::BitXor) => {
                 self.insert(Instruction::Xor(dest_regi, lhs.into(), rhs.into()));
                 dest_regi.into()
             }
             (
                 // even if not all ops are allowed for char and bool, the analyzer would not accept
                 // illegal programs, therefore this is ok.
-                Type::Int | Type::Char | Type::Bool,
+                Type::Int(0) | Type::Char(0) | Type::Bool(0),
                 InfixOp::Eq
                 | InfixOp::Neq
                 | InfixOp::Lt
@@ -941,7 +939,7 @@ impl<'tree> Compiler<'tree> {
                 dest_regi.to_reg()
             }
             (
-                Type::Float,
+                Type::Float(0),
                 InfixOp::Eq
                 | InfixOp::Neq
                 | InfixOp::Lt
@@ -957,19 +955,19 @@ impl<'tree> Compiler<'tree> {
                 ));
                 dest_regi.into()
             }
-            (Type::Float, InfixOp::Plus) => {
+            (Type::Float(0), InfixOp::Plus) => {
                 self.insert(Instruction::Fadd(dest_regf, lhs.into(), rhs.into()));
                 dest_regf.into()
             }
-            (Type::Float, InfixOp::Minus) => {
+            (Type::Float(0), InfixOp::Minus) => {
                 self.insert(Instruction::Fsub(dest_regf, lhs.into(), rhs.into()));
                 dest_regf.into()
             }
-            (Type::Float, InfixOp::Mul) => {
+            (Type::Float(0), InfixOp::Mul) => {
                 self.insert(Instruction::Fmul(dest_regf, lhs.into(), rhs.into()));
                 dest_regf.into()
             }
-            (Type::Float, InfixOp::Div) => {
+            (Type::Float(0), InfixOp::Div) => {
                 self.insert(Instruction::Fdiv(dest_regf, lhs.into(), rhs.into()));
                 dest_regf.into()
             }
@@ -1035,17 +1033,17 @@ impl<'tree> Compiler<'tree> {
 
         match assignee.value {
             VariableValue::Pointer(ptr) => match rhs_type {
-                Type::Int => self.insert(Instruction::Sd(rhs_reg.into(), ptr)),
-                Type::Float => self.insert(Instruction::Fsd(rhs_reg.into(), ptr)),
-                Type::Bool | Type::Char => self.insert(Instruction::Sb(rhs_reg.into(), ptr)),
+                Type::Int(0) => self.insert(Instruction::Sd(rhs_reg.into(), ptr)),
+                Type::Float(0) => self.insert(Instruction::Fsd(rhs_reg.into(), ptr)),
+                Type::Bool(0) | Type::Char(0) => self.insert(Instruction::Sb(rhs_reg.into(), ptr)),
                 Type::Unit | Type::Never => {} // ignore unit types
                 _ => unreachable!("the analyzer would have failed"),
             },
             VariableValue::Register(dest) => match rhs_type {
-                Type::Int | Type::Bool | Type::Char => {
+                Type::Int(0) | Type::Bool(0) | Type::Char(0) => {
                     self.insert(Instruction::Mov((dest).into(), rhs_reg.into()))
                 }
-                Type::Float => self.insert(Instruction::Fmv(dest.into(), rhs_reg.into())),
+                Type::Float(0) => self.insert(Instruction::Fmv(dest.into(), rhs_reg.into())),
                 _ => unreachable!("other types cannot exist in an assignment"),
             },
             VariableValue::Unit => {} // do nothing for unit types
@@ -1064,36 +1062,38 @@ impl<'tree> Compiler<'tree> {
         let res = match (lhs_type, node.type_) {
             // nop: just return the lhs
             (lhs, rhs) if lhs == rhs => lhs_reg,
-            (Type::Bool, Type::Int) | (Type::Bool, Type::Char) | (Type::Char, Type::Int) => lhs_reg,
+            (Type::Bool(0), Type::Int(0))
+            | (Type::Bool(0), Type::Char(0))
+            | (Type::Char(0), Type::Int(0)) => lhs_reg,
             // integer base type casts
-            (Type::Int, Type::Float) => {
+            (Type::Int(0), Type::Float(0)) => {
                 let dest_reg = self.alloc_freg();
                 self.insert(Instruction::CastIntToFloat(dest_reg, lhs_reg.into()));
                 dest_reg.to_reg()
             }
-            (Type::Char | Type::Bool, Type::Float) => {
+            (Type::Char(0) | Type::Bool(0), Type::Float(0)) => {
                 let dest_reg = self.alloc_freg();
                 self.insert(Instruction::CastByteToFloat(dest_reg, lhs_reg.into()));
                 dest_reg.to_reg()
             }
-            (Type::Int | Type::Char, Type::Bool) => {
+            (Type::Int(0) | Type::Char(0), Type::Bool(0)) => {
                 let dest_reg = self.alloc_ireg();
                 self.insert(Instruction::Snez(dest_reg, lhs_reg.into()));
                 dest_reg.to_reg()
             }
-            (Type::Int, Type::Char) => self
+            (Type::Int(0), Type::Char(0)) => self
                 .__rush_internal_cast_int_to_char(lhs_reg.into())
                 .to_reg(),
             // float base type casts
-            (Type::Float, Type::Int) => {
+            (Type::Float(0), Type::Int(0)) => {
                 let dest_reg = self.alloc_ireg();
                 self.insert(Instruction::CastFloatToInt(dest_reg, lhs_reg.into()));
                 dest_reg.to_reg()
             }
-            (Type::Float, Type::Char) => self
+            (Type::Float(0), Type::Char(0)) => self
                 .__rush_internal_cast_float_to_char(lhs_reg.into())
                 .to_reg(),
-            (Type::Float, Type::Bool) => {
+            (Type::Float(0), Type::Bool(0)) => {
                 // get a `.rodata` label which holds a float zero to compare to
                 let float_zero_label = match self
                     .rodata_section
@@ -1148,8 +1148,8 @@ impl<'tree> Compiler<'tree> {
 
         // will later hold the result of the branch
         let res_reg = match node.result_type {
-            Type::Float => Some(self.alloc_freg().to_reg()),
-            Type::Int | Type::Bool | Type::Char => Some(self.alloc_ireg().to_reg()),
+            Type::Float(0) => Some(self.alloc_freg().to_reg()),
+            Type::Int(0) | Type::Bool(0) | Type::Char(0) => Some(self.alloc_ireg().to_reg()),
             _ => None, // other types require no register
         };
 

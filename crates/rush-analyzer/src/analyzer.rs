@@ -62,7 +62,7 @@ impl<'src> Analyzer<'src> {
         Self {
             builtin_functions: HashMap::from([(
                 "exit",
-                BuiltinFunction::new(vec![Type::Int], Type::Never),
+                BuiltinFunction::new(vec![Type::Int(0)], Type::Never),
             )]),
             source,
             scopes: vec![HashMap::new()], // start with empty global scope
@@ -775,7 +775,10 @@ impl<'src> Analyzer<'src> {
         let cond = self.expression(node.cond);
 
         // check that the condition is of type bool
-        if !matches!(cond.result_type(), Type::Bool | Type::Never | Type::Unknown) {
+        if !matches!(
+            cond.result_type(),
+            Type::Bool(0) | Type::Never | Type::Unknown
+        ) {
             self.error(
                 ErrorKind::Type,
                 format!(
@@ -885,7 +888,10 @@ impl<'src> Analyzer<'src> {
         let cond_span = node.cond.span();
         let cond = self.expression(node.cond);
 
-        if !matches!(cond.result_type(), Type::Bool | Type::Never | Type::Unknown) {
+        if !matches!(
+            cond.result_type(),
+            Type::Bool(0) | Type::Never | Type::Unknown
+        ) {
             self.error(
                 ErrorKind::Type,
                 format!(
@@ -1019,8 +1025,6 @@ impl<'src> Analyzer<'src> {
                 AnalyzedExpression::Char(node.inner)
             }
             Expression::Ident(node) => self.ident_expr(node),
-            Expression::Ref(node) => self.ref_expr(node),
-            Expression::Deref(node) => self.deref_expr(node),
             Expression::Prefix(node) => self.prefix_expr(*node),
             Expression::Infix(node) => self.infix_expr(*node),
             Expression::Assign(node) => self.assign_expr(*node),
@@ -1066,7 +1070,10 @@ impl<'src> Analyzer<'src> {
         let cond = self.expression(node.cond);
 
         // check that the condition is of type bool
-        if !matches!(cond.result_type(), Type::Bool | Type::Never | Type::Unknown) {
+        if !matches!(
+            cond.result_type(),
+            Type::Bool(0) | Type::Never | Type::Unknown
+        ) {
             self.error(
                 ErrorKind::Type,
                 format!(
@@ -1189,75 +1196,18 @@ impl<'src> Analyzer<'src> {
                 });
             };
         }
-        self.error(
-            ErrorKind::Reference,
-            format!("use of undeclared variable `{}`", node.inner),
-            vec![],
-            node.span,
-        );
+
+        // ignore empty identifiers (cannot be created by users)
+        if !node.inner.is_empty() {
+            self.error(
+                ErrorKind::Reference,
+                format!("use of undeclared variable `{}`", node.inner),
+                vec![],
+                node.span,
+            );
+        }
+
         AnalyzedExpression::Ident(AnalyzedIdentExpr {
-            result_type: Type::Unknown,
-            ident: node.inner,
-        })
-    }
-
-    fn ref_expr(&mut self, node: Spanned<'src, &'src str>) -> AnalyzedExpression<'src> {
-        for scope in self.scopes.iter_mut().rev() {
-            if let Some(var) = scope.get_mut(node.inner) {
-                var.used = true;
-                return AnalyzedExpression::Ref(AnalyzedIdentExpr {
-                    result_type: var.type_,
-                    ident: node.inner,
-                });
-            };
-        }
-        self.error(
-            ErrorKind::Reference,
-            format!("use of undeclared variable `{}`", node.inner),
-            vec![],
-            node.span,
-        );
-        AnalyzedExpression::Ref(AnalyzedIdentExpr {
-            result_type: Type::Unknown,
-            ident: node.inner,
-        })
-    }
-
-    fn deref_expr(&mut self, node: Spanned<'src, &'src str>) -> AnalyzedExpression<'src> {
-        for scope in self.scopes.iter_mut().rev() {
-            if let Some(var) = scope.get_mut(node.inner) {
-                var.used = true;
-
-                let type_ = var.type_;
-
-                let res = AnalyzedExpression::Deref(AnalyzedIdentExpr {
-                    result_type: var.type_,
-                    ident: node.inner,
-                });
-
-                if !matches!(&var.type_, &Type::Pointer) {
-                    self.error(
-                        ErrorKind::Type,
-                        format!("cannot dereference variable of type `{type_}`"),
-                        vec![],
-                        node.span,
-                    );
-                    return AnalyzedExpression::Deref(AnalyzedIdentExpr {
-                        result_type: Type::Unknown,
-                        ident: node.inner,
-                    });
-                }
-
-                return res;
-            };
-        }
-        self.error(
-            ErrorKind::Reference,
-            format!("use of undeclared variable `{}`", node.inner),
-            vec![],
-            node.span,
-        );
-        AnalyzedExpression::Deref(AnalyzedIdentExpr {
             result_type: Type::Unknown,
             ident: node.inner,
         })
@@ -1269,14 +1219,14 @@ impl<'src> Analyzer<'src> {
 
         let result_type = match node.op {
             PrefixOp::Not => match expr.result_type() {
-                Type::Bool => Type::Bool,
-                Type::Int => Type::Int,
+                Type::Bool(0) => Type::Bool(0),
+                Type::Int(0) => Type::Int(0),
                 Type::Unknown => Type::Unknown,
                 Type::Never => {
                     self.warn_unreachable(node.span, expr_span, true);
                     Type::Never
                 }
-                Type::Float | Type::Char | Type::Unit | Type::Pointer => {
+                _ => {
                     self.error(
                         ErrorKind::Type,
                         format!(
@@ -1290,14 +1240,14 @@ impl<'src> Analyzer<'src> {
                 }
             },
             PrefixOp::Neg => match expr.result_type() {
-                Type::Int => Type::Int,
-                Type::Float => Type::Float,
+                Type::Int(0) => Type::Int(0),
+                Type::Float(0) => Type::Float(0),
                 Type::Unknown => Type::Unknown,
                 Type::Never => {
                     self.warn_unreachable(node.span, expr_span, true);
                     Type::Never
                 }
-                Type::Bool | Type::Char | Type::Unit | Type::Pointer => {
+                _ => {
                     self.error(
                         ErrorKind::Type,
                         format!(
@@ -1309,6 +1259,50 @@ impl<'src> Analyzer<'src> {
                     );
                     Type::Unknown
                 }
+            },
+            PrefixOp::Ref => match &expr {
+                AnalyzedExpression::Ident(ident) => match ident.result_type.add_ref() {
+                    Some(res) => res,
+                    None if ident.result_type == Type::Unknown => Type::Unknown,
+                    None => {
+                        self.error(
+                            ErrorKind::Type,
+                            format!("cannot reference a value of type `{}`", ident.result_type),
+                            vec![],
+                            node.span,
+                        );
+                        Type::Unknown
+                    }
+                },
+                _ => unreachable!("can only reference identifiers"),
+            },
+            PrefixOp::Deref => match &expr {
+                AnalyzedExpression::Ident(ident) => match ident.result_type.sub_deref() {
+                    Some(res) => res,
+                    None => {
+                        self.error(
+                            ErrorKind::Type,
+                            format!("cannot dereference a value of type `{}`", ident.result_type),
+                            vec![],
+                            node.span,
+                        );
+                        dbg!(ident);
+                        Type::Unknown
+                    }
+                },
+                AnalyzedExpression::Prefix(expr) => match expr.result_type.sub_deref() {
+                    Some(res) => res,
+                    None => {
+                        self.error(
+                            ErrorKind::Type,
+                            format!("cannot dereference a value of type `{}`", expr.result_type),
+                            vec![],
+                            node.span,
+                        );
+                        Type::Unknown
+                    }
+                },
+                _ => unreachable!("can only dereference identifiers or prefix expressions"),
             },
         };
 
@@ -1348,27 +1342,27 @@ impl<'src> Analyzer<'src> {
         let mut inherits_never_type = true;
         match node.op {
             InfixOp::Plus | InfixOp::Minus => {
-                allowed_types = &[Type::Int, Type::Char, Type::Float];
+                allowed_types = &[Type::Int(0), Type::Char(0), Type::Float(0)];
             }
             InfixOp::Mul | InfixOp::Div => {
-                allowed_types = &[Type::Int, Type::Float];
+                allowed_types = &[Type::Int(0), Type::Float(0)];
             }
             InfixOp::Lt | InfixOp::Gt | InfixOp::Lte | InfixOp::Gte => {
-                allowed_types = &[Type::Int, Type::Char, Type::Float];
-                override_result_type = Some(Type::Bool);
+                allowed_types = &[Type::Int(0), Type::Char(0), Type::Float(0)];
+                override_result_type = Some(Type::Bool(0));
             }
             InfixOp::Rem | InfixOp::Shl | InfixOp::Shr | InfixOp::Pow => {
-                allowed_types = &[Type::Int];
+                allowed_types = &[Type::Int(0)];
             }
             InfixOp::Eq | InfixOp::Neq => {
-                allowed_types = &[Type::Int, Type::Float, Type::Bool, Type::Char];
-                override_result_type = Some(Type::Bool);
+                allowed_types = &[Type::Int(0), Type::Float(0), Type::Bool(0), Type::Char(0)];
+                override_result_type = Some(Type::Bool(0));
             }
             InfixOp::BitOr | InfixOp::BitAnd | InfixOp::BitXor => {
-                allowed_types = &[Type::Int, Type::Bool];
+                allowed_types = &[Type::Int(0), Type::Bool(0)];
             }
             InfixOp::And | InfixOp::Or => {
-                allowed_types = &[Type::Bool];
+                allowed_types = &[Type::Bool(0)];
                 inherits_never_type = false;
             }
         }
@@ -1539,7 +1533,7 @@ impl<'src> Analyzer<'src> {
         {
             Some(var) => {
                 var.mutated = true;
-                let type_ = var.type_;
+                let mut type_ = var.type_;
                 if !var.mutable {
                     let span = var.span;
                     self.error(
@@ -1553,6 +1547,14 @@ impl<'src> Analyzer<'src> {
                     );
                     self.hint("variable not declared as `mut`", span);
                 }
+
+                for _ in 0..node.assignee_ptr_count {
+                    type_ = type_
+                        .sub_deref()
+                        .expect("this is validated in `prefix_expr`");
+                    println!("derefed type")
+                }
+
                 type_
             }
             None => match self.functions.get(node.assignee.inner) {
@@ -1600,22 +1602,22 @@ impl<'src> Analyzer<'src> {
                 Type::Unknown
             }
             (AssignOp::Plus | AssignOp::Minus, _, type_)
-                if ![Type::Int, Type::Float, Type::Char].contains(&type_) =>
+                if ![Type::Int(0), Type::Float(0), Type::Char(0)].contains(&type_) =>
             {
                 self.assign_type_error(node.op, type_, expr_span)
             }
             (AssignOp::Mul | AssignOp::Div, _, type_)
-                if ![Type::Int, Type::Float].contains(&type_) =>
+                if ![Type::Int(0), Type::Float(0)].contains(&type_) =>
             {
                 self.assign_type_error(node.op, type_, expr_span)
             }
             (AssignOp::Rem | AssignOp::Pow | AssignOp::Shl | AssignOp::Shr, _, type_)
-                if type_ != Type::Int =>
+                if type_ != Type::Int(0) =>
             {
                 self.assign_type_error(node.op, type_, expr_span)
             }
             (AssignOp::BitOr | AssignOp::BitAnd | AssignOp::BitXor, _, type_)
-                if ![Type::Int, Type::Bool].contains(&type_) =>
+                if ![Type::Int(0), Type::Bool(0)].contains(&type_) =>
             {
                 self.assign_type_error(node.op, type_, expr_span)
             }
@@ -1626,6 +1628,7 @@ impl<'src> Analyzer<'src> {
             AnalyzedAssignExpr {
                 result_type,
                 assignee: node.assignee.inner,
+                assignee_ptr_count: node.assignee_ptr_count,
                 op: node.op,
                 expr,
             }
@@ -1806,8 +1809,8 @@ impl<'src> Analyzer<'src> {
                 left
             }
             (
-                Type::Int | Type::Float | Type::Bool | Type::Char,
-                Type::Int | Type::Float | Type::Bool | Type::Char,
+                Type::Int(0) | Type::Float(0) | Type::Bool(0) | Type::Char(0),
+                Type::Int(0) | Type::Float(0) | Type::Bool(0) | Type::Char(0),
             ) => node.type_.inner,
             _ => {
                 self.error(
@@ -1826,28 +1829,30 @@ impl<'src> Analyzer<'src> {
 
         // evaluate constant expressions
         match (expr, result_type) {
-            (AnalyzedExpression::Int(val), Type::Int) => AnalyzedExpression::Int(val),
-            (AnalyzedExpression::Int(val), Type::Float) => AnalyzedExpression::Float(val as f64),
-            (AnalyzedExpression::Int(val), Type::Bool) => AnalyzedExpression::Bool(val != 0),
-            (AnalyzedExpression::Int(val), Type::Char) => {
+            (AnalyzedExpression::Int(val), Type::Int(0)) => AnalyzedExpression::Int(val),
+            (AnalyzedExpression::Int(val), Type::Float(0)) => AnalyzedExpression::Float(val as f64),
+            (AnalyzedExpression::Int(val), Type::Bool(0)) => AnalyzedExpression::Bool(val != 0),
+            (AnalyzedExpression::Int(val), Type::Char(0)) => {
                 AnalyzedExpression::Char(val.clamp(0, 127) as u8)
             }
-            (AnalyzedExpression::Float(val), Type::Int) => AnalyzedExpression::Int(val as i64),
-            (AnalyzedExpression::Float(val), Type::Float) => AnalyzedExpression::Float(val),
-            (AnalyzedExpression::Float(val), Type::Bool) => AnalyzedExpression::Bool(val != 0.0),
-            (AnalyzedExpression::Float(val), Type::Char) => {
+            (AnalyzedExpression::Float(val), Type::Int(0)) => AnalyzedExpression::Int(val as i64),
+            (AnalyzedExpression::Float(val), Type::Float(0)) => AnalyzedExpression::Float(val),
+            (AnalyzedExpression::Float(val), Type::Bool(0)) => AnalyzedExpression::Bool(val != 0.0),
+            (AnalyzedExpression::Float(val), Type::Char(0)) => {
                 AnalyzedExpression::Char(val.clamp(0.0, 127.0) as u8)
             }
-            (AnalyzedExpression::Bool(val), Type::Int) => AnalyzedExpression::Int(val as i64),
-            (AnalyzedExpression::Bool(val), Type::Float) => {
+            (AnalyzedExpression::Bool(val), Type::Int(0)) => AnalyzedExpression::Int(val as i64),
+            (AnalyzedExpression::Bool(val), Type::Float(0)) => {
                 AnalyzedExpression::Float(val as u8 as f64)
             }
-            (AnalyzedExpression::Bool(val), Type::Bool) => AnalyzedExpression::Bool(val),
-            (AnalyzedExpression::Bool(val), Type::Char) => AnalyzedExpression::Char(val as u8),
-            (AnalyzedExpression::Char(val), Type::Int) => AnalyzedExpression::Int(val as i64),
-            (AnalyzedExpression::Char(val), Type::Float) => AnalyzedExpression::Float(val as f64),
-            (AnalyzedExpression::Char(val), Type::Bool) => AnalyzedExpression::Bool(val != 0),
-            (AnalyzedExpression::Char(val), Type::Char) => AnalyzedExpression::Char(val),
+            (AnalyzedExpression::Bool(val), Type::Bool(0)) => AnalyzedExpression::Bool(val),
+            (AnalyzedExpression::Bool(val), Type::Char(0)) => AnalyzedExpression::Char(val as u8),
+            (AnalyzedExpression::Char(val), Type::Int(0)) => AnalyzedExpression::Int(val as i64),
+            (AnalyzedExpression::Char(val), Type::Float(0)) => {
+                AnalyzedExpression::Float(val as f64)
+            }
+            (AnalyzedExpression::Char(val), Type::Bool(0)) => AnalyzedExpression::Bool(val != 0),
+            (AnalyzedExpression::Char(val), Type::Char(0)) => AnalyzedExpression::Char(val),
             (expr, result_type) => AnalyzedExpression::Cast(
                 AnalyzedCastExpr {
                     result_type,
@@ -1891,12 +1896,12 @@ mod tests {
                                 (Parameter,
                                     mutable: false,
                                     name: ("left", @ 7..11),
-                                    type: (Type::Int, @ 13..16)),
+                                    type: (Type::Int(0), @ 13..16)),
                                 (Parameter,
                                     mutable: false,
                                     name: ("right", @ 18..23),
-                                    type: (Type::Int, @ 25..28))],
-                            return_type: (Some(Type::Int), @ 33..36),
+                                    type: (Type::Int(0), @ 25..28))],
+                            return_type: (Some(Type::Int(0)), @ 33..36),
                             block: (Block @ 37..61,
                                 stmts: [
                                     (ReturnStmt @ 39..59, (Some(InfixExpr @ 46..58,
@@ -1924,18 +1929,18 @@ mod tests {
                                 (Parameter,
                                     mutable: false,
                                     name: "left",
-                                    type: Type::Int),
+                                    type: Type::Int(0)  ),
                                 (Parameter,
                                     mutable: false,
                                     name: "right",
-                                    type: Type::Int)],
-                            return_type: Type::Int,
+                                    type: Type::Int(0)  )],
+                            return_type: Type::Int(0),
                             block: (Block -> Type::Never,
                                 stmts: [
-                                    (ReturnStmt, (Some(InfixExpr -> Type::Int,
-                                        lhs: (Ident -> Type::Int, "left"),
+                                    (ReturnStmt, (Some(InfixExpr -> Type::Int(0),
+                                        lhs: (Ident -> Type::Int(0), "left"),
                                         op: InfixOp::Plus,
-                                        rhs: (Ident -> Type::Int, "right"))))],
+                                        rhs: (Ident -> Type::Int(0), "right"))))],
                                 expr: (None)))],
                     main_fn: (Block -> Type::Unit,
                         stmts: [],

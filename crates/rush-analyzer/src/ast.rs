@@ -118,8 +118,6 @@ pub enum AnalyzedExpression<'src> {
     Bool(bool),
     Char(u8),
     Ident(AnalyzedIdentExpr<'src>),
-    Ref(AnalyzedIdentExpr<'src>),
-    Deref(AnalyzedIdentExpr<'src>),
     Prefix(Box<AnalyzedPrefixExpr<'src>>),
     Infix(Box<AnalyzedInfixExpr<'src>>),
     Assign(Box<AnalyzedAssignExpr<'src>>),
@@ -132,13 +130,11 @@ impl AnalyzedExpression<'_> {
     pub fn result_type(&self) -> Type {
         match self {
             Self::Block(expr) => expr.result_type,
-            Self::Int(_) => Type::Int,
-            Self::Float(_) => Type::Float,
-            Self::Bool(_) => Type::Bool,
-            Self::Char(_) => Type::Char,
+            Self::Int(_) => Type::Int(0),
+            Self::Float(_) => Type::Float(0),
+            Self::Bool(_) => Type::Bool(0),
+            Self::Char(_) => Type::Char(0),
             Self::Ident(expr) => expr.result_type,
-            Self::Ref(_expr) => Type::Pointer,
-            Self::Deref(_expr) => Type::Unknown, // TODO: would use inner pointer type
             Self::If(expr) => expr.result_type,
             Self::Prefix(expr) => expr.result_type,
             Self::Infix(expr) => expr.result_type,
@@ -203,6 +199,7 @@ pub struct AnalyzedInfixExpr<'src> {
 pub struct AnalyzedAssignExpr<'src> {
     pub result_type: Type,
     pub assignee: &'src str,
+    pub assignee_ptr_count: usize,
     pub op: AssignOp,
     pub expr: AnalyzedExpression<'src>,
 }

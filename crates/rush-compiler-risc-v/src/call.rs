@@ -114,20 +114,20 @@ impl<'tree> Compiler<'tree> {
         for arg in &node.args {
             match arg.result_type() {
                 Type::Unit | Type::Never | Type::Unknown => continue,
-                Type::Pointer => todo!(), // TODO: implement this
-                Type::Int | Type::Bool | Type::Char => {
+                Type::Int(0) | Type::Bool(0) | Type::Char(0) => {
                     if IntRegister::nth_param(int_cnt).is_none() {
                         spill_param_size += 8;
                     }
                     int_cnt += 1;
                 }
-                Type::Float => {
+                Type::Float(0) => {
                     if IntRegister::nth_param(float_cnt).is_none() {
                         spill_param_size += 8;
                     }
 
                     float_cnt += 1;
                 }
+                _ => todo!(), // TODO: handle pointers
             }
         }
 
@@ -155,8 +155,7 @@ impl<'tree> Compiler<'tree> {
                 Type::Unit | Type::Never | Type::Unknown => {
                     self.expression(arg);
                 }
-                Type::Pointer => todo!(), // TODO: implement this
-                Type::Int | Type::Bool | Type::Char => {
+                Type::Int(0) | Type::Bool(0) | Type::Char(0) => {
                     let type_ = arg.result_type();
 
                     let res_reg = match self.expression(arg) {
@@ -195,7 +194,7 @@ impl<'tree> Compiler<'tree> {
 
                     int_cnt += 1;
                 }
-                Type::Float => {
+                Type::Float(0) => {
                     let res_reg = self
                         .expression(arg)
                         .expect("none variants filtered out above");
@@ -229,6 +228,7 @@ impl<'tree> Compiler<'tree> {
                     }
                     float_cnt += 1;
                 }
+                _ => todo!(), // TODO: handle pointers
             }
         }
 
@@ -256,11 +256,11 @@ impl<'tree> Compiler<'tree> {
         self.used_registers = used_regs_prev;
 
         let res_reg = match node.result_type {
-            Type::Int | Type::Char | Type::Bool => Some(IntRegister::A0.to_reg()),
-            Type::Pointer => todo!(), // TODO: implement this
-            Type::Float => Some(FloatRegister::Fa0.to_reg()),
+            Type::Int(0) | Type::Char(0) | Type::Bool(0) => Some(IntRegister::A0.to_reg()),
+            Type::Float(0) => Some(FloatRegister::Fa0.to_reg()),
             Type::Unit | Type::Never => None,
             Type::Unknown => unreachable!("analyzer would have failed"),
+            _ => todo!(), // TODO: handle pointers
         };
 
         // restore all caller saved registers again

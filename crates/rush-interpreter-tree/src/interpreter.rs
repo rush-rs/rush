@@ -198,8 +198,6 @@ impl<'src> Interpreter<'src> {
             AnalyzedExpression::Bool(bool) => Ok(bool.into()),
             AnalyzedExpression::Char(num) => Ok(num.into()),
             AnalyzedExpression::Ident(name) => Ok(*self.get_var(name.ident)),
-            AnalyzedExpression::Ref(_) => todo!(), // TODO: implement this
-            AnalyzedExpression::Deref(_) => todo!(), // TODO: implement this
             AnalyzedExpression::Prefix(node) => self.visit_prefix_expr(node),
             AnalyzedExpression::Infix(node) => self.visit_infix_expr(node),
             AnalyzedExpression::Assign(node) => self.visit_assign_expr(node),
@@ -224,6 +222,9 @@ impl<'src> Interpreter<'src> {
         match node.op {
             PrefixOp::Not => Ok(!val),
             PrefixOp::Neg => Ok(-val),
+            // TODO: implement these
+            PrefixOp::Ref => todo!(),
+            PrefixOp::Deref => todo!(),
         }
     }
 
@@ -304,23 +305,23 @@ impl<'src> Interpreter<'src> {
     fn visit_cast_expr(&mut self, node: &AnalyzedCastExpr<'src>) -> ExprResult {
         let val = self.visit_expression(&node.expr)?;
         match (val, node.type_) {
-            (Value::Int(_), Type::Int)
-            | (Value::Float(_), Type::Float)
-            | (Value::Char(_), Type::Char)
-            | (Value::Bool(_), Type::Bool) => Ok(val),
+            (Value::Int(_), Type::Int(0))
+            | (Value::Float(_), Type::Float(0))
+            | (Value::Char(_), Type::Char(0))
+            | (Value::Bool(_), Type::Bool(0)) => Ok(val),
 
-            (Value::Int(int), Type::Float) => Ok((int as f64).into()),
-            (Value::Int(int), Type::Bool) => Ok((int != 0).into()),
-            (Value::Int(int), Type::Char) => Ok((int.clamp(0, 127) as u8).into()),
-            (Value::Float(float), Type::Int) => Ok((float as i64).into()),
-            (Value::Float(float), Type::Bool) => Ok((float != 0.0).into()),
-            (Value::Float(float), Type::Char) => Ok((float.clamp(0.0, 127.0) as u8).into()),
-            (Value::Bool(bool), Type::Int) => Ok((bool as i64).into()),
-            (Value::Bool(bool), Type::Float) => Ok((bool as u8 as f64).into()),
-            (Value::Bool(bool), Type::Char) => Ok((bool as u8).into()),
-            (Value::Char(char), Type::Int) => Ok((char as i64).into()),
-            (Value::Char(char), Type::Float) => Ok((char as f64).into()),
-            (Value::Char(char), Type::Bool) => Ok((char != 0).into()),
+            (Value::Int(int), Type::Float(0)) => Ok((int as f64).into()),
+            (Value::Int(int), Type::Bool(0)) => Ok((int != 0).into()),
+            (Value::Int(int), Type::Char(0)) => Ok((int.clamp(0, 127) as u8).into()),
+            (Value::Float(float), Type::Int(0)) => Ok((float as i64).into()),
+            (Value::Float(float), Type::Bool(0)) => Ok((float != 0.0).into()),
+            (Value::Float(float), Type::Char(0)) => Ok((float.clamp(0.0, 127.0) as u8).into()),
+            (Value::Bool(bool), Type::Int(0)) => Ok((bool as i64).into()),
+            (Value::Bool(bool), Type::Float(0)) => Ok((bool as u8 as f64).into()),
+            (Value::Bool(bool), Type::Char(0)) => Ok((bool as u8).into()),
+            (Value::Char(char), Type::Int(0)) => Ok((char as i64).into()),
+            (Value::Char(char), Type::Float(0)) => Ok((char as f64).into()),
+            (Value::Char(char), Type::Bool(0)) => Ok((char != 0).into()),
             _ => unreachable!("the analyzer guarantees one of the above to match"),
         }
     }

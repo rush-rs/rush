@@ -42,11 +42,11 @@ pub enum Type {
 impl From<AnalyzerType> for Type {
     fn from(src: AnalyzerType) -> Self {
         match src {
-            AnalyzerType::Int => Self::Int,
-            AnalyzerType::Float => Self::Float,
-            AnalyzerType::Bool => Self::Bool,
-            AnalyzerType::Char => Self::Char,
-            _ => unreachable!("cannot convert from these types"),
+            AnalyzerType::Int(0) => Self::Int,
+            AnalyzerType::Float(0) => Self::Float,
+            AnalyzerType::Bool(0) => Self::Bool,
+            AnalyzerType::Char(0) => Self::Char,
+            _ => todo!(), // TODO: handle pointers
         }
     }
 }
@@ -168,6 +168,7 @@ impl From<PrefixOp> for Instruction {
         match src {
             PrefixOp::Not => Self::Not,
             PrefixOp::Neg => Self::Neg,
+            _ => todo!(), // TODO: handle pointers
         }
     }
 }

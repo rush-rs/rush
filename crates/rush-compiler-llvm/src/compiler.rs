@@ -370,29 +370,29 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
             .params
             .iter()
             .map(|param| match param.type_ {
-                Type::Int => BasicMetadataTypeEnum::IntType(self.context.i64_type()),
-                Type::Float => BasicMetadataTypeEnum::FloatType(self.context.f64_type()),
-                Type::Bool => BasicMetadataTypeEnum::IntType(self.context.bool_type()),
-                Type::Char => BasicMetadataTypeEnum::IntType(self.context.i8_type()),
+                Type::Int(0) => BasicMetadataTypeEnum::IntType(self.context.i64_type()),
+                Type::Float(0) => BasicMetadataTypeEnum::FloatType(self.context.f64_type()),
+                Type::Bool(0) => BasicMetadataTypeEnum::IntType(self.context.bool_type()),
+                Type::Char(0) => BasicMetadataTypeEnum::IntType(self.context.i8_type()),
                 Type::Unit => BasicMetadataTypeEnum::IntType(self.context.bool_type()),
-                Type::Pointer => todo!(), // TODO: implement this
                 Type::Never | Type::Unknown => {
                     unreachable!("the analyzer disallows these types to be used as parameters")
                 }
+                _ => todo!(), // TODO: handle pointers
             })
             .collect();
 
         // create the function's signature
         let signature = match node.return_type {
-            Type::Int => self.context.i64_type().fn_type(&params, false),
-            Type::Float => self.context.f64_type().fn_type(&params, false),
+            Type::Int(0) => self.context.i64_type().fn_type(&params, false),
+            Type::Float(0) => self.context.f64_type().fn_type(&params, false),
+            Type::Char(0) => self.context.i8_type().fn_type(&params, false),
+            Type::Bool(0) => self.context.bool_type().fn_type(&params, false),
             Type::Unit => self.context.bool_type().fn_type(&params, false),
-            Type::Char => self.context.i8_type().fn_type(&params, false),
-            Type::Bool => self.context.bool_type().fn_type(&params, false),
-            Type::Pointer => todo!(), // TODO: implement this
             Type::Unknown | Type::Never => {
                 unreachable!("functions do not return values of these types")
             }
+            _ => todo!(), // TODO: handle pointers
         };
 
         // add the function to the LLVM module
@@ -430,15 +430,15 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                     // allocate a pointer for each parameter (allows mutability)
                     let ptr = self.builder.build_alloca(
                         match param.type_ {
-                            Type::Int => self.context.i64_type().as_basic_type_enum(),
-                            Type::Float => self.context.f64_type().as_basic_type_enum(),
-                            Type::Char => self.context.i8_type().as_basic_type_enum(),
-                            Type::Bool => self.context.bool_type().as_basic_type_enum(),
+                            Type::Int(0) => self.context.i64_type().as_basic_type_enum(),
+                            Type::Float(0) => self.context.f64_type().as_basic_type_enum(),
+                            Type::Char(0) => self.context.i8_type().as_basic_type_enum(),
+                            Type::Bool(0) => self.context.bool_type().as_basic_type_enum(),
                             Type::Unit => self.context.bool_type().as_basic_type_enum(),
-                            Type::Pointer => todo!(), // TODO: implement this
                             Type::Never | Type::Unknown => {
                                 unreachable!("such function params cannot exist")
                             }
+                            _ => todo!(), // TODO: handle pointers
                         },
                         param.name,
                     );
@@ -830,8 +830,6 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                     VariableValue::Unit => self.unit_value(),
                 }
             }
-            AnalyzedExpression::Ref(_) => todo!(), // TODO: implement this
-            AnalyzedExpression::Deref(_) => todo!(), // TODO: implement this
             AnalyzedExpression::Call(node) => self.call_expr(node),
             AnalyzedExpression::Grouped(node) => self.expression(node),
             AnalyzedExpression::Block(node) => self.block(node, true),
@@ -898,7 +896,7 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
     ) -> BasicValueEnum<'ctx> {
         match lhs_type {
             Type::Never => lhs,
-            Type::Float => {
+            Type::Float(0) => {
                 let lhs = lhs.into_float_value();
                 let rhs = rhs.into_float_value();
                 match op {
@@ -928,11 +926,11 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
             }
             // even if some combinations are invalid, this is OK because the analyzer prevents
             // illegal cases.
-            Type::Int | Type::Bool | Type::Char => {
+            Type::Int(0) | Type::Bool(0) | Type::Char(0) => {
                 let lhs = lhs.into_int_value();
                 let rhs = rhs.into_int_value();
                 match op {
-                    InfixOp::Plus if lhs_type == Type::Char => {
+                    InfixOp::Plus if lhs_type == Type::Char(0) => {
                         let res = self.builder.build_int_add(lhs, rhs, "i_sum");
                         self.builder.build_and(
                             res,
@@ -941,7 +939,7 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                         )
                     }
                     InfixOp::Plus => self.builder.build_int_add(lhs, rhs, "i_sum"),
-                    InfixOp::Minus if lhs_type == Type::Char => {
+                    InfixOp::Minus if lhs_type == Type::Char(0) => {
                         let res = self.builder.build_int_sub(lhs, rhs, "i_sum");
                         self.builder.build_and(
                             res,
@@ -980,10 +978,10 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                 }
                 .as_basic_value_enum()
             }
-            Type::Pointer => todo!(), // TODO: implement this
             Type::Unknown | Type::Unit => {
                 unreachable!("these types cannot be used in an infix expression")
             }
+            _ => todo!(), // TODO: handle pointers
         }
     }
 
@@ -993,7 +991,7 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
     fn infix_expr(&mut self, node: &'src AnalyzedInfixExpr) -> BasicValueEnum<'ctx> {
         match (node.lhs.result_type(), node.op) {
             // uses an if-else in order to skip evaluation of the rhs if the lhs is `true`
-            (Type::Bool, InfixOp::Or | InfixOp::And) => {
+            (Type::Bool(0), InfixOp::Or | InfixOp::And) => {
                 let lhs = self.expression(&node.lhs);
 
                 // create the basic blocks
@@ -1059,19 +1057,19 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         let base = self.expression(&node.expr);
 
         match (node.expr.result_type(), node.op) {
-            (Type::Int, PrefixOp::Neg) => self
+            (Type::Int(0), PrefixOp::Neg) => self
                 .builder
                 .build_int_neg(base.into_int_value(), "neg")
                 .as_basic_value_enum(),
-            (Type::Int, PrefixOp::Not) => self
+            (Type::Int(0), PrefixOp::Not) => self
                 .builder
                 .build_not(base.into_int_value(), "not")
                 .as_basic_value_enum(),
-            (Type::Float, PrefixOp::Neg) => self
+            (Type::Float(0), PrefixOp::Neg) => self
                 .builder
                 .build_float_neg(base.into_float_value(), "neg")
                 .as_basic_value_enum(),
-            (Type::Bool, PrefixOp::Not) => self
+            (Type::Bool(0), PrefixOp::Not) => self
                 .builder
                 .build_int_compare(
                     IntPredicate::EQ,
@@ -1091,7 +1089,7 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         match (node.expr.result_type(), node.type_) {
             // if the expression already has the target type, no operation is to be done
             (expr_type, target_type) if expr_type == target_type => lhs,
-            (Type::Int, Type::Float) => {
+            (Type::Int(0), Type::Float(0)) => {
                 let lhs_int = lhs.into_int_value();
                 self.builder
                     .build_signed_int_to_float(lhs_int, self.context.f64_type(), "if_cast")
@@ -1100,12 +1098,14 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
             // converting a type to a char requires additional bounds checks
             // because valid ASCII chars lie in the range 0 - 127, these checks must be done.
             // the cast operation therefore invokes a builtin helper function.
-            (Type::Int, Type::Char) => self.__rush_internal_cast_int_to_char(lhs.into_int_value()),
-            (Type::Char, Type::Int) => self
+            (Type::Int(0), Type::Char(0)) => {
+                self.__rush_internal_cast_int_to_char(lhs.into_int_value())
+            }
+            (Type::Char(0), Type::Int(0)) => self
                 .builder
                 .build_int_cast(lhs.into_int_value(), self.context.i64_type(), "ci_cast")
                 .as_basic_value_enum(),
-            (Type::Int, Type::Bool) => {
+            (Type::Int(0), Type::Bool(0)) => {
                 let lhs_int = lhs.into_int_value();
                 self.builder
                     .build_int_compare(
@@ -1116,7 +1116,7 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                     )
                     .as_basic_value_enum()
             }
-            (Type::Float, Type::Int) => {
+            (Type::Float(0), Type::Int(0)) => {
                 let lhs_bool = lhs.into_float_value();
                 self.builder
                     .build_float_to_signed_int(lhs_bool, self.context.i64_type(), "fi_cast")
@@ -1125,10 +1125,10 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
             // converting a type to a char requires additional bounds checks
             // because valid ASCII chars lie in the range 0 - 127, these checks must be done.
             // the cast operation therefore invokes a builtin helper function.
-            (Type::Float, Type::Char) => {
+            (Type::Float(0), Type::Char(0)) => {
                 self.__rush_internal_cast_float_to_char(lhs.into_float_value())
             }
-            (Type::Float, Type::Bool) => self
+            (Type::Float(0), Type::Bool(0)) => self
                 .builder
                 .build_float_compare(
                     FloatPredicate::UNE,
@@ -1137,7 +1137,7 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                     "fb_cast",
                 )
                 .as_basic_value_enum(),
-            (Type::Bool, Type::Int) => self
+            (Type::Bool(0), Type::Int(0)) => self
                 .builder
                 .build_int_cast_sign_flag(
                     lhs.into_int_value(),
@@ -1146,7 +1146,7 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                     "bi_cast",
                 )
                 .as_basic_value_enum(),
-            (Type::Bool, Type::Float) => self
+            (Type::Bool(0), Type::Float(0)) => self
                 .builder
                 .build_unsigned_int_to_float(
                     lhs.into_int_value(),
@@ -1154,7 +1154,7 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                     "bf_cast",
                 )
                 .as_basic_value_enum(),
-            (Type::Bool, Type::Char) => self
+            (Type::Bool(0), Type::Char(0)) => self
                 .builder
                 .build_int_cast_sign_flag(
                     lhs.into_int_value(),
@@ -1163,7 +1163,7 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                     "bc_cast",
                 )
                 .as_basic_value_enum(),
-            (Type::Char, Type::Float) => self
+            (Type::Char(0), Type::Float(0)) => self
                 .builder
                 .build_unsigned_int_to_float(
                     lhs.into_int_value(),
@@ -1171,7 +1171,7 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                     "cf_cast",
                 )
                 .as_basic_value_enum(),
-            (Type::Char, Type::Bool) => self
+            (Type::Char(0), Type::Bool(0)) => self
                 .builder
                 .build_int_cast(lhs.into_int_value(), self.context.bool_type(), "cb_cast")
                 .as_basic_value_enum(),

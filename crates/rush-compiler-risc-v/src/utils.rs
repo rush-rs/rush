@@ -45,10 +45,10 @@ impl Size {
 impl From<Type> for Size {
     fn from(src: Type) -> Self {
         match src {
-            Type::Pointer => todo!(), // TODO: implement this
-            Type::Int | Type::Float => Size::Dword,
-            Type::Bool | Type::Char => Size::Byte,
+            Type::Int(0) | Type::Float(0) => Size::Dword,
+            Type::Bool(0) | Type::Char(0) => Size::Byte,
             Type::Unknown | Type::Never | Type::Unit => unreachable!("these types have no size"),
+            _ => todo!(), // TODO: handle pointers
         }
     }
 }
@@ -273,17 +273,17 @@ impl<'tree> Compiler<'tree> {
     ) -> Option<Register> {
         match var.value {
             VariableValue::Pointer(ptr) => match var.type_ {
-                Type::Bool | Type::Char => {
+                Type::Bool(0) | Type::Char(0) => {
                     let dest_reg = self.alloc_ireg();
                     self.insert_w_comment(Instruction::Lb(dest_reg, ptr), ident.into());
                     Some(Register::Int(dest_reg))
                 }
-                Type::Int => {
+                Type::Int(0) => {
                     let dest_reg = self.alloc_ireg();
                     self.insert_w_comment(Instruction::Ld(dest_reg, ptr), ident.into());
                     Some(Register::Int(dest_reg))
                 }
-                Type::Float => {
+                Type::Float(0) => {
                     let dest_reg = self.alloc_freg();
                     self.insert_w_comment(Instruction::Fld(dest_reg, ptr), ident.into());
                     Some(Register::Float(dest_reg))

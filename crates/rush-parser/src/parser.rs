@@ -146,19 +146,21 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
 
     fn type_(&mut self) -> Result<'src, Spanned<'src, Type>> {
         let start_loc = self.curr_tok.span.start;
+
+        let mut ptr_count = 0;
+        while matches!(self.curr_tok.kind, TokenKind::Star | TokenKind::Pow) {
+            ptr_count += match self.curr_tok.kind == TokenKind::Star {
+                true => 1,
+                false => 2,
+            };
+            self.next()?;
+        }
+
         let type_ = match self.curr_tok.kind {
-            TokenKind::Ident("int") => Type::Int,
-            TokenKind::Ident("float") => Type::Float,
-            TokenKind::Ident("bool") => Type::Bool,
-            TokenKind::Ident("char") => Type::Char,
-            TokenKind::Star => {
-                self.next()?;
-                let _inner = self.type_()?;
-                return Ok(Spanned {
-                    span: start_loc.until(self.prev_tok.span.end),
-                    inner: Type::Pointer,
-                });
-            } // would use the result of the recursive call here
+            TokenKind::Ident("int") => Type::Int(ptr_count),
+            TokenKind::Ident("float") => Type::Float(ptr_count),
+            TokenKind::Ident("bool") => Type::Bool(ptr_count),
+            TokenKind::Ident("char") => Type::Char(ptr_count),
             TokenKind::Ident(ident) => {
                 self.errors.push(Error::new(
                     format!("unknown type `{ident}`"),
@@ -174,6 +176,15 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
                     "missing closing parenthesis",
                     self.curr_tok.span,
                 )?;
+
+                if ptr_count > 0 {
+                    self.errors.push(Error::new(
+                        format!("illegal type `{}()`", "*".repeat(ptr_count)),
+                        start_loc.until(self.prev_tok.span.end),
+                        self.lexer.source(),
+                    ))
+                }
+
                 return Ok(Spanned {
                     span: start_loc.until(self.prev_tok.span.end),
                     inner: Type::Unit,
@@ -549,18 +560,11 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             TokenKind::False => Expression::Bool(self.atom(false)?),
             TokenKind::Char(char) => Expression::Char(self.atom(char)?),
             TokenKind::Ident(ident) => Expression::Ident(self.atom(ident)?),
-            TokenKind::BitAnd | TokenKind::Star => {
-                let kind = self.curr_tok.kind;
-                self.next()?;
-                let ident = self.expect_ident()?;
-
-                match kind == TokenKind::BitAnd {
-                    true => Expression::Ref(ident),
-                    false => Expression::Deref(ident),
-                }
-            }
-            TokenKind::Not => Expression::Prefix(self.prefix_expr(PrefixOp::Not)?.into()),
-            TokenKind::Minus => Expression::Prefix(self.prefix_expr(PrefixOp::Neg)?.into()),
+            TokenKind::Not => Expression::Prefix(self.prefix_expr(PrefixOp::Not, false)?.into()),
+            TokenKind::Minus => Expression::Prefix(self.prefix_expr(PrefixOp::Neg, false)?.into()),
+            TokenKind::Star => Expression::Prefix(self.prefix_expr(PrefixOp::Deref, false)?.into()),
+            TokenKind::Pow => Expression::Prefix(self.prefix_expr(PrefixOp::Deref, true)?.into()),
+            TokenKind::BitAnd => Expression::Prefix(self.prefix_expr(PrefixOp::Ref, false)?.into()),
             TokenKind::LParen => Expression::Grouped(self.grouped_expr()?),
             invalid => {
                 return Err(Error::new_boxed(
@@ -665,7 +669,11 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         })
     }
 
-    fn prefix_expr(&mut self, op: PrefixOp) -> Result<'src, PrefixExpr<'src>> {
+    fn prefix_expr(
+        &mut self,
+        op: PrefixOp,
+        deref_counts_double: bool,
+    ) -> Result<'src, PrefixExpr<'src>> {
         let start_loc = self.curr_tok.span.start;
 
         // skip the operator token
@@ -673,11 +681,48 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
 
         // PrefixExpr precedence is 27, higher than all InfixExpr precedences except CallExpr
         let expr = self.expression(27)?;
-        Ok(PrefixExpr {
-            span: start_loc.until(self.prev_tok.span.end),
-            op,
-            expr,
-        })
+
+        match (op, &expr) {
+            (PrefixOp::Ref | PrefixOp::Deref, Expression::Ident(_)) => Ok(PrefixExpr {
+                span: start_loc.until(self.prev_tok.span.end),
+                op,
+                expr: match deref_counts_double {
+                    true => Expression::Prefix(Box::new(PrefixExpr {
+                        span: start_loc.until(self.prev_tok.span.end),
+                        op,
+                        expr,
+                    })),
+                    false => expr,
+                },
+            }),
+            (PrefixOp::Deref, Expression::Prefix(_)) => Ok(PrefixExpr {
+                span: start_loc.until(self.prev_tok.span.end),
+                op,
+                expr: match deref_counts_double {
+                    true => Expression::Prefix(Box::new(PrefixExpr {
+                        span: start_loc.until(self.prev_tok.span.end),
+                        op,
+                        expr,
+                    })),
+                    false => expr,
+                },
+            }),
+            _ => {
+                self.errors.push(Error::new(
+                    format!("prefix operator `{op}` requires an identifier on its right hand side"),
+                    expr.span(),
+                    self.lexer.source(),
+                ));
+                Ok(PrefixExpr {
+                    span: start_loc.until(self.prev_tok.span.end),
+                    op,
+                    expr: Expression::Ident(Spanned {
+                        span: Span::dummy(),
+                        inner: "",
+                    }),
+                })
+            }
+        }
     }
 
     fn grouped_expr(&mut self) -> Result<'src, Spanned<'src, Box<Expression<'src>>>> {
@@ -725,21 +770,16 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         lhs: Expression<'src>,
         op: AssignOp,
     ) -> Result<'src, Expression<'src>> {
-        let (assignee, assignee_is_ptr) = match lhs {
-            Expression::Ident(item) => (item, false),
-            Expression::Deref(item) => (item, true),
-            _ => {
-                self.errors.push(Error::new(
-                    "left hand side of assignment must be an identifier".to_string(),
-                    lhs.span(),
-                    self.lexer.source(),
-                ));
+        let (assignee, assignee_ptr_count) = match self.reduce_prefix_expr_to_ident(lhs, 0) {
+            Ok(res) => res,
+            Err(err) => {
+                self.errors.push(*err);
                 (
                     Spanned {
                         span: Span::dummy(),
                         inner: "",
                     },
-                    false,
+                    0,
                 )
             }
         };
@@ -752,12 +792,30 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
             AssignExpr {
                 span: start_loc.until(self.prev_tok.span.end),
                 assignee,
-                assignee_is_ptr,
+                assignee_ptr_count,
                 op,
                 expr,
             }
             .into(),
         ))
+    }
+
+    /// Reduces nested [`PrefixExpr`]s which have the [`PrefixOp::Deref`] operator to an
+    /// identifier. The returned span also includes the deref symbols `*`.
+    fn reduce_prefix_expr_to_ident(
+        &self,
+        expr: Expression<'src>,
+        count: usize,
+    ) -> Result<'src, (Spanned<'src, &'src str>, usize)> {
+        match expr {
+            Expression::Ident(ident) => Ok((ident, count)),
+            Expression::Prefix(prefix) => self.reduce_prefix_expr_to_ident(prefix.expr, count + 1),
+            _ => Err(Error::new_boxed(
+                "left hand side of assignment must be an identifier".to_string(),
+                expr.span(),
+                self.lexer.source(),
+            )),
+        }
     }
 
     fn call_expr(
@@ -969,7 +1027,7 @@ mod tests {
             tree! {
                 (AssignExpr @ 0..3,
                     assignee: ("a", @ 0..1),
-                    assignee_is_ptr: false,
+                    assignee_ptr_count: 0,
                     op: AssignOp::Basic,
                     expr: (Int 1, @ 2..3))
             },
@@ -987,7 +1045,7 @@ mod tests {
             tree! {
                 (AssignExpr @ 0..19,
                     assignee: ("answer", @ 0..6),
-                    assignee_is_ptr: false,
+                    assignee_ptr_count: 0,
                     op: AssignOp::Plus,
                     expr: (InfixExpr @ 10..19,
                         lhs: (Float 42.0, @ 10..14),
@@ -1162,7 +1220,7 @@ mod tests {
             tree! {
                 (AssignExpr @ 0..3,
                     assignee: ("a", @ 0..1),
-                    assignee_is_ptr: false,
+                    assignee_ptr_count: 0,
                     op: op,
                     expr: (Int 2, @ 2..3))
             },
@@ -1241,7 +1299,7 @@ mod tests {
                 (LetStmt @ 0..18,
                     mutable: false,
                     name: ("c", @ 4..5),
-                    type: (Some(Type::Float, @ 7..12)),
+                    type: (Some(Type::Float(0), @ 7..12)),
                     expr: (Float 3.0, @ 15..17))
             },
         )?;
@@ -1372,12 +1430,12 @@ mod tests {
                                 (Parameter,
                                     mutable: false,
                                     name: ("left", @ 7..11),
-                                    type: (Type::Int, @ 13..16)),
+                                    type: (Type::Int(0), @ 13..16)),
                                 (Parameter,
                                     mutable: false,
                                     name: ("right", @ 18..23),
-                                    type: (Type::Int, @ 25..28))],
-                            return_type: (Some(Type::Int), @ 33..36),
+                                    type: (Type::Int(0), @ 25..28))],
+                            return_type: (Some(Type::Int(0)), @ 33..36),
                             block: (Block @ 37..61,
                                 stmts: [
                                     (ReturnStmt @ 39..59, (Some(InfixExpr @ 46..58,

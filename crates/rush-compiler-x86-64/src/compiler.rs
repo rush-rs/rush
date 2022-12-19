@@ -475,7 +475,7 @@ impl<'src> Compiler<'src> {
                     Offset::Symbol(Rc::clone(&name)),
                 ),
                 kind: match node.expr.result_type() {
-                    Type::Float => VariableKind::Float,
+                    Type::Float(0) => VariableKind::Float,
                     _ => VariableKind::Int,
                 },
             }),
@@ -528,7 +528,7 @@ impl<'src> Compiler<'src> {
                 INT_PARAM_REGISTERS.get(int_param_index),
                 FLOAT_PARAM_REGISTERS.get(float_param_index),
             ) {
-                (Type::Float, Ok(size), _, Some(reg)) => {
+                (Type::Float(0), Ok(size), _, Some(reg)) => {
                     self.add_var(
                         param.name,
                         size,
@@ -543,7 +543,7 @@ impl<'src> Compiler<'src> {
                         param.name,
                         Some(Variable {
                             ptr: Pointer::new(size, IntRegister::Rbp, memory_offset.into()),
-                            kind: match param.type_ == Type::Float {
+                            kind: match param.type_ == Type::Float(0) {
                                 true => VariableKind::Float,
                                 false => VariableKind::Int,
                             },
@@ -1051,8 +1051,6 @@ impl<'src> Compiler<'src> {
             AnalyzedExpression::Bool(bool) => Some(Value::Int(IntValue::Immediate(bool as i64))),
             AnalyzedExpression::Char(num) => Some(Value::Int(IntValue::Immediate(num as i64))),
             AnalyzedExpression::Ident(node) => self.ident_expr(node),
-            AnalyzedExpression::Ref(_) => todo!(), // TODO: implement this
-            AnalyzedExpression::Deref(_) => todo!(), // TODO: implement this
             AnalyzedExpression::Prefix(node) => self.prefix_expr(*node),
             AnalyzedExpression::Infix(node) => self.infix_expr(*node),
             AnalyzedExpression::Assign(node) => self.assign_expr(*node),
@@ -1185,7 +1183,7 @@ impl<'src> Compiler<'src> {
         let expr_type = node.expr.result_type();
         let expr = self.expression(node.expr);
         match (expr, expr_type, node.op) {
-            (Some(Value::Int(value)), Type::Int, PrefixOp::Neg) => match value {
+            (Some(Value::Int(value)), Type::Int(0), PrefixOp::Neg) => match value {
                 IntValue::Register(reg) => {
                     // negate the value in register
                     self.function_body.push(Instruction::Neg(reg.into()));
@@ -1203,7 +1201,7 @@ impl<'src> Compiler<'src> {
                 // return negated immediate
                 IntValue::Immediate(num) => Some(Value::Int(IntValue::Immediate(-num))),
             },
-            (Some(Value::Int(value)), Type::Int, PrefixOp::Not) => {
+            (Some(Value::Int(value)), Type::Int(0), PrefixOp::Not) => {
                 if let IntValue::Immediate(num) = value {
                     return Some(Value::Int(IntValue::Immediate(!num)));
                 }
@@ -1211,7 +1209,7 @@ impl<'src> Compiler<'src> {
                 self.function_body.push(Instruction::Not(reg.into()));
                 Some(Value::Int(reg.into()))
             }
-            (Some(Value::Int(value)), Type::Bool, PrefixOp::Not) => match value {
+            (Some(Value::Int(value)), Type::Bool(0), PrefixOp::Not) => match value {
                 IntValue::Register(reg) => {
                     // xor value in register with 1
                     self.function_body
@@ -1230,7 +1228,7 @@ impl<'src> Compiler<'src> {
                 }
                 IntValue::Immediate(num) => Some(Value::Int(IntValue::Immediate(num ^ 1))),
             },
-            (Some(Value::Float(value)), Type::Float, PrefixOp::Neg) => {
+            (Some(Value::Float(value)), Type::Float(0), PrefixOp::Neg) => {
                 let reg = self.float_value_to_reg(value, false, false);
                 let negate_symbol =
                     Self::add_constant(&mut self.octa_constants, 1_u128 << 63, Size::Oword, 0);
@@ -1250,7 +1248,7 @@ impl<'src> Compiler<'src> {
             // integer pow
             InfixOp::Pow => {
                 return self.call_func(
-                    Type::Int,
+                    Type::Int(0),
                     "__rush_internal_pow_int".into(),
                     vec![node.lhs, node.rhs],
                 )
@@ -1328,7 +1326,7 @@ impl<'src> Compiler<'src> {
         let rhs = self.expression(node.rhs);
 
         // ..and the operation on them
-        self.compile_infix(lhs, rhs, node.op, lhs_type == Type::Char)
+        self.compile_infix(lhs, rhs, node.op, lhs_type == Type::Char(0))
     }
 
     fn assign_expr(&mut self, node: AnalyzedAssignExpr<'src>) -> Option<Value> {
@@ -1336,11 +1334,11 @@ impl<'src> Compiler<'src> {
 
         if node.op == AssignOp::Pow {
             let new_val = self.call_func(
-                Type::Int,
+                Type::Int(0),
                 "__rush_internal_pow_int".into(),
                 vec![
                     AnalyzedExpression::Ident(AnalyzedIdentExpr {
-                        result_type: Type::Int,
+                        result_type: Type::Int(0),
                         ident: node.assignee,
                     }),
                     node.expr,
@@ -1353,7 +1351,7 @@ impl<'src> Compiler<'src> {
             return None;
         }
 
-        let is_char = node.expr.result_type() == Type::Char;
+        let is_char = node.expr.result_type() == Type::Char(0);
         let val = self.expression(node.expr)?;
 
         match (val, node.op) {
@@ -1539,16 +1537,16 @@ impl<'src> Compiler<'src> {
         let expr_type = node.expr.result_type();
 
         match (expr_type, node.type_) {
-            (Type::Int, Type::Char) => {
+            (Type::Int(0), Type::Char(0)) => {
                 return self.call_func(
-                    Type::Char,
+                    Type::Char(0),
                     "__rush_internal_cast_int_to_char".into(),
                     vec![node.expr],
                 )
             }
-            (Type::Float, Type::Char) => {
+            (Type::Float(0), Type::Char(0)) => {
                 return self.call_func(
-                    Type::Char,
+                    Type::Char(0),
                     "__rush_internal_cast_float_to_char".into(),
                     vec![node.expr],
                 )
@@ -1562,51 +1560,53 @@ impl<'src> Compiler<'src> {
             (Some(Value::Int(val)), left, right) if left == right => Some(Value::Int(val)),
             (Some(Value::Float(val)), left, right) if left == right => Some(Value::Float(val)),
 
-            (Some(Value::Int(val)), Type::Int | Type::Char | Type::Bool, Type::Float) => {
-                match val {
-                    IntValue::Register(reg) => {
-                        self.used_registers.pop();
-                        let float_reg = self.get_free_float_register();
-                        self.function_body.push(Instruction::Cvtsi2sd(
-                            float_reg.into(),
-                            reg.in_qword_size().into(),
-                        ));
-                        Some(Value::Float(float_reg.into()))
-                    }
-                    IntValue::Ptr(ptr) if ptr.size == Size::Qword => {
-                        let reg = self.get_free_float_register();
-                        self.function_body
-                            .push(Instruction::Cvtsi2sd(reg.into(), ptr.into()));
-                        Some(Value::Float(reg.into()))
-                    }
-                    IntValue::Ptr(ptr) => {
-                        let reg = self.get_tmp_register(ptr.size);
-                        let used_bits = ptr.size.mask();
-                        self.function_body
-                            .push(Instruction::Mov(reg.into(), ptr.into()));
-                        self.function_body
-                            .push(Instruction::And(reg.into(), used_bits.into()));
-
-                        let float_reg = self.get_free_float_register();
-                        self.function_body.push(Instruction::Cvtsi2sd(
-                            float_reg.into(),
-                            reg.in_dword_size().into(),
-                        ));
-                        Some(Value::Float(float_reg.into()))
-                    }
-                    IntValue::Immediate(num) => Some(Value::Float(FloatValue::Ptr(Pointer::new(
-                        Size::Qword,
-                        IntRegister::Rip,
-                        Offset::Symbol(Self::add_constant(
-                            &mut self.quad_float_constants,
-                            (num as f64).to_bits(),
-                            Size::Qword,
-                            self.quad_constants.len(),
-                        )),
-                    )))),
+            (
+                Some(Value::Int(val)),
+                Type::Int(0) | Type::Char(0) | Type::Bool(0),
+                Type::Float(0),
+            ) => match val {
+                IntValue::Register(reg) => {
+                    self.used_registers.pop();
+                    let float_reg = self.get_free_float_register();
+                    self.function_body.push(Instruction::Cvtsi2sd(
+                        float_reg.into(),
+                        reg.in_qword_size().into(),
+                    ));
+                    Some(Value::Float(float_reg.into()))
                 }
-            }
-            (Some(Value::Int(val)), Type::Int | Type::Char, Type::Bool) => match val {
+                IntValue::Ptr(ptr) if ptr.size == Size::Qword => {
+                    let reg = self.get_free_float_register();
+                    self.function_body
+                        .push(Instruction::Cvtsi2sd(reg.into(), ptr.into()));
+                    Some(Value::Float(reg.into()))
+                }
+                IntValue::Ptr(ptr) => {
+                    let reg = self.get_tmp_register(ptr.size);
+                    let used_bits = ptr.size.mask();
+                    self.function_body
+                        .push(Instruction::Mov(reg.into(), ptr.into()));
+                    self.function_body
+                        .push(Instruction::And(reg.into(), used_bits.into()));
+
+                    let float_reg = self.get_free_float_register();
+                    self.function_body.push(Instruction::Cvtsi2sd(
+                        float_reg.into(),
+                        reg.in_dword_size().into(),
+                    ));
+                    Some(Value::Float(float_reg.into()))
+                }
+                IntValue::Immediate(num) => Some(Value::Float(FloatValue::Ptr(Pointer::new(
+                    Size::Qword,
+                    IntRegister::Rip,
+                    Offset::Symbol(Self::add_constant(
+                        &mut self.quad_float_constants,
+                        (num as f64).to_bits(),
+                        Size::Qword,
+                        self.quad_constants.len(),
+                    )),
+                )))),
+            },
+            (Some(Value::Int(val)), Type::Int(0) | Type::Char(0), Type::Bool(0)) => match val {
                 IntValue::Register(reg) => {
                     self.function_body
                         .push(Instruction::Cmp(reg.into(), 0.into()));
@@ -1627,7 +1627,7 @@ impl<'src> Compiler<'src> {
                     Some(Value::Int(IntValue::Immediate((num != 0) as i64)))
                 }
             },
-            (Some(Value::Float(val)), Type::Float, Type::Int) => {
+            (Some(Value::Float(val)), Type::Float(0), Type::Int(0)) => {
                 let reg = self.get_free_register(Size::Qword);
                 if let FloatValue::Register(_) = val {
                     self.used_float_registers.pop();
@@ -1636,7 +1636,7 @@ impl<'src> Compiler<'src> {
                     .push(Instruction::Cvttsd2si(reg.into(), val));
                 Some(Value::Int(reg.into()))
             }
-            (Some(Value::Float(val)), Type::Float, Type::Bool) => {
+            (Some(Value::Float(val)), Type::Float(0), Type::Bool(0)) => {
                 // move the value into a register
                 let reg = self.float_value_to_reg(val, false, false);
 
@@ -1670,7 +1670,7 @@ impl<'src> Compiler<'src> {
 
                 Some(Value::Int(IntValue::Register(reg)))
             }
-            (Some(Value::Int(val)), Type::Bool | Type::Char, Type::Int) => {
+            (Some(Value::Int(val)), Type::Bool(0) | Type::Char(0), Type::Int(0)) => {
                 if let IntValue::Immediate(_) = val {
                     return Some(Value::Int(val));
                 }
@@ -1679,7 +1679,7 @@ impl<'src> Compiler<'src> {
                     .push(Instruction::And(reg.in_qword_size().into(), 0xff.into()));
                 Some(Value::Int(reg.in_qword_size().into()))
             }
-            (Some(Value::Int(val)), Type::Bool, Type::Char) => Some(Value::Int(val)),
+            (Some(Value::Int(val)), Type::Bool(0), Type::Char(0)) => Some(Value::Int(val)),
             _ => unreachable!("the analyzer guarantees one of the above to match"),
         }
     }
