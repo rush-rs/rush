@@ -1,12 +1,19 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, cell::RefCell, rc::Rc};
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Value {
     Int(i64),
     Float(f64),
     Char(u8),
     Bool(bool),
     Unit,
+    Ptr(Rc<RefCell<Value>>),
+}
+
+impl Value {
+    pub fn wrapped(self) -> Rc<RefCell<Self>> {
+        Rc::new(RefCell::new(self))
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -82,4 +89,5 @@ macro_rules! unwrap_impl {
 impl Value {
     unwrap_impl!(Int, i64, unwrap_int);
     unwrap_impl!(Bool, bool, unwrap_bool);
+    unwrap_impl!(Ptr, Rc<RefCell<Value>>, unwrap_ptr);
 }

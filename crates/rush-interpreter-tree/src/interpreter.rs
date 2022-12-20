@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::HashMap, rc::Rc};
+use std::{borrow::Cow, cell::RefCell, collections::HashMap, rc::Rc};
 
 use rush_analyzer::{ast::*, AssignOp, InfixOp, PrefixOp, Type};
 
@@ -6,7 +6,7 @@ use crate::value::{InterruptKind, Value};
 
 type ExprResult = Result<Value, InterruptKind>;
 type StmtResult = Result<(), InterruptKind>;
-type Scope<'src> = HashMap<&'src str, Value>;
+type Scope<'src> = HashMap<&'src str, Rc<RefCell<Value>>>;
 
 #[derive(Debug, Default)]
 pub struct Interpreter<'src> {
@@ -29,10 +29,10 @@ impl<'src> Interpreter<'src> {
             global_scope.insert(
                 global.name,
                 match global.expr {
-                    AnalyzedExpression::Int(num) => Value::Int(num),
-                    AnalyzedExpression::Float(num) => Value::Float(num),
-                    AnalyzedExpression::Bool(bool) => Value::Bool(bool),
-                    AnalyzedExpression::Char(num) => Value::Char(num),
+                    AnalyzedExpression::Int(num) => Value::Int(num).wrapped(),
+                    AnalyzedExpression::Float(num) => Value::Float(num).wrapped(),
+                    AnalyzedExpression::Bool(bool) => Value::Bool(bool).wrapped(),
+                    AnalyzedExpression::Char(num) => Value::Char(num).wrapped(),
                     _ => unreachable!("the analyzer guarantees constant globals"),
                 },
             );
@@ -61,10 +61,10 @@ impl<'src> Interpreter<'src> {
 
     //////////////////////////////////
 
-    fn get_var(&mut self, name: &'src str) -> &mut Value {
-        for scope in self.scopes.iter_mut().rev() {
-            if let Some(var) = scope.get_mut(name) {
-                return var;
+    fn get_var(&mut self, name: &'src str) -> Rc<RefCell<Value>> {
+        for scope in self.scopes.iter().rev() {
+            if let Some(var) = scope.get(name) {
+                return Rc::clone(var);
             }
         }
         unreachable!("the analyzer guarantees valid variable references")
@@ -77,16 +77,16 @@ impl<'src> Interpreter<'src> {
         res
     }
 
-    fn call_func(&mut self, func_name: &'src str, args: Vec<Value>) -> ExprResult {
+    fn call_func(&mut self, func_name: &'src str, mut args: Vec<Value>) -> ExprResult {
         if func_name == "exit" {
-            return Err(InterruptKind::Exit(args[0].unwrap_int()));
+            return Err(InterruptKind::Exit(args.swap_remove(0).unwrap_int()));
         }
 
         let func = Rc::clone(&self.functions[func_name]);
 
         let mut scope = HashMap::new();
         for (param, arg) in func.params.iter().zip(args) {
-            scope.insert(param.name, arg);
+            scope.insert(param.name, arg.wrapped());
         }
 
         self.scoped(scope, |self_| match self_.visit_block(&func.block, false) {
@@ -134,7 +134,7 @@ impl<'src> Interpreter<'src> {
         self.scopes
             .last_mut()
             .expect("there should always be at least one scope")
-            .insert(node.name, value);
+            .insert(node.name, value.wrapped());
         Ok(())
     }
 
@@ -165,7 +165,7 @@ impl<'src> Interpreter<'src> {
         let init_val = self.visit_expression(&node.initializer)?;
 
         self.scoped(
-            HashMap::from([(node.ident, init_val)]),
+            HashMap::from([(node.ident, init_val.wrapped())]),
             |self_| -> StmtResult {
                 loop {
                     if !self_.visit_expression(&node.cond)?.unwrap_bool() {
@@ -197,7 +197,7 @@ impl<'src> Interpreter<'src> {
             AnalyzedExpression::Float(num) => Ok(num.into()),
             AnalyzedExpression::Bool(bool) => Ok(bool.into()),
             AnalyzedExpression::Char(num) => Ok(num.into()),
-            AnalyzedExpression::Ident(name) => Ok(*self.get_var(name.ident)),
+            AnalyzedExpression::Ident(node) => Ok(self.get_var(node.ident).borrow().clone()),
             AnalyzedExpression::Prefix(node) => self.visit_prefix_expr(node),
             AnalyzedExpression::Infix(node) => self.visit_infix_expr(node),
             AnalyzedExpression::Assign(node) => self.visit_assign_expr(node),
@@ -222,9 +222,13 @@ impl<'src> Interpreter<'src> {
         match node.op {
             PrefixOp::Not => Ok(!val),
             PrefixOp::Neg => Ok(-val),
-            // TODO: implement these
-            PrefixOp::Ref => todo!(),
-            PrefixOp::Deref => todo!(),
+            PrefixOp::Ref => match &node.expr {
+                AnalyzedExpression::Ident(ident_expr) => {
+                    Ok(Value::Ptr(self.get_var(ident_expr.ident)))
+                }
+                _ => unreachable!("the analyzer only allows referencing identifiers"),
+            },
+            PrefixOp::Deref => Ok(val.unwrap_ptr().borrow().clone()),
         }
     }
 
@@ -273,22 +277,27 @@ impl<'src> Interpreter<'src> {
 
     fn visit_assign_expr(&mut self, node: &AnalyzedAssignExpr<'src>) -> ExprResult {
         let rhs = self.visit_expression(&node.expr)?;
-        let var = self.get_var(node.assignee);
+        let mut var = self.get_var(node.assignee);
+        for _ in 0..node.assignee_ptr_count {
+            let new_ptr = var.borrow().clone().unwrap_ptr();
+            var = new_ptr;
+        }
+
         let new_val = match node.op {
             AssignOp::Basic => rhs,
-            AssignOp::Plus => *var + rhs,
-            AssignOp::Minus => *var - rhs,
-            AssignOp::Mul => *var * rhs,
-            AssignOp::Div => (*var / rhs)?,
-            AssignOp::Rem => (*var % rhs)?,
-            AssignOp::Pow => var.pow(rhs),
-            AssignOp::Shl => (*var << rhs)?,
-            AssignOp::Shr => (*var >> rhs)?,
-            AssignOp::BitOr => *var | rhs,
-            AssignOp::BitAnd => *var & rhs,
-            AssignOp::BitXor => *var ^ rhs,
+            AssignOp::Plus => var.borrow().clone() + rhs,
+            AssignOp::Minus => var.borrow().clone() - rhs,
+            AssignOp::Mul => var.borrow().clone() * rhs,
+            AssignOp::Div => (var.borrow().clone() / rhs)?,
+            AssignOp::Rem => (var.borrow().clone() % rhs)?,
+            AssignOp::Pow => var.borrow().clone().pow(rhs),
+            AssignOp::Shl => (var.borrow().clone() << rhs)?,
+            AssignOp::Shr => (var.borrow().clone() >> rhs)?,
+            AssignOp::BitOr => var.borrow().clone() | rhs,
+            AssignOp::BitAnd => var.borrow().clone() & rhs,
+            AssignOp::BitXor => var.borrow().clone() ^ rhs,
         };
-        *var = new_val;
+        *var.borrow_mut() = new_val;
 
         Ok(Value::Unit)
     }
@@ -305,10 +314,10 @@ impl<'src> Interpreter<'src> {
     fn visit_cast_expr(&mut self, node: &AnalyzedCastExpr<'src>) -> ExprResult {
         let val = self.visit_expression(&node.expr)?;
         match (val, node.type_) {
-            (Value::Int(_), Type::Int(0))
-            | (Value::Float(_), Type::Float(0))
-            | (Value::Char(_), Type::Char(0))
-            | (Value::Bool(_), Type::Bool(0)) => Ok(val),
+            (val @ Value::Int(_), Type::Int(0))
+            | (val @ Value::Float(_), Type::Float(0))
+            | (val @ Value::Char(_), Type::Char(0))
+            | (val @ Value::Bool(_), Type::Bool(0)) => Ok(val),
 
             (Value::Int(int), Type::Float(0)) => Ok((int as f64).into()),
             (Value::Int(int), Type::Bool(0)) => Ok((int != 0).into()),
