@@ -1572,6 +1572,9 @@ impl<'src> Analyzer<'src> {
                         node.span,
                     );
                     self.hint("variable not declared as `mut`", span);
+                } else if node.assignee_ptr_count > 0 {
+                    // using a pointer inside an assignment counts as use of the pointer variable
+                    var.used = true;
                 }
 
                 for _ in 0..node.assignee_ptr_count {
@@ -1587,8 +1590,6 @@ impl<'src> Analyzer<'src> {
                             Type::Unknown
                         }
                     };
-
-                    println!("derefed type")
                 }
 
                 type_
