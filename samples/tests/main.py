@@ -28,6 +28,13 @@ tests = {
     './exits/logical_and.rush': 13,
     './exits/let.rush': 14,
     './exits/final_fn_expr.rush': 15,
+    # pointers
+    './pointers/basic.rush': 42,
+    './pointers/assignments.rush': 43,
+    './pointers/depth.rush': 44,
+    './pointers/globals.rush': 44,
+    './pointers/fn_boundaries.rush': 45,
+    './pointers/types.rush': 46,
 }
 
 # saves the backend an any additional commands to be executed after `cargo r`

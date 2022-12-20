@@ -1,0 +1,35 @@
+fn main() {
+    let mut int = 0;
+    let mut bool = false;
+    let mut char = 0 as char;
+    let mut float = 0.0;
+
+    let to_int = &int;
+    let to_bool = &bool;
+    let to_char = &char;
+    let to_float = &float;
+
+    mutate(
+        to_int,
+        to_bool,
+        to_char,
+        to_float,
+    );
+
+    exit(
+        char as int
+        - (int + bool as int + float as int + 10)
+    )
+}
+
+fn mutate(
+    a: *int,
+    b: *bool,
+    c: *char,
+    d: *float,
+) {
+    *a += 20;
+    *b = true;
+    *c = 'a';
+    *d += 20.0;
+}

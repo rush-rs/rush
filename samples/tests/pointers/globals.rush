@@ -1,0 +1,16 @@
+let mut two = 2;
+
+fn main() {
+    let to_two = &two;
+    *to_two += 2;
+    mutate();
+    *to_two += 4;
+    exit(*to_two)
+}
+
+fn mutate() {
+    let mut to_two = &two;
+    let to_to_two = &to_two;
+
+    **to_to_two *= 10; // two is now 40
+}

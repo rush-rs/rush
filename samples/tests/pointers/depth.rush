@@ -1,0 +1,32 @@
+fn main() {
+    let mut forty = 20;
+    let mut a = &forty;
+    let mut b = &a;
+    let mut c = &b;
+    let mut d = &c;
+    let mut f = &d;
+    let mut g = &f;
+    let mut h = &g;
+    let mut i = &h;
+    let mut j = &i;
+    let mut k = &j;
+    let mut l = &k;
+    let mut m = &l;
+    let mut n = &m;
+    let mut o = &n;
+    let mut p = &o;
+    let mut q = &p;
+    let mut r = &q;
+    let mut s = &r;
+    let mut t = &s;
+    let mut u = &t;
+    let mut v = &u;
+    let mut w = &v;
+    let mut x = &w;
+    let mut y = &x;
+    let mut z = &y;
+
+   *************************z *= 2;
+   *************************z += 4;
+   exit(*************************z)
+}

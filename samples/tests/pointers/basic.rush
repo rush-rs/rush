@@ -1,0 +1,5 @@
+fn main() {
+    let mut answer = 42;
+    let to_answer = &answer;
+    exit(*to_answer)
+}

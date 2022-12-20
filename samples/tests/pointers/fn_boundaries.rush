@@ -1,0 +1,36 @@
+// This example will exit with code `2` on RISC-V.
+// Because both `bar` and `baz` store their first variable at the same offset,
+// the value to which `res` points to is overwritten by the call to `baz`.
+// Therefore, in order to use pointers safely, functions should not return
+// pointers but can take them as their parameters.
+/*
+    fn main() {
+        let res = bar();
+        baz();
+        exit(*res)
+    }
+
+    fn bar() -> *int {
+        let mut one = 1;
+        &one
+    }
+
+    fn baz() {
+        let _two = 2;
+    }
+*/
+
+fn main() {
+    let mut forty = 40;
+    mutate(&forty);
+    exit(forty);
+}
+
+fn mutate(mut ptr: *int) {
+    *ptr += 2;
+    mutate_2(&ptr);
+}
+
+fn mutate_2(ptr: **int) {
+    **ptr += 3
+}

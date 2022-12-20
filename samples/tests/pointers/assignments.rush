@@ -1,0 +1,11 @@
+fn main() {
+    let mut two = 2;
+    let to_two: *int = &two;
+
+    *to_two **= 3; // two is now 8
+    *to_two += 12; // two is now 20
+    *to_two *= 2;  // two is now 40
+    *to_two += 3;  // two is now 43
+
+    exit(*to_two)
+}
