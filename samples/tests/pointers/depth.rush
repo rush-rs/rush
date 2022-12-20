@@ -1,6 +1,7 @@
 fn main() {
-    let mut forty = 20;
-    let mut a = &forty;
+    //// int ////
+    let mut base = 5;
+    let mut a = &base;
     let mut b = &a;
     let mut c = &b;
     let mut d = &c;
@@ -24,9 +25,101 @@ fn main() {
     let mut w = &v;
     let mut x = &w;
     let mut y = &x;
-    let mut z = &y;
+    let mut z0 = &y;
+    *************************z0 *= 2; // base is now 10
 
-   *************************z *= 2;
-   *************************z += 4;
-   exit(*************************z)
+    //// bool ////
+    let mut base = false;
+    let mut a = &base;
+    let mut b = &a;
+    let mut c = &b;
+    let mut d = &c;
+    let mut f = &d;
+    let mut g = &f;
+    let mut h = &g;
+    let mut i = &h;
+    let mut j = &i;
+    let mut k = &j;
+    let mut l = &k;
+    let mut m = &l;
+    let mut n = &m;
+    let mut o = &n;
+    let mut p = &o;
+    let mut q = &p;
+    let mut r = &q;
+    let mut s = &r;
+    let mut t = &s;
+    let mut u = &t;
+    let mut v = &u;
+    let mut w = &v;
+    let mut x = &w;
+    let mut y = &x;
+    let mut z1 = &y;
+    *************************z1 = true; // base is now true
+
+    //// char ////
+    let mut base = 'a';
+    let mut a = &base;
+    let mut b = &a;
+    let mut c = &b;
+    let mut d = &c;
+    let mut f = &d;
+    let mut g = &f;
+    let mut h = &g;
+    let mut i = &h;
+    let mut j = &i;
+    let mut k = &j;
+    let mut l = &k;
+    let mut m = &l;
+    let mut n = &m;
+    let mut o = &n;
+    let mut p = &o;
+    let mut q = &p;
+    let mut r = &q;
+    let mut s = &r;
+    let mut t = &s;
+    let mut u = &t;
+    let mut v = &u;
+    let mut w = &v;
+    let mut x = &w;
+    let mut y = &x;
+    let mut z2 = &y;
+    *************************z2 += 3 as char; // base is now 100
+
+    //// float ////
+    let mut base = 4.1;
+    let mut a = &base;
+    let mut b = &a;
+    let mut c = &b;
+    let mut d = &c;
+    let mut f = &d;
+    let mut g = &f;
+    let mut h = &g;
+    let mut i = &h;
+    let mut j = &i;
+    let mut k = &j;
+    let mut l = &k;
+    let mut m = &l;
+    let mut n = &m;
+    let mut o = &n;
+    let mut p = &o;
+    let mut q = &p;
+    let mut r = &q;
+    let mut s = &r;
+    let mut t = &s;
+    let mut u = &t;
+    let mut v = &u;
+    let mut w = &v;
+    let mut x = &w;
+    let mut y = &x;
+    let mut z3 = &y;
+    *************************z3 += 5.9; // base is now 10.0
+
+    // expected exit-code: 121
+    exit(
+        *************************z0             // 10
+        + *************************z1 as int    // 1
+        + *************************z2 as int    // 100
+        + *************************z3 as int    // 10 */
+    )
 }

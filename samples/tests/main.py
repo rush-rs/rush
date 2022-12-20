@@ -31,7 +31,7 @@ tests = {
     # pointers
     './pointers/basic.rush': 42,
     './pointers/assignments.rush': 43,
-    './pointers/depth.rush': 44,
+    './pointers/depth.rush': 121,
     './pointers/globals.rush': 44,
     './pointers/fn_boundaries.rush': 45,
     './pointers/types.rush': 46,

@@ -1,11 +1,30 @@
 fn main() {
+    //// int ////
     let mut two = 2;
     let to_two: *int = &two;
+    *to_two **= 3;      // two is now 8
+    *to_two += 2 ** 2;  // two is now 12
 
-    *to_two **= 3; // two is now 8
-    *to_two += 12; // two is now 20
-    *to_two *= 2;  // two is now 40
-    *to_two += 3;  // two is now 43
+    //// bool ////
+    let mut false_ = false;
+    let to_false: *bool = &false_;
+    *to_false = true;  // false_ is now true
 
-    exit(*to_two)
+    //// char ////
+    let mut a = 'a';
+    let to_a: *char = &a;
+    *to_a += '3';  // a is now 20
+
+    //// float ////
+    let mut five = 5f;
+    let to_five: *float = &five;
+    *to_five *= 2.0;  // five is now 10
+
+    // expected exit-code: 43
+    exit(
+        *to_two             // 12
+        + *to_false as int  // 1
+        + *to_a as int      // 20
+        + *to_five as int   // 10
+    )
 }

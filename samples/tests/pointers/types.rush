@@ -4,17 +4,23 @@ fn main() {
     let mut char = 0 as char;
     let mut float = 0.0;
 
-    let to_int = &int;
-    let to_bool = &bool;
-    let to_char = &char;
-    let to_float = &float;
+    let mut to_int = &int;
+    let mut to_bool = &bool;
+    let mut to_char = &char;
+    let mut to_float = &float;
 
     mutate(
-        to_int,
-        to_bool,
-        to_char,
-        to_float,
+        &to_int,
+        &to_bool,
+        &to_char,
+        &to_float,
     );
+
+    // using the results of the subsequent calls would be unsafe
+    let _ = int();
+    let _ = bool();
+    let _ = char();
+    let _ = float();
 
     exit(
         char as int
@@ -23,13 +29,41 @@ fn main() {
 }
 
 fn mutate(
-    a: *int,
-    b: *bool,
-    c: *char,
-    d: *float,
+    a: **int,
+    b: **bool,
+    c: **char,
+    d: **float,
 ) {
-    *a += 20;
-    *b = true;
-    *c = 'a';
-    *d += 20.0;
+    **a += 20;
+    **b = true;
+    **c = 'a';
+    **d += 20.0;
+}
+
+// the subsequent functions are not actually used
+// however, they are still included in this file
+// in order to test if they break compilation
+
+fn int() -> **int {
+    let mut a = 0;
+    let mut b = &a;
+    &b
+}
+
+fn bool() -> **bool {
+    let mut a = true;
+    let mut b = &a;
+    &b
+}
+
+fn char() -> **char {
+    let mut a = 'a';
+    let mut b = &a;
+    &b
+}
+
+fn float() -> **float {
+    let mut a = 1.0;
+    let mut b = &a;
+    &b
 }
