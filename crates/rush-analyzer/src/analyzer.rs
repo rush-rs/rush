@@ -1,6 +1,7 @@
 use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
+    vec,
 };
 
 use rush_parser::{ast::*, Span};
@@ -1262,7 +1263,31 @@ impl<'src> Analyzer<'src> {
             },
             PrefixOp::Ref => match &expr {
                 AnalyzedExpression::Ident(ident) => match ident.result_type.add_ref() {
-                    Some(res) => res,
+                    Some(res) => {
+                        let mut var = self
+                            .scopes
+                            .iter_mut()
+                            .rev()
+                            .find_map(|s| s.get_mut(ident.ident))
+                            .expect("variable references are valid here");
+
+                        // references (`&`) count as mutable variable accesses
+                        var.mutated = true;
+
+                        // validate that the variable is mutable
+                        let var_span = var.span;
+                        if !var.mutable {
+                            self.error(
+                                ErrorKind::Semantic,
+                                format!("cannot reference immutable variable `{}`", ident.ident),
+                                vec!["only mutable variables can be referenced".into()],
+                                node.span,
+                            );
+                            self.hint("variable not declared as `mut`", var_span);
+                        }
+
+                        res
+                    }
                     None if ident.result_type == Type::Unknown => Type::Unknown,
                     None => {
                         self.error(
@@ -1274,7 +1299,7 @@ impl<'src> Analyzer<'src> {
                         Type::Unknown
                     }
                 },
-                _ => unreachable!("can only reference identifiers"),
+                _ => unreachable!("parser guarantees that only identifiers are referenced"),
             },
             PrefixOp::Deref => match &expr {
                 // TODO: improve this
