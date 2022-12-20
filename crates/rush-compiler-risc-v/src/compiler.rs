@@ -708,18 +708,22 @@ impl<'tree> Compiler<'tree> {
                 let var = self.resolve_name(ident.ident);
                 let dest_reg = self.alloc_ireg();
 
-                let offset = match &var.value {
+                match &var.value {
                     VariableValue::Pointer(ptr) => match ptr {
-                        Pointer::Register(_, offset) => *offset,
-                        Pointer::Label(_) => todo!(), // TODO: implement this
+                        Pointer::Register(_, offset) => {
+                            self.insert_w_comment(
+                                Instruction::Addi(dest_reg, IntRegister::Fp, *offset),
+                                format!("&{}", ident.ident).into(),
+                            );
+                        }
+                        Pointer::Label(label) => self.insert_w_comment(
+                            Instruction::La(dest_reg, Rc::clone(label)),
+                            format!("&{label}").into(),
+                        ),
                     },
                     _ => unreachable!("the analyzer guarantees valid pointers"),
                 };
 
-                self.insert_w_comment(
-                    Instruction::Addi(dest_reg, IntRegister::Fp, offset),
-                    format!("&{}", ident.ident).into(),
-                );
                 return Some(dest_reg.into());
             }
             unreachable!("can only reference identifiers")

@@ -61,6 +61,7 @@ pub enum Instruction {
     Snez(IntRegister, IntRegister),
     Seqz(IntRegister, IntRegister),
     Li(IntRegister, i64),
+    La(IntRegister, Rc<str>),
     Mov(IntRegister, IntRegister),
     Neg(IntRegister, IntRegister),
     Not(IntRegister, IntRegister),
@@ -145,6 +146,7 @@ impl Display for Instruction {
                 }
             },
             Instruction::Li(dest, val) => write!(f, "li {dest}, {val}"),
+            Instruction::La(dest, label) => write!(f, "la {dest}, {label}"),
             Instruction::Add(dest, lhs, rhs) => write!(f, "add {dest}, {lhs}, {rhs}"),
             Instruction::Addi(dest, src, imm) => write!(f, "addi {dest}, {src}, {imm}"),
             Instruction::Sub(dest, lhs, rhs) => write!(f, "sub {dest}, {lhs}, {rhs}"),
