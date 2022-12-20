@@ -204,7 +204,10 @@ impl<'tree> Compiler<'tree> {
                             // TODO: if this is broken, uncomment following code
                             // if the reg from the expr is not the expected one, move it
                             if curr_reg.to_reg() != res_reg {
-                                unreachable!("experimental edge case happened");
+                                unreachable!(
+                                    "experimental edge case happened: {} != {res_reg}",
+                                    curr_reg
+                                );
                                 /* self.insert_w_comment(
                                     Instruction::Mov(curr_reg, res_reg.into()),
                                     format!("{res_reg} not expected {curr_reg}"),
@@ -254,11 +257,12 @@ impl<'tree> Compiler<'tree> {
         self.used_registers = used_regs_prev;
 
         let res_reg = match node.result_type {
-            Type::Int(0) | Type::Char(0) | Type::Bool(0) => Some(IntRegister::A0.to_reg()),
             Type::Float(0) => Some(FloatRegister::Fa0.to_reg()),
+            Type::Int(_) | Type::Char(_) | Type::Bool(_) | Type::Float(_) => {
+                Some(IntRegister::A0.to_reg())
+            }
             Type::Unit | Type::Never => None,
             Type::Unknown => unreachable!("analyzer would have failed"),
-            _ => todo!(), // TODO: handle pointers
         };
 
         // restore all caller saved registers again

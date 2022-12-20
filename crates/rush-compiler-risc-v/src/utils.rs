@@ -282,20 +282,20 @@ impl<'tree> Compiler<'tree> {
     ) -> Option<Register> {
         match var {
             VariableValue::Pointer(ptr) => match type_ {
-                Type::Bool(_) | Type::Char(_) => {
+                Type::Bool(0) | Type::Char(0) => {
                     let dest_reg = self.alloc_ireg();
                     self.insert_w_comment(Instruction::Lb(dest_reg, ptr), ident.into());
                     Some(Register::Int(dest_reg))
                 }
-                Type::Int(_) => {
-                    let dest_reg = self.alloc_ireg();
-                    self.insert_w_comment(Instruction::Ld(dest_reg, ptr), ident.into());
-                    Some(Register::Int(dest_reg))
-                }
-                Type::Float(_) => {
+                Type::Float(0) => {
                     let dest_reg = self.alloc_freg();
                     self.insert_w_comment(Instruction::Fld(dest_reg, ptr), ident.into());
                     Some(Register::Float(dest_reg))
+                }
+                Type::Int(_) | Type::Float(_) | Type::Bool(_) | Type::Char(_) => {
+                    let dest_reg = self.alloc_ireg();
+                    self.insert_w_comment(Instruction::Ld(dest_reg, ptr), ident.into());
+                    Some(Register::Int(dest_reg))
                 }
                 _ => unreachable!("either filtered or impossible"),
             },

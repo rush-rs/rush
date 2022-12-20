@@ -600,14 +600,15 @@ impl<'tree> Compiler<'tree> {
 
         match rhs_reg {
             Register::Int(reg) => match type_ {
-                Type::Bool(_) | Type::Char(_) => self.insert_w_comment(
+                Type::Bool(0) | Type::Char(0) => self.insert_w_comment(
                     Instruction::Sb(reg, Pointer::Register(IntRegister::Fp, offset)),
                     comment,
                 ),
-                Type::Int(_) => self.insert_w_comment(
-                    Instruction::Sd(reg, Pointer::Register(IntRegister::Fp, offset)),
-                    comment,
-                ),
+                Type::Int(_) | Type::Float(_) | Type::Bool(_) | Type::Char(_) => self
+                    .insert_w_comment(
+                        Instruction::Sd(reg, Pointer::Register(IntRegister::Fp, offset)),
+                        comment,
+                    ),
                 _ => unreachable!("only the types above use int registers"),
             },
             Register::Float(reg) => self.insert_w_comment(
@@ -705,6 +706,7 @@ impl<'tree> Compiler<'tree> {
 
         if node.op == PrefixOp::Ref {
             if let AnalyzedExpression::Ident(ident) = node.expr {
+                dbg!(&ident);
                 let var = self.resolve_name(ident.ident);
                 let dest_reg = self.alloc_ireg();
 
@@ -727,6 +729,10 @@ impl<'tree> Compiler<'tree> {
                 return Some(dest_reg.into());
             }
             unreachable!("can only reference identifiers")
+        }
+
+        if node.op == PrefixOp::Deref {
+            dbg!(&node);
         }
 
         let lhs_reg = self.expression(node.expr)?;
@@ -752,6 +758,18 @@ impl<'tree> Compiler<'tree> {
                 self.insert(Instruction::Seqz(dest_reg, lhs_reg.into()));
                 Some(dest_reg.to_reg())
             }
+            (Type::Bool(1) | Type::Char(1), PrefixOp::Deref) => {
+                let dest_reg = self.alloc_ireg();
+
+                self.insert(Instruction::Mov(dest_reg, lhs_reg.into()));
+
+                self.insert_w_comment(
+                    Instruction::Lb(dest_reg, Pointer::Register(dest_reg, 0)),
+                    "deref".into(),
+                );
+
+                Some(dest_reg.into())
+            }
             (Type::Int(_) | Type::Bool(_) | Type::Char(_), PrefixOp::Deref) => {
                 let dest_reg = self.alloc_ireg();
 
@@ -759,6 +777,17 @@ impl<'tree> Compiler<'tree> {
 
                 self.insert_w_comment(
                     Instruction::Ld(dest_reg, Pointer::Register(dest_reg, 0)),
+                    "deref".into(),
+                );
+
+                Some(dest_reg.into())
+            }
+            (Type::Float(_), PrefixOp::Deref) => {
+                dbg!(lhs_reg);
+                let dest_reg = self.alloc_freg();
+
+                self.insert_w_comment(
+                    Instruction::Fld(dest_reg, Pointer::Register(lhs_reg.into(), 0)),
                     "deref".into(),
                 );
 
