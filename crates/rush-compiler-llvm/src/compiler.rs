@@ -11,13 +11,15 @@ use inkwell::{
     memory_buffer::MemoryBuffer,
     module::{Linkage, Module},
     passes::{PassManager, PassManagerBuilder},
-    targets::{CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetTriple},
-    types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum},
+    targets::{
+        CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine, TargetTriple,
+    },
+    types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum, PointerType},
     values::{
         BasicMetadataValueEnum, BasicValue, BasicValueEnum, FunctionValue, InstructionOpcode,
         PointerValue,
     },
-    FloatPredicate, IntPredicate, OptimizationLevel,
+    AddressSpace, FloatPredicate, IntPredicate, OptimizationLevel,
 };
 use rush_analyzer::{ast::*, AssignOp, InfixOp, PrefixOp, Type};
 
@@ -36,8 +38,8 @@ pub struct Compiler<'ctx, 'src> {
     pub(crate) globals: HashMap<&'src str, Variable<'ctx>>,
     /// A set of all builtin functions already declared (`imported`) so far.
     pub(crate) declared_builtins: HashSet<&'ctx str>,
-    /// Specifies the target machine.
-    pub(crate) target_triple: TargetTriple,
+    /// Specifies the target machinge.
+    pub(crate) target_machine: TargetMachine,
     /// Specifies the optimization level.
     pub(crate) optimization: OptimizationLevel,
     /// Specifies whether the entry symbol is `main` or `_start`.
@@ -102,16 +104,32 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
     /// Requires a new [`Context`] to be used by the compiler.
     /// The LLVM backend can be specified using a [`TargetTriple`].
     /// The optimization level is given through a [`OptimizationLevel`]
+    /// Errors can occur if the target triple is invalid.
     pub fn new(
         context: &'ctx Context,
         target_triple: TargetTriple,
         optimization: OptimizationLevel,
         compile_main_fn: bool,
-    ) -> Compiler<'ctx, 'src> {
+    ) -> Result<Compiler<'ctx, 'src>> {
         let module = context.create_module("main");
         // setup target machine triple
         module.set_triple(&target_triple);
-        Self {
+
+        // initialize the target
+        let config = InitializationConfig::default();
+        Target::initialize_all(&config);
+
+        let target = Target::from_triple(&target_triple)?;
+        let Some(target_machine) = target.create_target_machine(
+            &target_triple,
+            "",
+            "",
+            optimization,
+            RelocMode::PIC,
+            CodeModel::Default,
+        ) else { return Err(Error::NoTarget); };
+
+        Ok(Self {
             context,
             module,
             builder: context.create_builder(),
@@ -120,10 +138,10 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
             globals: HashMap::new(),
             loops: vec![],
             declared_builtins: HashSet::new(),
-            target_triple,
+            target_machine,
             optimization,
             compile_main_fn,
-        }
+        })
     }
 
     // Returns a mutable reference to the current scope
@@ -141,7 +159,7 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
     }
 
     /// Compiles the given [`AnalyzedProgram`] to object code and the LLVM IR.
-    /// Errors can occur if the target triple is invalid or the code generation fails.
+    /// Errors can occur if the code generation fails.
     /// The `self.compile_main_fn` field specifies whether the entry is the main function or `_start`.
     pub fn compile(&mut self, program: &'src AnalyzedProgram) -> Result<(MemoryBuffer, String)> {
         // declare all global variables
@@ -164,11 +182,7 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
 
         // verify the LLVM module when using debug
         #[cfg(debug_assertions)]
-        self.module.verify().unwrap();
-
-        // initialize the target
-        let config = InitializationConfig::default();
-        Target::initialize_all(&config);
+        self.module.verify()?;
 
         // run optimizations on the IR
         self.optimize();
@@ -177,16 +191,9 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         let llvm_ir = self.module.print_to_string().to_string();
 
         // build target-dependent object code
-        let target = Target::from_triple(&self.target_triple)?;
-        let Some(target_machine) = target.create_target_machine(
-            &self.target_triple,
-            "",
-            "",
-            self.optimization,
-            RelocMode::PIC,
-            CodeModel::Default,
-        ) else { return Err(Error::NoTarget); };
-        let objcode = target_machine.write_to_memory_buffer(&self.module, FileType::Object)?;
+        let objcode = self
+            .target_machine
+            .write_to_memory_buffer(&self.module, FileType::Object)?;
 
         Ok((objcode, llvm_ir))
     }
@@ -374,11 +381,26 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                 Type::Float(0) => BasicMetadataTypeEnum::FloatType(self.context.f64_type()),
                 Type::Bool(0) => BasicMetadataTypeEnum::IntType(self.context.bool_type()),
                 Type::Char(0) => BasicMetadataTypeEnum::IntType(self.context.i8_type()),
+                Type::Int(count) => BasicMetadataTypeEnum::PointerType(create_pointer_type(
+                    count,
+                    self.context.i64_type().ptr_type(AddressSpace::Generic),
+                )),
+                Type::Bool(count) => BasicMetadataTypeEnum::PointerType(create_pointer_type(
+                    count,
+                    self.context.bool_type().ptr_type(AddressSpace::Generic),
+                )),
+                Type::Char(count) => BasicMetadataTypeEnum::PointerType(create_pointer_type(
+                    count,
+                    self.context.i8_type().ptr_type(AddressSpace::Generic),
+                )),
+                Type::Float(count) => BasicMetadataTypeEnum::PointerType(create_pointer_type(
+                    count,
+                    self.context.f64_type().ptr_type(AddressSpace::Generic),
+                )),
                 Type::Unit => BasicMetadataTypeEnum::IntType(self.context.bool_type()),
                 Type::Never | Type::Unknown => {
                     unreachable!("the analyzer disallows these types to be used as parameters")
                 }
-                _ => todo!(), // TODO: handle pointers
             })
             .collect();
 
@@ -388,11 +410,30 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
             Type::Float(0) => self.context.f64_type().fn_type(&params, false),
             Type::Char(0) => self.context.i8_type().fn_type(&params, false),
             Type::Bool(0) => self.context.bool_type().fn_type(&params, false),
+            Type::Int(count) => create_pointer_type(
+                count,
+                self.context.i64_type().ptr_type(AddressSpace::Generic),
+            )
+            .fn_type(&params, false),
+            Type::Bool(count) => create_pointer_type(
+                count,
+                self.context.bool_type().ptr_type(AddressSpace::Generic),
+            )
+            .fn_type(&params, false),
+            Type::Char(count) => create_pointer_type(
+                count,
+                self.context.i8_type().ptr_type(AddressSpace::Generic),
+            )
+            .fn_type(&params, false),
+            Type::Float(count) => create_pointer_type(
+                count,
+                self.context.f64_type().ptr_type(AddressSpace::Generic),
+            )
+            .fn_type(&params, false),
             Type::Unit => self.context.bool_type().fn_type(&params, false),
             Type::Unknown | Type::Never => {
                 unreachable!("functions do not return values of these types")
             }
-            _ => todo!(), // TODO: handle pointers
         };
 
         // add the function to the LLVM module
@@ -434,11 +475,30 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                             Type::Float(0) => self.context.f64_type().as_basic_type_enum(),
                             Type::Char(0) => self.context.i8_type().as_basic_type_enum(),
                             Type::Bool(0) => self.context.bool_type().as_basic_type_enum(),
+                            Type::Int(_) => self
+                                .context
+                                .i64_type()
+                                .ptr_type(AddressSpace::Generic)
+                                .as_basic_type_enum(),
+                            Type::Bool(_) => self
+                                .context
+                                .bool_type()
+                                .ptr_type(AddressSpace::Generic)
+                                .as_basic_type_enum(),
+                            Type::Char(_) => self
+                                .context
+                                .i8_type()
+                                .ptr_type(AddressSpace::Generic)
+                                .as_basic_type_enum(),
+                            Type::Float(_) => self
+                                .context
+                                .f64_type()
+                                .ptr_type(AddressSpace::Generic)
+                                .as_basic_type_enum(),
                             Type::Unit => self.context.bool_type().as_basic_type_enum(),
                             Type::Never | Type::Unknown => {
                                 unreachable!("such function params cannot exist")
                             }
-                            _ => todo!(), // TODO: handle pointers
                         },
                         param.name,
                     );
@@ -978,10 +1038,14 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                 }
                 .as_basic_value_enum()
             }
-            Type::Unknown | Type::Unit => {
+            Type::Unknown
+            | Type::Unit
+            | Type::Int(_)
+            | Type::Bool(_)
+            | Type::Char(_)
+            | Type::Float(_) => {
                 unreachable!("these types cannot be used in an infix expression")
             }
-            _ => todo!(), // TODO: handle pointers
         }
     }
 
@@ -1054,6 +1118,17 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
     }
 
     fn prefix_expr(&mut self, node: &'src AnalyzedPrefixExpr) -> BasicValueEnum<'ctx> {
+        if node.op == PrefixOp::Ref {
+            if let AnalyzedExpression::Ident(ident) = &node.expr {
+                let var = self.resolve_name(ident.ident);
+
+                match var.value {
+                    VariableValue::Mut(ptr) => return ptr.as_basic_value_enum(),
+                    _ => unreachable!("can only reference mutable identifiers"),
+                }
+            }
+        }
+
         let base = self.expression(&node.expr);
 
         match (node.expr.result_type(), node.op) {
@@ -1078,6 +1153,10 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                     "not",
                 )
                 .as_basic_value_enum(),
+            (Type::Int(_) | Type::Bool(_) | Type::Char(_) | Type::Float(_), PrefixOp::Deref) => {
+                self.builder
+                    .build_load(base.into_pointer_value(), "deref_val")
+            }
             _ => unreachable!("other types are not supported by prefix"),
         }
     }
@@ -1183,10 +1262,30 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
     fn assign_expr(&mut self, node: &'src AnalyzedAssignExpr) -> BasicValueEnum<'ctx> {
         // get the pointer of the assignee
         let assignee = self.resolve_name(node.assignee);
-        let ptr = match assignee.value {
+        let mut assignee_type = assignee.type_;
+
+        let mut ptr = match assignee.value {
             VariableValue::Mut(ptr) => ptr,
+            VariableValue::Const(ptr) => ptr.into_pointer_value(),
             _ => unreachable!("can only assign to mutable variables"),
         };
+
+        // perform derefs if required
+        let mut ptr_count = node.assignee_ptr_count;
+
+        while ptr_count > 0 {
+            if ptr_count > 1 || matches!(assignee.value, VariableValue::Mut(_)) {
+                ptr = self
+                    .builder
+                    .build_load(ptr, "deref")
+                    .as_basic_value_enum()
+                    .into_pointer_value();
+            }
+            assignee_type = assignee_type
+                .sub_deref()
+                .expect("the analyzer guarantees valid usage of pointers");
+            ptr_count -= 1;
+        }
 
         match node.op {
             AssignOp::Basic => {
@@ -1200,7 +1299,7 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                 // load the value from the pointer
                 let assignee_value = self.builder.build_load(ptr, node.assignee);
                 // perform the assign op operation on the pointer value and the rhs
-                let res = self.infix_helper(assignee.type_, InfixOp::from(op), assignee_value, rhs);
+                let res = self.infix_helper(assignee_type, InfixOp::from(op), assignee_value, rhs);
                 // store the resulting value in the pointer
                 self.builder.build_store(ptr, res);
             }
@@ -1298,4 +1397,12 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
             Some((branch_value, branch_block))
         }
     }
+}
+
+/// Creates a recursive pointer type given its base type and indirection level.
+fn create_pointer_type(nested_level: usize, ptr_type: PointerType) -> PointerType {
+    if nested_level == 1 {
+        return ptr_type;
+    }
+    create_pointer_type(nested_level - 1, ptr_type).ptr_type(AddressSpace::Generic)
 }

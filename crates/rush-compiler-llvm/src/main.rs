@@ -27,7 +27,8 @@ fn main() {
         TargetMachine::get_default_triple(),
         inkwell::OptimizationLevel::None,
         true,
-    );
+    )
+    .unwrap();
 
     let (obj, ir) = compiler.compile(&ast).unwrap();
     fs::write("./output.ll", ir).unwrap();
