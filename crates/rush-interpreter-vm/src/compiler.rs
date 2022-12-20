@@ -1,6 +1,6 @@
 use std::{collections::HashMap, vec};
 
-use rush_analyzer::{ast::*, InfixOp, Type};
+use rush_analyzer::{ast::*, InfixOp, PrefixOp, Type};
 
 use crate::{
     instruction::{self, Instruction, Program},
@@ -104,8 +104,15 @@ impl<'src> Compiler<'src> {
         let var = self.resolve_var(name);
         match var {
             Variable::Unit => {} // ignore unit / never values
-            Variable::Local { idx, .. } => self.insert(Instruction::GetVar(idx)),
-            Variable::Global { idx } => self.insert(Instruction::GetGlobal(idx)),
+            Variable::Local { idx, .. } => {
+                self.insert(Instruction::Push(Value::Int(idx as i64)));
+                self.insert(Instruction::GetVar)
+            }
+            // TODO: maybe tweak this to allow pointers
+            Variable::Global { idx } => {
+                self.insert(Instruction::Push(Value::Int(idx as i64)));
+                self.insert(Instruction::GetGlobal)
+            }
         }
     }
 
@@ -139,10 +146,12 @@ impl<'src> Compiler<'src> {
         // map the name to the new global index
         let idx = self.globals.len();
         self.globals.insert(node.name, idx);
+        // push the address of the global onto the stack
+        self.insert(Instruction::Push(Value::Int(idx as i64)));
         // push global value onto the stack
         self.expression(node.expr);
         // pop and set the value as global
-        self.insert(Instruction::SetGlobal(idx));
+        self.insert(Instruction::SetGlobal);
     }
 
     fn fn_declaration(&mut self, node: AnalyzedFunctionDefinition<'src>) {
@@ -155,7 +164,7 @@ impl<'src> Compiler<'src> {
             let var = match param.type_ {
                 Type::Unit | Type::Never => Variable::Unit,
                 _ => {
-                    self.insert(Instruction::SetVar(self.local_let_count));
+                    self.insert(Instruction::SetVarImm(self.local_let_count));
                     self.local_let_count += 1;
                     Variable::Local { idx }
                 }
@@ -228,16 +237,16 @@ impl<'src> Compiler<'src> {
     }
 
     fn let_stmt(&mut self, node: AnalyzedLetStmt<'src>) {
-        let expr_type = node.expr.result_type();
-        self.expression(node.expr);
-
-        match expr_type {
+        match node.expr.result_type() {
             Type::Unit | Type::Never => {
+                self.expression(node.expr);
                 self.scope_mut().insert(node.name, Variable::Unit);
             }
             _ => {
+                self.expression(node.expr);
+
                 let idx = self.local_let_count;
-                self.insert(Instruction::SetVar(idx));
+                self.insert(Instruction::SetVarImm(idx));
 
                 self.scope_mut().insert(node.name, Variable::Local { idx });
                 self.local_let_count += 1;
@@ -321,15 +330,15 @@ impl<'src> Compiler<'src> {
     fn for_stmt(&mut self, node: AnalyzedForStmt<'src>) {
         // compile the init expression
         self.scopes.push(HashMap::new());
-        let initializer_type = node.initializer.result_type();
-        self.expression(node.initializer);
-        match initializer_type {
+        match node.initializer.result_type() {
             Type::Unit | Type::Never => {
+                self.expression(node.initializer);
                 self.scope_mut().insert(node.ident, Variable::Unit);
             }
             _ => {
+                self.expression(node.initializer);
                 let idx = self.local_let_count;
-                self.insert(Instruction::SetVar(idx));
+                self.insert(Instruction::SetVarImm(idx));
                 self.scope_mut().insert(node.ident, Variable::Local { idx });
                 self.local_let_count += 1;
             }
@@ -426,8 +435,32 @@ impl<'src> Compiler<'src> {
     }
 
     fn prefix_expr(&mut self, node: AnalyzedPrefixExpr<'src>) {
-        self.expression(node.expr);
-        self.insert(Instruction::from(node.op));
+        match Instruction::try_from(node.op) {
+            Ok(insruction) => {
+                self.expression(node.expr);
+                self.insert(insruction)
+            }
+            Err(_) => match node.op == PrefixOp::Ref {
+                //ref
+                true => {
+                    if let AnalyzedExpression::Ident(ident) = node.expr {
+                        match self.resolve_var(ident.ident) {
+                            Variable::Local { idx } | Variable::Global { idx } => {
+                                self.insert(Instruction::Push(Value::Int(idx as i64)))
+                            }
+                            Variable::Unit => unreachable!("unit values cannot be referenced"),
+                        }
+                        return;
+                    }
+                    unreachable!("the parser guarantees that only idents can be referenced")
+                }
+                // deref
+                false => {
+                    self.expression(node.expr);
+                    self.insert(Instruction::GetVar)
+                }
+            },
+        }
     }
 
     fn infix_expr(&mut self, node: AnalyzedInfixExpr<'src>) {
@@ -455,21 +488,45 @@ impl<'src> Compiler<'src> {
     }
 
     fn assign_expr(&mut self, node: AnalyzedAssignExpr<'src>) {
+        let assignee = self.resolve_var(node.assignee);
+
+        let idx = match assignee {
+            Variable::Local { idx } => idx,
+            Variable::Global { idx } => idx,
+            Variable::Unit => unreachable!("cannot assign to unit values"), // TODO: is this
+                                                                            // correct?
+        };
+
+        self.insert(Instruction::Push(Value::Int(idx as i64)));
+
+        let mut ptr_count = node.assignee_ptr_count;
+        while ptr_count > 0 {
+            self.insert(Instruction::GetVar);
+            ptr_count -= 1;
+        }
+
         match node.op.try_into() {
             Ok(instruction) => {
+                // insert a clone so that th setter instructions can still use the index
+                self.insert(Instruction::Clone);
+
                 // load the assignee value
-                self.load_var(node.assignee);
+                match assignee {
+                    Variable::Unit => {}
+                    Variable::Local { .. } => self.insert(Instruction::GetVar),
+                    // TODO: implement globals
+                    Variable::Global { .. } => self.insert(Instruction::GetGlobal),
+                };
                 self.expression(node.expr);
                 self.insert(instruction);
             }
             Err(()) => self.expression(node.expr),
         }
 
-        let assignee = self.resolve_var(node.assignee);
         match assignee {
             Variable::Unit => {}
-            Variable::Local { idx, .. } => self.insert(Instruction::SetVar(idx)),
-            Variable::Global { idx } => self.insert(Instruction::SetGlobal(idx)),
+            Variable::Local { .. } => self.insert(Instruction::SetVar),
+            Variable::Global { .. } => self.insert(Instruction::SetGlobal),
         };
     }
 

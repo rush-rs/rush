@@ -72,6 +72,8 @@ pub enum Instruction {
     Push(Value),
     /// Pops the top-most value off the stack and discards the value.
     Drop,
+    /// Clones the top value on the stack: [..., top] -> [..., top, top].
+    Clone,
     /// Calls a function (specified by index).
     Call(usize),
     /// Returns from the current function call.
@@ -82,14 +84,21 @@ pub enum Instruction {
     Jmp(usize),
     /// Jumps to the specified index if the value on the stack is `false`.
     JmpFalse(usize),
-    /// Pops the top element off the stack and binds it to the specified number.
-    SetVar(usize),
-    /// Retrieves the variable with the specified index and places it on top of the stack.
-    GetVar(usize),
-    // Pops the top element off the stack and sets it as a global using the specified index.
-    SetGlobal(usize),
+    /// Sets the variable with the specified index to the value on top of the stack.
+    /// Also pops the top element from the stack in order to use it as the value.
+    SetVarImm(usize),
+    /// Sets the value of the variable whose index is stored on the top of the stack.
+    /// Pops the second from top element off the stack and uses it as the variable value.
+    SetVar,
+    /// Retrieves the variable whose index stored in the value on top of the stack.
+    /// Pushes the variable's value onto the stack.
+    GetVar,
+    /// Sets the value of the global variable whose index is stored on the top of the stack.
+    /// Pops the second from top element off the stack and uses it as the variable value.
+    SetGlobal,
     /// Retrieves the global with the specified index and places it on top of the stack.
-    GetGlobal(usize),
+    /// TODO: global pointers?
+    GetGlobal,
     /// Cast the current item on the stack to the specified type.
     Cast(Type),
 
@@ -163,12 +172,14 @@ impl TryFrom<AssignOp> for Instruction {
     }
 }
 
-impl From<PrefixOp> for Instruction {
-    fn from(src: PrefixOp) -> Self {
+impl TryFrom<PrefixOp> for Instruction {
+    type Error = ();
+
+    fn try_from(src: PrefixOp) -> Result<Self, Self::Error> {
         match src {
-            PrefixOp::Not => Self::Not,
-            PrefixOp::Neg => Self::Neg,
-            _ => todo!(), // TODO: handle pointers
+            PrefixOp::Not => Ok(Self::Not),
+            PrefixOp::Neg => Ok(Self::Neg),
+            _ => Err(()),
         }
     }
 }
@@ -178,12 +189,14 @@ impl Display for Instruction {
         match self {
             Instruction::Push(val) => write!(f, "push {val}"),
             Instruction::Drop => write!(f, "pop"),
+            Instruction::Clone => write!(f, "clone"),
             Instruction::Jmp(idx) => write!(f, "jmp {idx}"),
             Instruction::JmpFalse(idx) => write!(f, "jmpfalse {idx}"),
-            Instruction::SetVar(idx) => write!(f, "setvar {idx}"),
-            Instruction::GetVar(idx) => write!(f, "getvar {idx}"),
-            Instruction::SetGlobal(idx) => write!(f, "setglob {idx}"),
-            Instruction::GetGlobal(idx) => write!(f, "getglob {idx}"),
+            Instruction::SetVarImm(idx) => write!(f, "setvarimm {idx}"),
+            Instruction::SetVar => write!(f, "setvar"),
+            Instruction::GetVar => write!(f, "getvar"),
+            Instruction::SetGlobal => write!(f, "setglob"),
+            Instruction::GetGlobal => write!(f, "getglob"),
             Instruction::Call(idx) => write!(f, "call {idx}"),
             Instruction::Cast(to) => write!(f, "cast {to}"),
             Instruction::Ret => write!(f, "ret"),

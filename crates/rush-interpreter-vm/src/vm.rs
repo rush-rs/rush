@@ -179,6 +179,9 @@ impl Vm {
             Instruction::Drop => {
                 self.pop();
             }
+            Instruction::Clone => self
+                .stack
+                .push(*self.stack.last().expect("clone is always called safely")),
             Instruction::Jmp(idx) => {
                 self.call_frame_mut().ip = *idx;
                 return Ok(None);
@@ -190,29 +193,40 @@ impl Vm {
                     return Ok(None);
                 }
             }
-            Instruction::SetVar(idx) => {
+            Instruction::SetVarImm(_) | Instruction::SetVar => {
+                let val = self.pop();
+
+                let idx = match inst {
+                    Instruction::SetVarImm(idx) => *idx,
+                    _ => self.pop().unwrap_int() as usize,
+                };
+
                 // if there is already an entry in the memory, use it.
                 // otherwise, new memory is allocated
-                let val = self.pop();
-                match self.call_frame_mut().mem.get_mut(*idx) {
+                match self.call_frame_mut().mem.get_mut(idx) {
                     Some(var) => *var = Some(val),
                     None => {
                         self.call_frame_mut().mem.resize(idx + 1, None);
-                        self.call_frame_mut().mem[*idx] = Some(val)
+                        self.call_frame_mut().mem[idx] = Some(val)
                     }
                 }
             }
-            Instruction::GetVar(idx) => {
-                self.push(self.call_frame().mem[*idx].expect("variables are always initialized"))?
+            Instruction::GetVar => {
+                let idx = self.pop().unwrap_int() as usize;
+                self.push(self.call_frame().mem[idx].expect("variables are always initialized"))?
             }
-            Instruction::SetGlobal(idx) => {
+            Instruction::SetGlobal => {
                 let val = self.pop();
-                match self.globals.len() < *idx + 1 {
+                let idx = self.pop().unwrap_int() as usize;
+                match self.globals.len() < idx + 1 {
                     true => self.globals.push(val),
-                    false => self.globals[*idx] = val,
+                    false => self.globals[idx] = val,
                 }
             }
-            Instruction::GetGlobal(idx) => self.push(self.globals[*idx])?,
+            Instruction::GetGlobal => {
+                let idx = self.pop().unwrap_int() as usize;
+                self.push(self.globals[idx])?
+            }
             Instruction::Call(idx) => {
                 if self.call_stack.len() >= CALL_STACK_LIMIT {
                     return Err(RuntimeError::new(
