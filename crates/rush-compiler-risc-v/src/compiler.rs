@@ -706,7 +706,6 @@ impl<'tree> Compiler<'tree> {
 
         if node.op == PrefixOp::Ref {
             if let AnalyzedExpression::Ident(ident) = node.expr {
-                dbg!(&ident);
                 let var = self.resolve_name(ident.ident);
                 let dest_reg = self.alloc_ireg();
 
@@ -729,10 +728,6 @@ impl<'tree> Compiler<'tree> {
                 return Some(dest_reg.into());
             }
             unreachable!("can only reference identifiers")
-        }
-
-        if node.op == PrefixOp::Deref {
-            dbg!(&node);
         }
 
         let lhs_reg = self.expression(node.expr)?;
@@ -770,24 +765,23 @@ impl<'tree> Compiler<'tree> {
 
                 Some(dest_reg.into())
             }
-            (Type::Int(_) | Type::Bool(_) | Type::Char(_), PrefixOp::Deref) => {
+            (Type::Float(1), PrefixOp::Deref) => {
+                let dest_reg = self.alloc_freg();
+
+                self.insert_w_comment(
+                    Instruction::Fld(dest_reg, Pointer::Register(lhs_reg.into(), 0)),
+                    "deref".into(),
+                );
+
+                Some(dest_reg.into())
+            }
+            (Type::Int(_) | Type::Bool(_) | Type::Char(_) | Type::Float(_), PrefixOp::Deref) => {
                 let dest_reg = self.alloc_ireg();
 
                 self.insert(Instruction::Mov(dest_reg, lhs_reg.into()));
 
                 self.insert_w_comment(
                     Instruction::Ld(dest_reg, Pointer::Register(dest_reg, 0)),
-                    "deref".into(),
-                );
-
-                Some(dest_reg.into())
-            }
-            (Type::Float(_), PrefixOp::Deref) => {
-                dbg!(lhs_reg);
-                let dest_reg = self.alloc_freg();
-
-                self.insert_w_comment(
-                    Instruction::Fld(dest_reg, Pointer::Register(lhs_reg.into(), 0)),
                     "deref".into(),
                 );
 
