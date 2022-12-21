@@ -1,0 +1,19 @@
+fn main() {
+    let mut ten = 10;
+    let mut twenty = 20;
+
+    let mut to_ten = &ten;
+    let mut to_twenty = &twenty;
+
+    *to_ten *= 3;       // 30
+    *to_twenty *= 3;    // 60
+
+    // pointers are swapped here
+    to_ten = &twenty;
+    to_twenty = &ten;
+
+    *to_ten -= 5;       // 60 - 5
+    *to_twenty += 5;    // 30 + 5
+
+    exit(twenty - ten + 27)
+}

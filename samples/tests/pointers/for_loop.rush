@@ -1,0 +1,13 @@
+fn main() {
+    let mut ten = 0;
+    let mut count = 0;
+
+    for ptr = &ten; *ptr < 10; *ptr += 1 {
+        if *ptr %2 == 0 {
+            count += 1;
+        }
+    }
+
+    // expected exit-code: 15
+    exit(ten + count)
+}

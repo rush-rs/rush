@@ -35,6 +35,8 @@ tests = {
     './pointers/globals.rush': 44,
     './pointers/fn_boundaries.rush': 45,
     './pointers/types.rush': 46,
+    './pointers/swap.rush': 47,
+    './pointers/for_loop.rush': 15,
 }
 
 # saves the backend an any additional commands to be executed after `cargo r`
