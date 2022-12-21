@@ -11,30 +11,15 @@ use crate::{
 #[derive(Debug, Clone)]
 pub(crate) struct Variable {
     pub(crate) type_: Type,
-    pub(crate) value: VariableValue,
+    /// This can be [`None`] if the type of the variable is `!` or `()`
+    pub(crate) value: Option<Pointer>,
 }
 
 impl Variable {
     pub(crate) fn unit() -> Self {
         Self {
             type_: Type::Unit,
-            value: VariableValue::Unit,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) enum VariableValue {
-    Pointer(Pointer),
-    Register(Register),
-    Unit,
-}
-
-impl VariableValue {
-    pub(crate) fn into_ptr(self) -> Pointer {
-        match self {
-            VariableValue::Pointer(ptr) => ptr,
-            _ => panic!("called `VariableValue::into_ptr` on a non-pointer variant"),
+            value: None,
         }
     }
 }
@@ -274,33 +259,31 @@ impl<'tree> Compiler<'tree> {
 
     /// Loads the specified variable into a register.
     /// Decides which load operation is to be used as it depends on the data size.
-    pub(crate) fn load_value_from_variable(
+    pub(crate) fn load_value_from_pointer(
         &mut self,
-        var: VariableValue,
+        ptr: Pointer,
         type_: Type,
         ident: &'tree str,
-    ) -> Option<Register> {
-        match var {
-            VariableValue::Pointer(ptr) => match type_ {
-                Type::Bool(0) | Type::Char(0) => {
-                    let dest_reg = self.alloc_ireg();
-                    self.insert_w_comment(Instruction::Lb(dest_reg, ptr), ident.into());
-                    Some(Register::Int(dest_reg))
-                }
-                Type::Float(0) => {
-                    let dest_reg = self.alloc_freg();
-                    self.insert_w_comment(Instruction::Fld(dest_reg, ptr), ident.into());
-                    Some(Register::Float(dest_reg))
-                }
-                Type::Int(_) | Type::Float(_) | Type::Bool(_) | Type::Char(_) => {
-                    let dest_reg = self.alloc_ireg();
-                    self.insert_w_comment(Instruction::Ld(dest_reg, ptr), ident.into());
-                    Some(Register::Int(dest_reg))
-                }
-                _ => unreachable!("either filtered or impossible"),
-            },
-            VariableValue::Register(reg) => Some(reg),
-            VariableValue::Unit => None,
+    ) -> Register {
+        match type_ {
+            Type::Bool(0) | Type::Char(0) => {
+                let dest_reg = self.alloc_ireg();
+                self.insert_w_comment(Instruction::Lb(dest_reg, ptr), ident.into());
+                Register::Int(dest_reg)
+            }
+            Type::Float(0) => {
+                let dest_reg = self.alloc_freg();
+                self.insert_w_comment(Instruction::Fld(dest_reg, ptr), ident.into());
+                Register::Float(dest_reg)
+            }
+            Type::Int(_) | Type::Float(_) | Type::Bool(_) | Type::Char(_) => {
+                let dest_reg = self.alloc_ireg();
+                self.insert_w_comment(Instruction::Ld(dest_reg, ptr), ident.into());
+                Register::Int(dest_reg)
+            }
+            Type::Unit | Type::Never | Type::Unknown => {
+                unreachable!("these values cannot be stored inside pointers")
+            }
         }
     }
 
