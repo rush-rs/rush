@@ -1,10 +1,10 @@
-use std::{collections::HashMap, vec};
+use std::{collections::HashMap, mem, vec};
 
 use rush_analyzer::{ast::*, InfixOp, PrefixOp, Type};
 
 use crate::{
     instruction::{self, Instruction, Program},
-    value::Value,
+    value::{Pointer, Value},
 };
 
 #[derive(Default)]
@@ -23,6 +23,10 @@ pub struct Compiler<'src> {
     /// Counter for let bindings in the current function.
     local_let_count: usize,
 
+    /// Contains the indices of `SetMp` instructions which need a value correction at the end of a
+    /// function declaration.
+    setmp_indices: Vec<usize>,
+
     /// Contains information about the current loop(s)
     loops: Vec<Loop>,
 }
@@ -33,8 +37,8 @@ type Scope<'src> = HashMap<&'src str, Variable>;
 #[derive(Debug, Clone, Copy)]
 enum Variable {
     Unit,
-    Local { idx: usize },
-    Global { idx: usize },
+    Local { offset: isize },
+    Global { addr: usize },
 }
 
 #[derive(Default)]
@@ -63,6 +67,12 @@ impl<'src> Compiler<'src> {
             .last_mut()
             .expect("there is always a function")
             .push(instruction)
+    }
+
+    #[inline]
+    /// Returns a reference to the current function
+    fn curr_fn(&self) -> &Vec<Instruction> {
+        self.functions.last().expect("there is always a function")
     }
 
     #[inline]
@@ -95,7 +105,7 @@ impl<'src> Compiler<'src> {
             };
         }
         Variable::Global {
-            idx: self.globals[name],
+            addr: self.globals[name],
         }
     }
 
@@ -104,14 +114,13 @@ impl<'src> Compiler<'src> {
         let var = self.resolve_var(name);
         match var {
             Variable::Unit => {} // ignore unit / never values
-            Variable::Local { idx, .. } => {
-                self.insert(Instruction::Push(Value::Int(idx as i64)));
+            Variable::Local { offset, .. } => {
+                self.insert(Instruction::Push(Value::Ptr(Pointer::Rel(offset))));
                 self.insert(Instruction::GetVar)
             }
-            // TODO: maybe tweak this to allow pointers
-            Variable::Global { idx } => {
-                self.insert(Instruction::Push(Value::Int(idx as i64)));
-                self.insert(Instruction::GetGlobal)
+            Variable::Global { addr } => {
+                self.insert(Instruction::Push(Value::Ptr(Pointer::Abs(addr))));
+                self.insert(Instruction::GetVar)
             }
         }
     }
@@ -121,6 +130,9 @@ impl<'src> Compiler<'src> {
         for (idx, func) in ast.functions.iter().filter(|f| f.used).enumerate() {
             self.fn_names.insert(func.name, idx + 2);
         }
+
+        // add stack space for the globals
+        self.insert(Instruction::SetMp(ast.globals.len() as isize));
 
         // add global variables
         for var in ast.globals.into_iter().filter(|g| g.used) {
@@ -144,44 +156,80 @@ impl<'src> Compiler<'src> {
 
     fn declare_global(&mut self, node: AnalyzedLetStmt<'src>) {
         // map the name to the new global index
-        let idx = self.globals.len();
-        self.globals.insert(node.name, idx);
-        // push the address of the global onto the stack
-        self.insert(Instruction::Push(Value::Int(idx as i64)));
+        let addr = self.globals.len();
+        self.globals.insert(node.name, addr);
         // push global value onto the stack
         self.expression(node.expr);
         // pop and set the value as global
-        self.insert(Instruction::SetGlobal);
+        self.insert(Instruction::SetVarImm(Pointer::Abs(addr)));
     }
 
     fn fn_declaration(&mut self, node: AnalyzedFunctionDefinition<'src>) {
         self.local_let_count = 0;
         self.scopes.push(Scope::default());
+        mem::take(&mut self.setmp_indices);
+
+        // contains a placeholder value which is corrected later
+        let setmp_idx = self.curr_fn().len();
+        self.insert(Instruction::SetMp(isize::MAX));
 
         for param in node.params.iter().rev() {
-            let idx = self.local_let_count;
+            let offset = -(self.local_let_count as isize);
 
             let var = match param.type_ {
                 Type::Unit | Type::Never => Variable::Unit,
                 _ => {
-                    self.insert(Instruction::SetVarImm(self.local_let_count));
+                    self.insert(Instruction::SetVarImm(Pointer::Rel(offset)));
                     self.local_let_count += 1;
-                    Variable::Local { idx }
+                    Variable::Local { offset }
                 }
             };
             self.scope_mut().insert(param.name, var);
         }
 
         self.block(node.block, false);
+
+        // correct the placeholder set mp offset
+        self.curr_fn_mut()[setmp_idx] = Instruction::SetMp(self.local_let_count as isize);
+
         self.scopes.pop();
+
+        // `return` also deallocates space used by this function
+        let pos = self.curr_fn().len();
+        self.setmp_indices.push(pos);
+        self.insert(Instruction::SetMp(isize::MIN));
         self.insert(Instruction::Ret);
+
+        // correct values in `SetMp` instructions before return
+        self.correct_setmp_values();
+    }
+
+    fn correct_setmp_values(&mut self) {
+        let offset = -(self.local_let_count as isize);
+        for idx in self.setmp_indices.clone() {
+            match (&mut self.curr_fn_mut()[idx], offset) {
+                (_, 0) => self.curr_fn_mut()[idx] = Instruction::Nop,
+                (Instruction::SetMp(o), _) => *o = offset,
+                other => unreachable!("other instructions do not modify mp: {other:?}"),
+            }
+        }
     }
 
     fn main_fn(&mut self, node: AnalyzedBlock<'src>) {
         self.functions.push(vec![]);
         self.local_let_count = 0;
         self.fn_names.insert("main", 1);
+
+        // contains a placeholder value which is corrected later
+        let setmp_idx = self.curr_fn().len();
+        self.insert(Instruction::SetMp(isize::MAX));
+
         self.block(node, true);
+
+        // correct the placeholder set mp offset
+        self.curr_fn_mut()[setmp_idx] = Instruction::SetMp(self.local_let_count as isize);
+
+        self.correct_setmp_values()
     }
 
     /// Compiles a block of statements.
@@ -209,6 +257,9 @@ impl<'src> Compiler<'src> {
                 if let Some(expr) = expr {
                     self.expression(expr);
                 }
+                let pos = self.curr_fn().len();
+                self.setmp_indices.push(pos);
+                self.insert(Instruction::SetMp(isize::MIN));
                 self.insert(Instruction::Ret);
             }
             AnalyzedStatement::Loop(node) => self.loop_stmt(node),
@@ -216,14 +267,14 @@ impl<'src> Compiler<'src> {
             AnalyzedStatement::For(node) => self.for_stmt(node),
             AnalyzedStatement::Break => {
                 // the jmp instruction is corrected later
-                let end = self.curr_fn_mut().len();
-                self.curr_loop_mut().break_jmp_indices.push(end);
+                let pos = self.curr_fn().len();
+                self.curr_loop_mut().break_jmp_indices.push(pos);
                 self.insert(Instruction::Jmp(usize::MAX));
             }
             AnalyzedStatement::Continue => {
                 // the jmp instruction is corrected later
-                let end = self.curr_fn_mut().len();
-                self.curr_loop_mut().continue_jmp_indices.push(end);
+                let pos = self.curr_fn().len();
+                self.curr_loop_mut().continue_jmp_indices.push(pos);
                 self.insert(Instruction::Jmp(usize::MAX));
             }
             AnalyzedStatement::Expr(node) => {
@@ -245,10 +296,11 @@ impl<'src> Compiler<'src> {
             _ => {
                 self.expression(node.expr);
 
-                let idx = self.local_let_count;
-                self.insert(Instruction::SetVarImm(idx));
+                let offset = -(self.local_let_count as isize);
+                self.insert(Instruction::SetVarImm(Pointer::Rel(offset)));
 
-                self.scope_mut().insert(node.name, Variable::Local { idx });
+                self.scope_mut()
+                    .insert(node.name, Variable::Local { offset });
                 self.local_let_count += 1;
             }
         }
@@ -267,7 +319,7 @@ impl<'src> Compiler<'src> {
 
     fn loop_stmt(&mut self, node: AnalyzedLoopStmt<'src>) {
         // save location of the loop head (for continue stmts)
-        let loop_head_pos = self.curr_fn_mut().len();
+        let loop_head_pos = self.curr_fn().len();
         self.loops.push(Loop::default());
 
         // compile the loop body
@@ -286,14 +338,14 @@ impl<'src> Compiler<'src> {
 
         // correct placeholder `break` / `continue` values
         let loop_ = self.loops.pop().expect("pushed above");
-        let pos = self.curr_fn_mut().len();
+        let pos = self.curr_fn().len();
         self.fill_blank_jmps(&loop_.break_jmp_indices, pos);
         self.fill_blank_jmps(&loop_.continue_jmp_indices, loop_head_pos);
     }
 
     fn while_stmt(&mut self, node: AnalyzedWhileStmt<'src>) {
         // save location of the loop head (for continue stmts)
-        let loop_head_pos = self.curr_fn_mut().len();
+        let loop_head_pos = self.curr_fn().len();
 
         // compile the while condition
         self.expression(node.cond);
@@ -302,7 +354,7 @@ impl<'src> Compiler<'src> {
         self.loops.push(Loop::default());
 
         // jump to the end if the condition is false
-        let end = self.curr_fn_mut().len();
+        let end = self.curr_fn().len();
         self.curr_loop_mut().break_jmp_indices.push(end);
         self.insert(Instruction::JmpFalse(usize::MAX));
 
@@ -322,7 +374,7 @@ impl<'src> Compiler<'src> {
 
         // correct placeholder `break` / `continue` values
         let loop_ = self.loops.pop().expect("pushed above");
-        let pos = self.curr_fn_mut().len();
+        let pos = self.curr_fn().len();
         self.fill_blank_jmps(&loop_.break_jmp_indices, pos);
         self.fill_blank_jmps(&loop_.continue_jmp_indices, loop_head_pos);
     }
@@ -337,15 +389,16 @@ impl<'src> Compiler<'src> {
             }
             _ => {
                 self.expression(node.initializer);
-                let idx = self.local_let_count;
-                self.insert(Instruction::SetVarImm(idx));
-                self.scope_mut().insert(node.ident, Variable::Local { idx });
+                let offset = self.local_let_count as isize;
+                self.insert(Instruction::SetVarImm(Pointer::Rel(offset)));
+                self.scope_mut()
+                    .insert(node.ident, Variable::Local { offset });
                 self.local_let_count += 1;
             }
         }
 
         // save location of the loop head (for repetition)
-        let loop_head_pos = self.curr_fn_mut().len();
+        let loop_head_pos = self.curr_fn().len();
 
         // compile the condition expr
         self.expression(node.cond);
@@ -353,7 +406,7 @@ impl<'src> Compiler<'src> {
         self.loops.push(Loop::default());
 
         // jump to the end of the loop if the condition is false
-        let curr_pos = self.curr_fn_mut().len();
+        let curr_pos = self.curr_fn().len();
         self.curr_loop_mut().break_jmp_indices.push(curr_pos);
         self.insert(Instruction::JmpFalse(usize::MAX));
 
@@ -368,7 +421,7 @@ impl<'src> Compiler<'src> {
         }
 
         // correct placeholder `continue` values
-        let curr_pos = self.curr_fn_mut().len();
+        let curr_pos = self.curr_fn().len();
         let loop_ = self.loops.pop().expect("pushed above");
         self.fill_blank_jmps(&loop_.continue_jmp_indices, curr_pos);
 
@@ -383,7 +436,7 @@ impl<'src> Compiler<'src> {
         self.insert(Instruction::Jmp(loop_head_pos));
 
         // correct placeholder break values
-        let pos = self.curr_fn_mut().len();
+        let pos = self.curr_fn().len();
         self.fill_blank_jmps(&loop_.break_jmp_indices, pos);
 
         self.scopes.pop();
@@ -410,12 +463,12 @@ impl<'src> Compiler<'src> {
     fn if_expr(&mut self, node: AnalyzedIfExpr<'src>) {
         // compile the condition
         self.expression(node.cond);
-        let after_condition = self.curr_fn_mut().len();
+        let after_condition = self.curr_fn().len();
         self.insert(Instruction::JmpFalse(usize::MAX)); // placeholder
 
         // compile the `then` branch
         self.block(node.then_block, true);
-        let after_then_idx = self.curr_fn_mut().len();
+        let after_then_idx = self.curr_fn().len();
 
         if let Some(else_block) = node.else_block {
             self.insert(Instruction::Jmp(usize::MAX)); // placeholder
@@ -424,7 +477,7 @@ impl<'src> Compiler<'src> {
             self.curr_fn_mut()[after_condition] = Instruction::JmpFalse(after_then_idx + 1);
 
             self.block(else_block, true);
-            let after_else = self.curr_fn_mut().len();
+            let after_else = self.curr_fn().len();
 
             // skip the `else` block when coming from the `then` block
             self.curr_fn_mut()[after_then_idx] = Instruction::Jmp(after_else);
@@ -445,8 +498,11 @@ impl<'src> Compiler<'src> {
                 true => {
                     if let AnalyzedExpression::Ident(ident) = node.expr {
                         match self.resolve_var(ident.ident) {
-                            Variable::Local { idx } | Variable::Global { idx } => {
-                                self.insert(Instruction::Push(Value::Int(idx as i64)))
+                            Variable::Local { offset, .. } => {
+                                self.insert(Instruction::RelToAddr(offset))
+                            }
+                            Variable::Global { addr } => {
+                                self.insert(Instruction::Push(Value::Ptr(Pointer::Abs(addr))));
                             }
                             Variable::Unit => unreachable!("unit values cannot be referenced"),
                         }
@@ -470,14 +526,13 @@ impl<'src> Compiler<'src> {
                 if node.op == InfixOp::Or {
                     self.insert(Instruction::Not);
                 }
-                let merge_jmp_idx = self.curr_fn_mut().len();
+                let merge_jmp_idx = self.curr_fn().len();
                 self.insert(Instruction::JmpFalse(usize::MAX));
                 self.expression(node.rhs);
-                let pos = self.curr_fn_mut().len() + 2;
+                let pos = self.curr_fn().len() + 2;
                 self.insert(Instruction::Jmp(pos));
                 self.insert(Instruction::Push(Value::Bool(node.op == InfixOp::Or)));
-                self.curr_fn_mut()[merge_jmp_idx] =
-                    Instruction::JmpFalse(self.curr_fn_mut().len() - 1);
+                self.curr_fn_mut()[merge_jmp_idx] = Instruction::JmpFalse(self.curr_fn().len() - 1);
             }
             op => {
                 self.expression(node.lhs);
@@ -490,14 +545,13 @@ impl<'src> Compiler<'src> {
     fn assign_expr(&mut self, node: AnalyzedAssignExpr<'src>) {
         let assignee = self.resolve_var(node.assignee);
 
-        let idx = match assignee {
-            Variable::Local { idx } => idx,
-            Variable::Global { idx } => idx,
-            Variable::Unit => unreachable!("cannot assign to unit values"), // TODO: is this
-                                                                            // correct?
+        let ptr = match assignee {
+            Variable::Local { offset } => Pointer::Rel(offset),
+            Variable::Global { addr } => Pointer::Abs(addr),
+            Variable::Unit => unreachable!("cannot assign to unit values"),
         };
 
-        self.insert(Instruction::Push(Value::Int(idx as i64)));
+        self.insert(Instruction::Push(Value::Ptr(ptr)));
 
         let mut ptr_count = node.assignee_ptr_count;
         while ptr_count > 0 {
@@ -513,10 +567,9 @@ impl<'src> Compiler<'src> {
                 // load the assignee value
                 match assignee {
                     Variable::Unit => {}
-                    Variable::Local { .. } => self.insert(Instruction::GetVar),
-                    // TODO: implement globals
-                    Variable::Global { .. } => self.insert(Instruction::GetGlobal),
+                    _ => self.insert(Instruction::GetVar),
                 };
+
                 self.expression(node.expr);
                 self.insert(instruction);
             }
@@ -525,8 +578,7 @@ impl<'src> Compiler<'src> {
 
         match assignee {
             Variable::Unit => {}
-            Variable::Local { .. } => self.insert(Instruction::SetVar),
-            Variable::Global { .. } => self.insert(Instruction::SetGlobal),
+            _ => self.insert(Instruction::SetVar),
         };
     }
 

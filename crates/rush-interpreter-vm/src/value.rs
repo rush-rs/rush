@@ -11,20 +11,43 @@ pub enum Value {
     Bool(bool),
     Char(u8),
     Float(f64),
+    Ptr(Pointer),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Pointer {
+    Rel(isize),
+    Abs(usize),
+}
+
+impl Display for Pointer {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Pointer::Rel(offset) => write!(f, "*rel[{offset}]"),
+            Pointer::Abs(addr) => write!(f, "*abs[{addr}]"),
+        }
+    }
 }
 
 impl Value {
     pub(crate) fn unwrap_int(self) -> i64 {
         match self {
             Value::Int(value) => value,
-            _ => unreachable!("no illegal calls exist"),
+            _ => panic!("called `Value::unwrap_int` on a non-int value"),
         }
     }
 
     pub(crate) fn unwrap_bool(self) -> bool {
         match self {
             Value::Bool(value) => value,
-            _ => unreachable!("no illegal calls exist"),
+            _ => panic!("called `Value::unwrap_bool` on a non-bool value"),
+        }
+    }
+
+    pub(crate) fn unwrap_ptr(self) -> Pointer {
+        match self {
+            Value::Ptr(ptr) => ptr,
+            _ => panic!("called `Value::unwrap_ptr` on a non-ptr value"),
         }
     }
 
@@ -260,6 +283,10 @@ impl Display for Value {
                 "{val}{zero}",
                 zero = if val.fract() == 0.0 { ".0" } else { "" }
             ),
+            Value::Ptr(ptr) => match ptr {
+                Pointer::Rel(offset) => write!(f, "*rel[{offset}]"),
+                Pointer::Abs(addr) => write!(f, "*abs[{addr}]"),
+            },
         }
     }
 }

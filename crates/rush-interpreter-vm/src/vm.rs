@@ -1,27 +1,29 @@
 use std::{
     fmt::{self, Display, Formatter},
+    mem::size_of,
     thread::sleep,
     time::Duration,
 };
 
 use crate::{
     instruction::{Instruction, Program},
-    value::Value,
+    value::{Pointer, Value},
 };
 
 pub struct Vm {
-    /// Stores the program's globals.
-    globals: Vec<Value>,
     /// Working memory for temporary values
     stack: Vec<Value>,
+    /// Linear memory for variables.
+    mem: Vec<Option<Value>>,
+    /// The memory pointer points to the last free location in memory.
+    /// The value is always positive, however using `isize` is beneficial in order to avoid casts.
+    mem_ptr: isize,
     /// Holds information about the current position (like ip / fp).
     call_stack: Vec<CallFrame>,
 }
 
 #[derive(Debug, Default)]
 struct CallFrame {
-    /// Variable bindings for the current function.
-    mem: Vec<Option<Value>>,
     /// Specifies the instruction pointer relative to the function
     ip: usize,
     /// Specifies the function pointer
@@ -79,8 +81,9 @@ impl Default for Vm {
 impl Vm {
     pub fn new() -> Self {
         Self {
-            globals: vec![],
             stack: vec![],
+            mem: vec![],
+            mem_ptr: 0,
             // start execution at the first instruction of the prelude
             call_stack: vec![CallFrame::default()],
         }
@@ -128,7 +131,7 @@ impl Vm {
             let instruction = &program.0[self.call_frame().fp][self.call_frame().ip];
 
             println!(
-                "[{fp:02}/{ip:02}] {instr:12} | {stack:>40} | {mem}",
+                "[{fp:02}/{ip:02}] {instr:15} | {stack:>40} | mp = {mp} | used = {used_mem:4}b | {mem}",
                 fp = self.call_frame().fp,
                 ip = self.call_frame().ip,
                 instr = instruction.to_string(),
@@ -139,9 +142,9 @@ impl Vm {
                     .map(|v| v.to_string())
                     .collect::<Vec<String>>()
                     .join(", "),
-                mem = self
-                    .call_frame()
-                    .mem
+                mp = self.mem_ptr,
+                used_mem = self.mem.len() * size_of::<Value>(),
+                mem = self.mem[self.mem_ptr as usize..]
                     .iter()
                     .map(|v| match v {
                         Some(v) => v.to_string(),
@@ -175,6 +178,7 @@ impl Vm {
 
     fn run_instruction(&mut self, inst: &Instruction) -> Result<Option<i64>> {
         match inst {
+            Instruction::Nop => {}
             Instruction::Push(value) => self.push(*value)?,
             Instruction::Drop => {
                 self.pop();
@@ -196,36 +200,33 @@ impl Vm {
             Instruction::SetVarImm(_) | Instruction::SetVar => {
                 let val = self.pop();
 
-                let idx = match inst {
-                    Instruction::SetVarImm(idx) => *idx,
-                    _ => self.pop().unwrap_int() as usize,
+                let addr = match inst {
+                    Instruction::SetVarImm(Pointer::Rel(offset)) => {
+                        (self.mem_ptr + offset) as usize
+                    }
+                    Instruction::SetVarImm(Pointer::Abs(addr)) => *addr,
+                    _ => match self.pop().unwrap_ptr() {
+                        Pointer::Rel(offset) => (self.mem_ptr + offset) as usize,
+                        Pointer::Abs(addr) => addr,
+                    },
                 };
 
                 // if there is already an entry in the memory, use it.
                 // otherwise, new memory is allocated
-                match self.call_frame_mut().mem.get_mut(idx) {
+                match self.mem.get_mut(addr) {
                     Some(var) => *var = Some(val),
                     None => {
-                        self.call_frame_mut().mem.resize(idx + 1, None);
-                        self.call_frame_mut().mem[idx] = Some(val)
+                        self.mem.resize(addr + 1, None);
+                        self.mem[addr] = Some(val)
                     }
                 }
             }
             Instruction::GetVar => {
-                let idx = self.pop().unwrap_int() as usize;
-                self.push(self.call_frame().mem[idx].expect("variables are always initialized"))?
-            }
-            Instruction::SetGlobal => {
-                let val = self.pop();
-                let idx = self.pop().unwrap_int() as usize;
-                match self.globals.len() < idx + 1 {
-                    true => self.globals.push(val),
-                    false => self.globals[idx] = val,
-                }
-            }
-            Instruction::GetGlobal => {
-                let idx = self.pop().unwrap_int() as usize;
-                self.push(self.globals[idx])?
+                let addr = match self.pop().unwrap_ptr() {
+                    Pointer::Rel(offset) => (self.mem_ptr + offset) as usize,
+                    Pointer::Abs(addr) => addr,
+                };
+                self.push(self.mem[addr].expect("variables are always initialized"))?
             }
             Instruction::Call(idx) => {
                 if self.call_stack.len() >= CALL_STACK_LIMIT {
@@ -236,14 +237,18 @@ impl Vm {
                 }
 
                 // sets the function pointer and instruction pointer to the callee
-                self.call_stack.push(CallFrame {
-                    ip: 0,
-                    fp: *idx,
-                    mem: vec![],
-                });
+                self.call_stack.push(CallFrame { ip: 0, fp: *idx });
 
                 // must return because the ip would be incremented otherwise
                 return Ok(None);
+            }
+            Instruction::SetMp(offset) => {
+                self.mem_ptr += offset;
+                self.mem.resize(self.mem_ptr as usize + 1, None);
+            }
+            Instruction::RelToAddr(offset) => {
+                let addr = (self.mem_ptr + offset) as usize;
+                self.push(Value::Ptr(Pointer::Abs(addr)))?;
             }
             Instruction::Ret => {
                 self.call_stack.pop();

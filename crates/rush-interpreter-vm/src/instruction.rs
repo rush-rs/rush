@@ -2,7 +2,7 @@ use std::fmt::{self, Display, Formatter};
 
 use rush_analyzer::{AssignOp, InfixOp, PrefixOp, Type as AnalyzerType};
 
-use crate::Value;
+use crate::{value::Pointer, Value};
 
 pub struct Program(pub(crate) Vec<Vec<Instruction>>);
 
@@ -46,7 +46,7 @@ impl From<AnalyzerType> for Type {
             AnalyzerType::Float(0) => Self::Float,
             AnalyzerType::Bool(0) => Self::Bool,
             AnalyzerType::Char(0) => Self::Char,
-            _ => todo!(), // TODO: handle pointers
+            _ => unreachable!("this function is never called on pointers"),
         }
     }
 }
@@ -68,6 +68,8 @@ impl Display for Type {
 
 #[derive(Debug)]
 pub enum Instruction {
+    /// Does nothing.
+    Nop,
     /// Adds a new constant to stack.
     Push(Value),
     /// Pops the top-most value off the stack and discards the value.
@@ -76,6 +78,10 @@ pub enum Instruction {
     Clone,
     /// Calls a function (specified by index).
     Call(usize),
+    /// Adjusts the memory pointer by the given offset.
+    SetMp(isize),
+    /// Pushes a pointer which points to the absolute address of the given relative offset.
+    RelToAddr(isize),
     /// Returns from the current function call.
     Ret,
     /// Special instruction for exit calls.
@@ -84,21 +90,16 @@ pub enum Instruction {
     Jmp(usize),
     /// Jumps to the specified index if the value on the stack is `false`.
     JmpFalse(usize),
-    /// Sets the variable with the specified index to the value on top of the stack.
-    /// Also pops the top element from the stack in order to use it as the value.
-    SetVarImm(usize),
-    /// Sets the value of the variable whose index is stored on the top of the stack.
-    /// Pops the second from top element off the stack and uses it as the variable value.
+    /// Pops the top of the stack in order to use it as the variable's value.
+    /// Saves this value at the specified memory location.
+    SetVarImm(Pointer),
+    /// Pops the top value from the stack in order to use it as the variable's value.
+    /// Then pops the second value from the stack which is a pointer.
+    /// Saves this value at the memory location specified by the pointer.
     SetVar,
-    /// Retrieves the variable whose index stored in the value on top of the stack.
-    /// Pushes the variable's value onto the stack.
+    /// Pops the top value from the stack because it is a pointer specifying the target memory
+    /// address. The value saved at this address is then loaded and pushed onto the stack.
     GetVar,
-    /// Sets the value of the global variable whose index is stored on the top of the stack.
-    /// Pops the second from top element off the stack and uses it as the variable value.
-    SetGlobal,
-    /// Retrieves the global with the specified index and places it on top of the stack.
-    /// TODO: global pointers?
-    GetGlobal,
     /// Cast the current item on the stack to the specified type.
     Cast(Type),
 
@@ -187,17 +188,18 @@ impl TryFrom<PrefixOp> for Instruction {
 impl Display for Instruction {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
+            Instruction::Nop => write!(f, "nop"),
             Instruction::Push(val) => write!(f, "push {val}"),
             Instruction::Drop => write!(f, "pop"),
             Instruction::Clone => write!(f, "clone"),
             Instruction::Jmp(idx) => write!(f, "jmp {idx}"),
             Instruction::JmpFalse(idx) => write!(f, "jmpfalse {idx}"),
-            Instruction::SetVarImm(idx) => write!(f, "setvarimm {idx}"),
-            Instruction::SetVar => write!(f, "setvar"),
-            Instruction::GetVar => write!(f, "getvar"),
-            Instruction::SetGlobal => write!(f, "setglob"),
-            Instruction::GetGlobal => write!(f, "getglob"),
+            Instruction::SetVarImm(ptr) => write!(f, "svari {ptr}"),
+            Instruction::SetVar => write!(f, "svar"),
+            Instruction::GetVar => write!(f, "gvar"),
             Instruction::Call(idx) => write!(f, "call {idx}"),
+            Instruction::SetMp(idx) => write!(f, "setmp {idx}"),
+            Instruction::RelToAddr(offset) => write!(f, "reltoaddr {offset}"),
             Instruction::Cast(to) => write!(f, "cast {to}"),
             Instruction::Ret => write!(f, "ret"),
             Instruction::Exit => write!(f, "exit"),
