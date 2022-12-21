@@ -1,3 +1,6 @@
 fn main() {
-    let _ = exit(14);
+    let unit = unit();
+    let never = exit(14);
 }
+
+fn unit() {}
