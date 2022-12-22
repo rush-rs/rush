@@ -1,14 +1,14 @@
 use std::{
     env, fs,
-    path::PathBuf,
     process::{self, Command, Stdio},
 };
 
 use anyhow::{bail, Context};
 use rush_analyzer::ast::AnalyzedProgram;
 use rush_compiler_llvm::inkwell::targets::{TargetMachine, TargetTriple};
+use tempfile::tempdir;
 
-use crate::cli::{BuildArgs, RunArgs, CompilerBackend};
+use crate::cli::{BuildArgs, RunArgs};
 
 pub fn compile(ast: AnalyzedProgram, args: BuildArgs) -> anyhow::Result<()> {
     let target = match args.llvm_target.as_ref() {
@@ -30,52 +30,32 @@ pub fn compile(ast: AnalyzedProgram, args: BuildArgs) -> anyhow::Result<()> {
         println!("{ir}");
     }
 
-    let out = env::current_dir()
-        .with_context(|| "could not determine your working directory")?
-        .join({
-            let mut base = PathBuf::from(
-                args.path
-                    .file_stem()
-                    .with_context(|| "cannot obtain filestem of output file")?,
-            );
-            base.set_extension("o");
-            base
-        });
-    let out = out.to_string_lossy();
-
     // get output path
     let output = match args.output_file {
-        Some(out) => out,
-        None => args
-            .path
-            .file_stem()
-            .with_context(|| "cannot obtain filestem of output file")?
-            .into(),
+        Some(out) => out.with_extension("o"),
+        None => args.path.with_extension("o"),
     };
+
+    fs::write(&output, obj.as_slice())
+        .with_context(|| format!("cannot write to `{}`", output.to_string_lossy()))?;
 
     // if a non-native target is used, quit here
     if args.llvm_target.is_some() {
-        let mut path = output;
-        path.set_extension("o");
-        fs::write(&path, obj.as_slice())
-            .with_context(|| format!("cannot write to `{file}`", file = path.to_string_lossy()))?;
         return Ok(());
     }
 
-    fs::write(out.to_string(), obj.as_slice())
-        .with_context(|| format!("cannot write to `{file}`", file = out))?;
+    let bin_path = &output.with_extension("");
+
+    dbg!(&bin_path);
 
     // invoke gcc to link the file
     let command = Command::new("gcc")
-        .arg(&out.to_string())
+        .arg(&output)
         .arg("-o")
-        .arg(output)
+        .arg(bin_path)
         .stderr(Stdio::inherit())
         .output()
-        .unwrap_or_else(|err| {
-            eprintln!("could not invoke gcc: {err}");
-            process::exit(1);
-        });
+        .with_context(|| "could not invoke `gcc`")?;
 
     if !command.status.success() {
         bail!(
@@ -88,28 +68,16 @@ pub fn compile(ast: AnalyzedProgram, args: BuildArgs) -> anyhow::Result<()> {
 }
 
 pub fn run(ast: AnalyzedProgram, args: RunArgs) -> anyhow::Result<i64> {
-    let executable = env::current_dir()
-        .with_context(|| "could not determine your working directory")?
-        .join(
-            args.path
-                .file_stem()
-                .with_context(|| "cannot obtain filestem of output file")?,
-        );
-    let executable = executable.to_string_lossy();
+    let tmpdir = tempdir()?;
 
-    compile(
-        ast,
-        BuildArgs {
-            backend: CompilerBackend::Llvm,
-            output_file: None,
-            llvm_opt: args.llvm_opt,
-            llvm_target: None,
-            llvm_show_ir: false,
-            path: args.path,
-        },
-    )?;
+    let mut args: BuildArgs = args.try_into()?;
 
-    let command = Command::new(executable.to_string())
+    let executable_path = tmpdir.path().join("output");
+    args.output_file = Some(executable_path.clone());
+
+    compile(ast, args)?;
+
+    let command = Command::new(executable_path.to_string_lossy().to_string())
         .stderr(Stdio::inherit())
         .stdout(Stdio::inherit())
         .output()
