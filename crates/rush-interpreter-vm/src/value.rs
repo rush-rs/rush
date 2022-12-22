@@ -14,7 +14,7 @@ pub enum Value {
     Ptr(Pointer),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Pointer {
     Rel(isize),
     Abs(usize),
