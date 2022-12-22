@@ -59,7 +59,10 @@ fn main() -> anyhow::Result<()> {
                     println!("file read:        {file_read_time:?}");
                     println!("analyze:          {analyze_time:?}");
                     println!("compile:          {:?}", start.elapsed());
-                    println!("\x1b[90mtotal:            {:?}\x1b[0m", total_start.elapsed());
+                    println!(
+                        "\x1b[90mtotal:            {:?}\x1b[0m",
+                        total_start.elapsed()
+                    );
                 }
 
                 Ok(())
@@ -112,7 +115,10 @@ fn main() -> anyhow::Result<()> {
                     println!("file read:            {file_read_time:?}");
                     println!("analyze:              {analyze_time:?}");
                     println!("run / compile:        {:?}", start.elapsed());
-                    println!("\x1b[90mtotal:                {:?}\x1b[0m", total_start.elapsed());
+                    println!(
+                        "\x1b[90mtotal:                {:?}\x1b[0m",
+                        total_start.elapsed()
+                    );
                 }
 
                 Ok(exit_code)
@@ -137,7 +143,10 @@ fn main() -> anyhow::Result<()> {
                 if root_args.time {
                     println!("file read:        {file_read_time:?}");
                     println!("analyze:          {:?}", start.elapsed());
-                    println!("\x1b[90mtotal:            {:?}\x1b[0m", total_start.elapsed());
+                    println!(
+                        "\x1b[90mtotal:            {:?}\x1b[0m",
+                        total_start.elapsed()
+                    );
                 }
 
                 Ok(())

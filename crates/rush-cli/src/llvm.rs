@@ -1,6 +1,6 @@
 use std::{
-    env, fs,
-    process::{self, Command, Stdio},
+    fs,
+    process::{Command, Stdio},
 };
 
 use anyhow::{bail, Context};
