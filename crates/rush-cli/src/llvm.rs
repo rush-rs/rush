@@ -8,7 +8,7 @@ use anyhow::{bail, Context};
 use rush_analyzer::ast::AnalyzedProgram;
 use rush_compiler_llvm::inkwell::targets::{TargetMachine, TargetTriple};
 
-use crate::cli::{BuildArgs, CompilerBackend, RunArgs};
+use crate::cli::{BuildArgs, RunArgs, CompilerBackend};
 
 pub fn compile(ast: AnalyzedProgram, args: BuildArgs) -> anyhow::Result<()> {
     let target = match args.llvm_target.as_ref() {

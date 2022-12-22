@@ -50,14 +50,16 @@ fn main() -> anyhow::Result<()> {
                     CompilerBackend::Llvm => llvm::compile(tree, args)?,
                     CompilerBackend::Wasm => wasm::compile(tree, args)?,
                     CompilerBackend::RiscV => riscv::compile(tree, args)?,
-                    CompilerBackend::X86_64 => x86::compile(tree, args)?,
+                    CompilerBackend::X86_64 => {
+                        x86::compile(tree, args)?;
+                    }
                 }
 
                 if root_args.time {
-                    println!("file read: {file_read_time:?}");
-                    println!("analyze:   {analyze_time:?}");
-                    println!("compile:   {:?}", start.elapsed());
-                    println!("\x1b[90mtotal:     {:?}\x1b[0m", total_start.elapsed());
+                    println!("file read:        {file_read_time:?}");
+                    println!("analyze:          {analyze_time:?}");
+                    println!("compile:          {:?}", start.elapsed());
+                    println!("\x1b[90mtotal:            {:?}\x1b[0m", total_start.elapsed());
                 }
 
                 Ok(())
@@ -96,15 +98,21 @@ fn main() -> anyhow::Result<()> {
                         Err(err) => bail!(format!("vm crashed: {err}")),
                     },
                     RunnableBackend::Llvm => {
-                        llvm::run(tree, args).with_context(|| "compilation using llvm failed")?
+                        llvm::run(tree, args).with_context(|| "cannot run using `LLVM`")?
+                    }
+                    RunnableBackend::X86_64 => {
+                        x86::run(tree, args).with_context(|| "cannot run using `x86_64`")?
+                    }
+                    RunnableBackend::RiscV => {
+                        riscv::run(tree, args).with_context(|| "cannot run using `RISC-V`")?
                     }
                 };
 
                 if root_args.time {
-                    println!("file read: {file_read_time:?}");
-                    println!("analyze:   {analyze_time:?}");
-                    println!("run:       {:?}", start.elapsed());
-                    println!("\x1b[90mtotal:     {:?}\x1b[0m", total_start.elapsed());
+                    println!("file read:            {file_read_time:?}");
+                    println!("analyze:              {analyze_time:?}");
+                    println!("run / compile:        {:?}", start.elapsed());
+                    println!("\x1b[90mtotal:                {:?}\x1b[0m", total_start.elapsed());
                 }
 
                 Ok(exit_code)
@@ -127,9 +135,9 @@ fn main() -> anyhow::Result<()> {
                 analyze(&text, &path)?;
 
                 if root_args.time {
-                    println!("file read: {file_read_time:?}");
-                    println!("analyze:   {:?}", start.elapsed());
-                    println!("\x1b[90mtotal:     {:?}\x1b[0m", total_start.elapsed());
+                    println!("file read:        {file_read_time:?}");
+                    println!("analyze:          {:?}", start.elapsed());
+                    println!("\x1b[90mtotal:            {:?}\x1b[0m", total_start.elapsed());
                 }
 
                 Ok(())

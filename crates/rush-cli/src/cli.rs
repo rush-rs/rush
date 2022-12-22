@@ -1,5 +1,6 @@
 use std::{fmt::Display, path::PathBuf};
 
+use anyhow::anyhow;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use rush_compiler_llvm::inkwell::OptimizationLevel;
 
@@ -70,6 +71,21 @@ pub struct BuildArgs {
     pub path: PathBuf,
 }
 
+impl TryFrom<RunArgs> for BuildArgs {
+    type Error = anyhow::Error;
+
+    fn try_from(args: RunArgs) -> Result<Self, Self::Error> {
+        Ok(Self {
+            backend: args.backend.try_into()?,
+            output_file: None,
+            llvm_opt: args.llvm_opt,
+            llvm_target: None,
+            llvm_show_ir: false,
+            path: args.path,
+        })
+    }
+}
+
 #[derive(ValueEnum, Clone, Debug, PartialEq, Eq)]
 pub enum CompilerBackend {
     /// LLVM compiler: requires GCC
@@ -92,6 +108,27 @@ pub enum RunnableBackend {
     Vm,
     /// LLVM compiler: requires GCC
     Llvm,
+    /// RISC-V compiler: requires RISC-V toolchain (alias = riscv)
+    #[clap(alias = "riscv")]
+    RiscV,
+    /// X86_64 compiler: requires x86 toolchain (alias = x64)
+    #[clap(alias = "x64")]
+    X86_64,
+}
+
+impl TryFrom<RunnableBackend> for CompilerBackend {
+    type Error = anyhow::Error;
+
+    fn try_from(backend: RunnableBackend) -> Result<Self, Self::Error> {
+        match backend {
+            RunnableBackend::Tree | RunnableBackend::Vm => {
+                Err(anyhow!("cannot use interpreter backends for compilation"))
+            }
+            RunnableBackend::Llvm => Ok(CompilerBackend::Llvm),
+            RunnableBackend::RiscV => Ok(CompilerBackend::RiscV),
+            RunnableBackend::X86_64 => Ok(CompilerBackend::X86_64),
+        }
+    }
 }
 
 impl Display for CompilerBackend {
@@ -118,6 +155,8 @@ impl Display for RunnableBackend {
                 RunnableBackend::Tree => "tree",
                 RunnableBackend::Vm => "vm",
                 RunnableBackend::Llvm => "llvm",
+                RunnableBackend::RiscV => "risc-v",
+                RunnableBackend::X86_64 => "x86_64",
             }
         )
     }
