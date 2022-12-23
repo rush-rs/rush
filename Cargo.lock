@@ -560,6 +560,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rush-compiler-c"
+version = "0.1.0"
+dependencies = [
+ "rush-analyzer",
+]
+
+[[package]]
 name = "rush-compiler-llvm"
 version = "0.1.0"
 dependencies = [

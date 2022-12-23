@@ -10,6 +10,7 @@ members = [
     "crates/rush-compiler-llvm",
     "crates/rush-compiler-risc-v",
     "crates/rush-compiler-x86-64",
+    "crates/rush-compiler-c",
 ]
 package.authors = ["RubixDev", "MikMuellerDev"]
 package.edition = "2021"
