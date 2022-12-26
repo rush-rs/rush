@@ -1,5 +1,5 @@
 [package]
-name = "rush-compiler-c"
+name = "rush-transpiler-c"
 version = "0.1.0"
 authors.workspace = true
 edition = "2021"

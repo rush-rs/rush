@@ -1,0 +1,21 @@
+fn __rush_internal_pow_int(mut base: int, mut exp: int) -> int {
+    if exp < 0 {
+        return 0;
+    }
+    if exp == 0 {
+        return 1;
+    }
+
+    let mut acc = 1;
+    while exp > 1 {
+        if (exp & 1) == 1 {
+            acc *= base;
+        }
+        exp /= 2;
+        base *= base;
+    }
+
+    acc * base
+}
+
+fn main() {}

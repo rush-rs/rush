@@ -1,0 +1,29 @@
+fn __rush_internal_cast_int_to_char(from: int) -> int {
+    if from > 127 {
+        127
+    } else if from < 0 {
+        0
+    } else {
+        from
+    }
+}
+
+fn __rush_internal_cast_float_to_char(from: float) -> int {
+    if from > 127.0 {
+        127
+    } else if from < 0.0 {
+        0
+    } else {
+        from as int
+    }
+}
+
+fn __rush_internal_add_char(lhs: char, rhs: char) -> char {
+    ((lhs as int + rhs as int) & 127) as char
+}
+
+fn __rush_internal_sub_char(lhs: char, rhs: char) -> char {
+    ((lhs as int - rhs as int) & 127) as char
+}
+
+fn main() {}

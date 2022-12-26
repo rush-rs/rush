@@ -54,24 +54,32 @@ backends = {
         && riscv64-linux-gnu-ld output.o -L corelib -lcore-rush-riscv-lp64d -static -nostdlib -no-relax -o test \
         && qemu-riscv64 ./test
     """,
+    'rush-transpiler-c': 'gcc output.c -o out && ./out',
 }
 
 
 def run():
     failed = []
+    tests_ran = 0
     for name, cmd in backends.items():
         if not name.endswith(sys.argv[1] if len(sys.argv) >= 2 else ''):
             continue
+        tests_ran += 1
         os.chdir(f'../../crates/{name}')
         for file, code in tests.items():
             if not run_test(file, code, name, cmd):
                 failed += [[name, file]]
 
     if failed:
-        print(f'=== {len(failed)} test(s) failed ===')
+        print(f'=== {len(failed)} of {tests_ran} test(s) failed ===')
         for test in failed:
             print(f'    {test[1].ljust(15)} {test[0]}')
         sys.exit(1)
+
+    if tests_ran == 0:
+        print('=== WARNING: no tests executed ===')
+    else:
+        print(f'=== {tests_ran} test(s) passed ===')
 
 
 def run_test(file: str, code: int, name: str, cmd: str):

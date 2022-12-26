@@ -1,6 +1,7 @@
 use rush_analyzer::Diagnostic;
 use transpiler::Transpiler;
 
+mod c_ast;
 mod transpiler;
 
 /// Transpiles rush source code to C89 / C90.
@@ -9,8 +10,9 @@ mod transpiler;
 pub fn transpile<'tree>(
     text: &'tree str,
     path: &'tree str,
+    emit_comments: bool,
 ) -> Result<(String, Vec<Diagnostic<'tree>>), Vec<Diagnostic<'tree>>> {
     let (tree, diagnostics) = rush_analyzer::analyze(text, path)?;
-    let c_code = Transpiler::new().transpile(tree);
-    Ok((c_code, diagnostics))
+    let c_ast = Transpiler::new(emit_comments).transpile(tree);
+    Ok((c_ast.to_string(), diagnostics))
 }
