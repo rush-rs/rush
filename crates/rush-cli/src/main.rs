@@ -8,6 +8,7 @@ use rush_interpreter_tree::Interpreter;
 
 mod cli;
 
+mod c;
 mod llvm;
 mod riscv;
 mod wasm;
@@ -53,6 +54,7 @@ fn main() -> anyhow::Result<()> {
                     CompilerBackend::X86_64 => {
                         x86::compile(tree, args)?;
                     }
+                    CompilerBackend::C => c::compile(tree, args)?,
                 }
 
                 if root_args.time {
@@ -103,12 +105,14 @@ fn main() -> anyhow::Result<()> {
                     RunnableBackend::Llvm => {
                         llvm::run(tree, args).with_context(|| "cannot run using `LLVM`")?
                     }
-                    RunnableBackend::X86_64 => {
-                        x86::run(tree, args).with_context(|| "cannot run using `x86_64`")?
-                    }
                     RunnableBackend::RiscV => {
                         riscv::run(tree, args).with_context(|| "cannot run using `RISC-V`")?
                     }
+                    RunnableBackend::X86_64 => {
+                        x86::run(tree, args).with_context(|| "cannot run using `x86_64`")?
+                    }
+                    RunnableBackend::C => c::run(tree, args)
+                        .with_context(|| "cannot run using `ANSI C transpiler`")?,
                 };
 
                 if root_args.time {

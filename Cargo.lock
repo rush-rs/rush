@@ -556,6 +556,7 @@ dependencies = [
  "rush-compiler-x86-64",
  "rush-interpreter-tree",
  "rush-interpreter-vm",
+ "rush-transpiler-c",
  "tempfile",
 ]
 

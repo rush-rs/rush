@@ -1,5 +1,5 @@
 use rush_analyzer::Diagnostic;
-use transpiler::Transpiler;
+pub use transpiler::Transpiler;
 
 mod c_ast;
 mod transpiler;

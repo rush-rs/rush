@@ -98,6 +98,8 @@ pub enum CompilerBackend {
     /// X86_64 compiler: requires x86 toolchain (alias = x64)
     #[clap(alias = "x64")]
     X86_64,
+    /// ANSI C transpiler: requires GCC
+    C,
 }
 
 #[derive(ValueEnum, Clone, Debug, PartialEq, Eq)]
@@ -114,6 +116,8 @@ pub enum RunnableBackend {
     /// X86_64 compiler: requires x86 toolchain (alias = x64)
     #[clap(alias = "x64")]
     X86_64,
+    /// ANSI C transpiler: requires GCC
+    C,
 }
 
 impl TryFrom<RunnableBackend> for CompilerBackend {
@@ -127,6 +131,7 @@ impl TryFrom<RunnableBackend> for CompilerBackend {
             RunnableBackend::Llvm => Ok(CompilerBackend::Llvm),
             RunnableBackend::RiscV => Ok(CompilerBackend::RiscV),
             RunnableBackend::X86_64 => Ok(CompilerBackend::X86_64),
+            RunnableBackend::C => Ok(CompilerBackend::C),
         }
     }
 }
@@ -141,6 +146,7 @@ impl Display for CompilerBackend {
                 CompilerBackend::Wasm => "wasm",
                 CompilerBackend::RiscV => "risc-v",
                 CompilerBackend::X86_64 => "x86_64",
+                CompilerBackend::C => "c",
             }
         )
     }
@@ -157,6 +163,7 @@ impl Display for RunnableBackend {
                 RunnableBackend::Llvm => "llvm",
                 RunnableBackend::RiscV => "risc-v",
                 RunnableBackend::X86_64 => "x86_64",
+                RunnableBackend::C => "c",
             }
         )
     }

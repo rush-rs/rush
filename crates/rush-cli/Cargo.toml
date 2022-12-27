@@ -18,4 +18,5 @@ rush-compiler-wasm = { version = "0.1.0", path = "../rush-compiler-wasm" }
 rush-compiler-x86-64 = { version = "0.1.0", path = "../rush-compiler-x86-64" }
 rush-interpreter-tree = { version = "0.1.0", path = "../rush-interpreter-tree" }
 rush-interpreter-vm = { version = "0.1.0", path = "../rush-interpreter-vm" }
+rush-transpiler-c = { version = "0.1.0", path = "../rush-transpiler-c" }
 tempfile = "3.3.0"
