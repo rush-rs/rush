@@ -1,0 +1,23 @@
+fn main() {
+    let a = {
+        let mut b = 10;
+        {
+            b += 10;
+        };
+        {
+            let b = 10;
+            b;
+        };
+        {
+            b
+        }
+    };
+
+    let b = {};
+
+    call_exit(a, b)
+}
+
+fn call_exit(code: int, a: ()) {
+    exit(code)
+}

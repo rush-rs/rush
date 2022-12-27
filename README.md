@@ -25,6 +25,10 @@ execution and compilation.
 - [RISC-V Compiler](./crates/rush-compiler-risc-v/)
 - [x86_64 Compiler](./crates/rush-compiler-x86-64/)
 
+### Transpilers
+
+- [ANSI C Transpiler](./crates/rush-transpiler-c/)
+
 ### Toolchain
 
 - [Language Server](./crates/rush-ls/)

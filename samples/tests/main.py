@@ -37,6 +37,7 @@ tests = {
     './pointers/types.rush': 46,
     './pointers/swap.rush': 47,
     './pointers/for_loop.rush': 15,
+    './blocks.rush': 20,
 }
 
 # saves the backend an any additional commands to be executed after `cargo r`
@@ -64,9 +65,9 @@ def run():
     for name, cmd in backends.items():
         if not name.endswith(sys.argv[1] if len(sys.argv) >= 2 else ''):
             continue
-        tests_ran += 1
         os.chdir(f'../../crates/{name}')
         for file, code in tests.items():
+            tests_ran += 1
             if not run_test(file, code, name, cmd):
                 failed += [[name, file]]
 
