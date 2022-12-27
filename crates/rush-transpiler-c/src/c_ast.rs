@@ -155,12 +155,17 @@ impl Display for FnDefinition {
             .collect::<Vec<String>>()
             .join(", ");
 
+        let block = display_stmts(&self.body);
+        let body = match block.contains('\n') {
+            true => format!("{{\n{block}\n}}"),
+            false => format!("{{ {block} }}", block = block.trim_start()),
+        };
+
         write!(
             f,
-            "{type_} {name}({params}) {{\n{body}\n}}",
+            "{type_} {name}({params}) {body}",
             type_ = self.type_,
             name = self.name,
-            body = display_stmts(&self.body)
         )
     }
 }
@@ -334,7 +339,12 @@ impl Display for CallExpr {
             .collect::<Vec<String>>()
             .join(", ");
 
-        write!(f, "{func}({args})", func = self.func)
+        let args = match args.contains('\n') {
+            true => format!("(\n    {args}\n)", args = args.replace('\n', "\n    ")),
+            false => format!("({args})"),
+        };
+
+        write!(f, "{func}{args}", func = self.func)
     }
 }
 
@@ -359,13 +369,15 @@ pub struct InfixExpr {
 
 impl Display for InfixExpr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{lhs} {op} {rhs}",
-            lhs = self.lhs,
-            op = self.op,
-            rhs = self.rhs
-        )
+        let lhs = self.lhs.to_string();
+        let rhs = self.rhs.to_string();
+
+        let split_here = lhs.split('\n').last().unwrap().len() > 80;
+
+        match split_here {
+            true => write!(f, "{lhs}\n    {op} {rhs}", op = self.op),
+            false => write!(f, "{lhs} {op} {rhs}", op = self.op),
+        }
     }
 }
 
