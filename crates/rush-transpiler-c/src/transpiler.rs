@@ -16,26 +16,38 @@ macro_rules! comment {
 }
 
 pub struct Transpiler<'src> {
+    /// Specifies whether the transpiler is currently inside the `main` fn.
     in_main_fn: bool,
+    /// The first element is the global scope while last element is the current scope.
     scopes: Vec<HashMap<&'src str, String>>,
+    /// Maps a function's name to a mangeled name.
     funcs: HashMap<&'src str, String>,
+    /// Counter which is increased if a variable is declared.
     let_cnt: usize,
+    /// Specifies which header files need to be included.
     required_includes: HashSet<&'static str>,
+    /// If set to `true`, the transpiler will emit some comments in the `C` code.
     emit_comments: bool,
+    /// The first element is the most outer loop while the last element is the current loop.
     loops: Vec<Loop>,
+    /// Counter for `break` labels which is increased during loop generation.
     break_label_cnt: usize,
+    /// Specifies which functions from the corelib are required.
     required_corelib_functions: HashSet<&'static str>,
 }
 
 struct Loop {
-    loop_head_label: String,
+    head_label: String,
     break_label: String,
 }
 
 impl<'src> Transpiler<'src> {
+    /// Creates a new [`Transpiler`].
     pub fn new(emit_comments: bool) -> Self {
         let mut required_includes = HashSet::new();
+        // usages of booleans are hard to track, therefore `stdbool.h` is always included
         required_includes.insert("stdbool.h");
+
         Self {
             in_main_fn: false,
             scopes: vec![HashMap::new()],
@@ -49,6 +61,9 @@ impl<'src> Transpiler<'src> {
         }
     }
 
+    /// Helper function for creating variable identifiers.
+    /// Automatically generates an identifier and increases the `let_cnt`.
+    /// Inserts the variable's name into the current scope and returns the ident.
     fn insert_into_scope(&mut self, name: &'src str) -> String {
         let ident = format!("{name}{}", self.let_cnt);
         self.let_cnt += 1;
@@ -59,6 +74,7 @@ impl<'src> Transpiler<'src> {
         ident
     }
 
+    /// Helper function for getting the mangeled name from a pure identifier.
     fn resolve_name(&'src self, name: &str) -> &'src str {
         for scope in self.scopes.iter().rev() {
             if let Some(value) = scope.get(name) {
@@ -195,6 +211,9 @@ impl<'src> Transpiler<'src> {
         }
     }
 
+    /// Required for adding the function prototypes first.
+    /// In rush, order of functions is irrelevant.
+    /// Therefore, the `C` code must also not rely on function order.
     fn fn_signature(&mut self, node: &AnalyzedFunctionDefinition<'src>) {
         let name = format!("{name}{cnt}", name = node.name, cnt = self.funcs.len());
         self.funcs.insert(node.name, name);
@@ -239,7 +258,6 @@ impl<'src> Transpiler<'src> {
             .flat_map(|s| self.statement(s))
             .collect();
 
-        // TODO: insert return 0 in main when there is no expr
         if let Some(expr) = node.block.expr {
             let (mut stmts, expr) = self.expression(expr);
             body.append(&mut stmts);
@@ -273,13 +291,14 @@ impl<'src> Transpiler<'src> {
             AnalyzedStatement::Loop(node) => self.loop_stmt(node),
             AnalyzedStatement::While(node) => self.while_stmt(node),
             AnalyzedStatement::For(node) => self.for_stmt(node),
+            // for `break` and `continue` jumps, `goto` is used because of rush's semantics
             AnalyzedStatement::Break => {
                 let loop_ = self.loops.last_mut().expect("there is always a loop");
                 vec![Statement::Goto(loop_.break_label.clone())]
             }
             AnalyzedStatement::Continue => {
                 let loop_ = self.loops.last_mut().expect("there is always a loop");
-                vec![Statement::Goto(loop_.loop_head_label.clone())]
+                vec![Statement::Goto(loop_.head_label.clone())]
             }
             AnalyzedStatement::Expr(node) => {
                 let (mut stmts, expr) = self.expression(node);
@@ -325,11 +344,14 @@ impl<'src> Transpiler<'src> {
         let head_label = format!("head_{}", self.break_label_cnt);
         self.break_label_cnt += 1;
         self.loops.push(Loop {
-            loop_head_label: head_label.clone(),
+            head_label: head_label.clone(),
             break_label: break_label.clone(),
         });
 
-        let mut body = vec![Statement::Label(head_label)];
+        let mut body = vec![];
+        comment!(self, body, "loop");
+        body.push(Statement::Label(head_label.clone()));
+
         let mut stmts = match self.block_expr(node.block) {
             (mut stmts, Some(expr)) => {
                 stmts.push(Statement::Expr(expr));
@@ -338,16 +360,12 @@ impl<'src> Transpiler<'src> {
             (stmts, None) => stmts,
         };
         body.append(&mut stmts);
+        body.push(Statement::Goto(head_label));
+        body.push(Statement::Label(break_label));
 
         self.loops.pop();
 
-        vec![
-            Statement::While(WhileStmt {
-                cond: Expression::Bool(true),
-                body,
-            }),
-            Statement::Label(break_label),
-        ]
+        body
     }
 
     fn while_stmt(&mut self, node: AnalyzedWhileStmt<'src>) -> Vec<Statement> {
@@ -355,7 +373,10 @@ impl<'src> Transpiler<'src> {
         let head_label = format!("head_{}", self.break_label_cnt);
         self.break_label_cnt += 1;
 
-        let mut cond_stmts = vec![Statement::Label(head_label.clone())];
+        let mut cond_stmts = vec![];
+        comment!(self, cond_stmts, "while");
+        cond_stmts.push(Statement::Label(head_label.clone()));
+
         let (mut stmts, cond) = match self.expression(node.cond) {
             (stmts, Some(expr)) => (stmts, expr),
             (stmts, None) => return stmts,
@@ -367,14 +388,14 @@ impl<'src> Transpiler<'src> {
                 expr: Expression::Grouped(Box::new(cond)),
                 op: PrefixOp::Not,
             })),
-            then_block: vec![Statement::Break],
+            then_block: vec![Statement::Goto(break_label.clone())],
             else_block: None,
         });
 
         cond_stmts.push(cond_check);
 
         self.loops.push(Loop {
-            loop_head_label: head_label,
+            head_label: head_label.clone(),
             break_label: break_label.to_string(),
         });
 
@@ -390,19 +411,16 @@ impl<'src> Transpiler<'src> {
 
         self.loops.pop();
 
-        vec![
-            Statement::While(WhileStmt {
-                cond: Expression::Bool(true),
-                body: cond_stmts,
-            }),
-            Statement::Label(break_label),
-        ]
+        cond_stmts.push(Statement::Goto(head_label));
+        cond_stmts.push(Statement::Label(break_label));
+
+        cond_stmts
     }
 
     fn for_stmt(&mut self, node: AnalyzedForStmt<'src>) -> Vec<Statement> {
         self.scopes.push(HashMap::new());
-
         let type_ = node.initializer.result_type().into();
+
         let (mut init_stmts, init) = self.expression(node.initializer);
         if let Some(expr) = init {
             let name = self.insert_into_scope(node.ident);
@@ -412,9 +430,13 @@ impl<'src> Transpiler<'src> {
 
         let break_label = format!("break_{}", self.break_label_cnt);
         let head_label = format!("head_{}", self.break_label_cnt);
+        let continue_label = format!("continue_{}", self.break_label_cnt);
         self.break_label_cnt += 1;
 
         let mut body = vec![];
+        comment!(self, init_stmts, "for");
+        init_stmts.push(Statement::Label(head_label.clone()));
+
         let (mut stmts, cond) = match self.expression(node.cond) {
             (stmts, Some(expr)) => (stmts, expr),
             (mut stmts, None) => {
@@ -435,14 +457,14 @@ impl<'src> Transpiler<'src> {
                 expr: Expression::Grouped(Box::new(cond)),
                 op: PrefixOp::Not,
             })),
-            then_block: vec![Statement::Break],
+            then_block: vec![Statement::Goto(break_label.clone())],
             else_block: None,
         });
 
         body.push(cond_check);
 
         self.loops.push(Loop {
-            loop_head_label: head_label.clone(),
+            head_label: continue_label.clone(),
             break_label: break_label.clone(),
         });
 
@@ -455,17 +477,15 @@ impl<'src> Transpiler<'src> {
         };
 
         body.append(&mut stmts);
-        body.push(Statement::Label(head_label));
+        body.push(Statement::Label(continue_label));
         body.append(&mut upd_stmts);
-
-        init_stmts.push(Statement::While(WhileStmt {
-            cond: Expression::Bool(true),
-            body,
-        }));
 
         self.scopes.pop();
         self.loops.pop();
 
+        init_stmts.append(&mut body);
+
+        init_stmts.push(Statement::Goto(head_label));
         init_stmts.push(Statement::Label(break_label));
         init_stmts
     }
@@ -604,8 +624,6 @@ impl<'src> Transpiler<'src> {
         let (lhs_type, rhs_type) = (node.lhs.result_type(), node.rhs.result_type());
         let (mut lhs_stmts, lhs) = self.expression(node.lhs);
         let (mut rhs_stmts, rhs) = self.expression(node.rhs);
-
-        // TODO: handle char add + other special cases
 
         match (lhs_type, rhs_type, node.op) {
             (Type::Char(0), Type::Char(0), InfixOp::Plus | InfixOp::Minus)
