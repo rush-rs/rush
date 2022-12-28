@@ -1,0 +1,7 @@
+fn main() {
+    foo(exit(16))
+}
+
+fn foo(a: int) -> int {
+    exit(a)
+}

@@ -1,0 +1,20 @@
+fn main() {
+    let mut two = 2;
+    let mut to_two = &two;
+    let to_to_two = &to_two;
+
+    **to_to_two **= 3; // two is now 8
+
+    let mut a = 'a';
+    let to_a = &a;
+
+    let mut b = 'b';
+    let to_b = &b;
+
+    *to_a += *to_b; // a is now 67 as char
+
+    *to_a -= 'c'; // a is now 96 as char
+
+    // expected exit-code: 104
+    exit(a as int + two)
+}

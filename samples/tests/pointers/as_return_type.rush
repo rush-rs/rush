@@ -1,0 +1,10 @@
+fn main() {
+    let _res = returns_pointer();
+    exit(69)
+}
+
+fn returns_pointer() -> **int {
+    let mut a = 42;
+    let mut to_a = &a;
+    &to_a
+}

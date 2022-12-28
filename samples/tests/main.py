@@ -5,21 +5,22 @@ import sys
 
 # maps an input file to a desired exit-code
 tests = {
-    './complete.rush': 50,
-    './loops.rush': 45,
-    './float_casts.rush': 2,
-    './pow.rush': 26,
-    './fib.rush': 110,
-    './globals.rush': 44,
-    './if_else.rush': 20,
-    './nan.rush': 11,
-    './char.rush': 100,
-    './wrapping.rush': 42,
-    './exit_0.rush': 0,
+    './basic/complete.rush': 50,
+    './basic/loops.rush': 45,
+    './basic/float_casts.rush': 2,
+    './basic/pow.rush': 26,
+    './basic/fib.rush': 110,
+    './basic/globals.rush': 44,
+    './basic/if_else.rush': 20,
+    './basic/nan.rush': 11,
+    './basic/char.rush': 100,
+    './basic/wrapping.rush': 42,
+    './basic/exit_0.rush': 0,
+    './basic/blocks.rush': 20,
     # 'evil exits' test if the `!` type can occur everywhere
     './exits/infix.rush': 5,
     './exits/if_else.rush': 6,
-    './exits/calls.rush': 7,
+    './exits/nested_exit.rush': 7,
     './exits/while.rush': 8,
     './exits/for_1.rush': 9,
     './exits/for_2.rush': 10,
@@ -28,19 +29,21 @@ tests = {
     './exits/logical_and.rush': 13,
     './exits/let.rush': 14,
     './exits/final_fn_expr.rush': 15,
+    './exits/in_call.rush': 16,
     # pointers
     './pointers/basic.rush': 42,
     './pointers/assignments.rush': 43,
     './pointers/depth.rush': 121,
     './pointers/globals.rush': 44,
-    './pointers/fn_boundaries.rush': 45,
+    './pointers/in_params.rush': 45,
     './pointers/types.rush': 46,
     './pointers/swap.rush': 47,
     './pointers/for_loop.rush': 15,
-    './blocks.rush': 20,
+    './pointers/assignment_edge_cases.rush': 104,
+    './pointers/as_return_type.rush': 69,
 }
 
-# saves the backend an any additional commands to be executed after `cargo r`
+# saves the backend and any additional commands to be executed after `cargo r`
 backends = {
     'rush-interpreter-tree': '',
     'rush-interpreter-vm': '',
@@ -62,25 +65,37 @@ backends = {
 def run():
     failed = []
     tests_ran = 0
+
+    backends_ran = set()
+    failed_backends = set()
+
     for name, cmd in backends.items():
         if not name.endswith(sys.argv[1] if len(sys.argv) >= 2 else ''):
             continue
+        backends_ran.add(name)
         os.chdir(f'../../crates/{name}')
         for file, code in tests.items():
             tests_ran += 1
             if not run_test(file, code, name, cmd):
+                failed_backends.add(name)
                 failed += [[name, file]]
 
-    if failed:
-        print(f'=== {len(failed)} of {tests_ran} test(s) failed ===')
-        for test in failed:
-            print(f'    {test[1].ljust(15)} {test[0]}')
-        sys.exit(1)
-
+    print('=== Summary ===')
     if tests_ran == 0:
-        print('=== WARNING: no tests executed ===')
+        print('    => WARNING: no tests executed')
     else:
-        print(f'=== {tests_ran} test(s) passed ===')
+        print(f'    => {len(failed)} of {tests_ran} test(s) failed')
+    for name, _ in backends.items():
+        if name in backends_ran:
+            if name in failed_backends:
+                print(f'    \x1b[1;31mFAIL\x1b[1;0m: {name}')
+            else:
+                print(f'    \x1b[1;32mPASS\x1b[1;0m: {name}')
+        else:
+            print(f'    \x1b[2mSKIP\x1b[1;0m: {name}')
+
+    if failed:
+        sys.exit(1)
 
 
 def run_test(file: str, code: int, name: str, cmd: str):
