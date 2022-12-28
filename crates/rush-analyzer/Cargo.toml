@@ -1,6 +1,6 @@
 [package]
 name = "rush-analyzer"
-version = "0.1.0"
+version = "0.1.1"
 authors.workspace = true
 edition = "2021"
 license.workspace = true
@@ -8,4 +8,4 @@ repository.workspace = true
 description = "A semantic analyzer and type-annotator for the rush programming language"
 
 [dependencies]
-rush-parser = { path = "../rush-parser/", version = "0.1.0" }
+rush-parser = "0.1.1"
