@@ -641,11 +641,11 @@ impl<'src> Analyzer<'src> {
         }
 
         // insert and do additional checks if variable is shadowed
-        if let Some(old) = self.scope_mut().insert(
+        if let Some(shadowed) = self.scope_mut().insert(
             node.name.inner,
             Variable {
                 type_: match node.type_.map_or(expr.result_type(), |type_| type_.inner) {
-                    // map `!` to `{unknown}` to prevent further misleading warnings
+                    // map `!` to `{unknown}` to prevent misleading warnings
                     Type::Never => Type::Unknown,
                     type_ => type_,
                 },
@@ -656,7 +656,7 @@ impl<'src> Analyzer<'src> {
             },
         ) {
             // a previous variable is shadowed by this declaration, analyze its use
-            if !old.used && !node.name.inner.starts_with('_') {
+            if !shadowed.used && !node.name.inner.starts_with('_') {
                 self.warn(
                     format!("unused variable `{}`", node.name.inner),
                     vec![format!(
@@ -664,17 +664,17 @@ impl<'src> Analyzer<'src> {
                         node.name.inner
                     )
                     .into()],
-                    old.span,
+                    shadowed.span,
                 );
                 self.hint(
                     format!("variable `{}` shadowed here", node.name.inner),
                     node.name.span,
                 );
-            } else if old.mutable && !old.mutated {
+            } else if shadowed.mutable && !shadowed.mutated {
                 self.info(
                     format!("variable `{}` does not need to be mutable", node.name.inner),
                     vec![],
-                    old.span,
+                    shadowed.span,
                 );
             }
         }
@@ -851,12 +851,12 @@ impl<'src> Analyzer<'src> {
         match (never_loops, condition_is_const_true) {
             // if the condition is always `false`, return nothing
             (true, _) => None,
-            // else if the condition is always `true`, return an `AnalyzedLoopStmt`
+            // if the condition is always `true`, return an `AnalyzedLoopStmt`
             (false, true) => Some(AnalyzedStatement::Loop(AnalyzedLoopStmt {
                 block,
                 never_terminates,
             })),
-            // else return an `AnalyzedWhileStmt`
+            // otherwise, return an `AnalyzedWhileStmt`
             (false, false) => Some(AnalyzedStatement::While(AnalyzedWhileStmt {
                 cond,
                 block,
