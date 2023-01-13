@@ -148,7 +148,13 @@ impl<'src> Compiler<'src> {
         self.used_float_registers = prev_used_float_registers.clone();
         let result_reg = match result_type {
             Type::Unit | Type::Never => None,
-            Type::Int(0) | Type::Char(0) | Type::Bool(0) => {
+            Type::Float(0) => {
+                let reg = self.get_free_float_register();
+                self.function_body
+                    .push(Instruction::Movsd(reg.into(), FloatRegister::Xmm0.into()));
+                Some(Value::Float(reg.into()))
+            }
+            Type::Int(_) | Type::Float(_) | Type::Char(_) | Type::Bool(_) => {
                 let size = Size::try_from(result_type).expect("int, char and bool have a size");
                 let reg = self.get_free_register(size);
                 self.function_body.push(Instruction::Mov(
@@ -157,14 +163,7 @@ impl<'src> Compiler<'src> {
                 ));
                 Some(Value::Int(reg.into()))
             }
-            Type::Float(0) => {
-                let reg = self.get_free_float_register();
-                self.function_body
-                    .push(Instruction::Movsd(reg.into(), FloatRegister::Xmm0.into()));
-                Some(Value::Float(reg.into()))
-            }
             Type::Unknown => unreachable!("the analyzer guarantees one of the above to match"),
-            _ => todo!(), // TODO: handle pointers
         };
 
         // restore previously used caller-saved registers from stack

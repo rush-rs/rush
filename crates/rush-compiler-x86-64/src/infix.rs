@@ -54,11 +54,17 @@ impl<'src> Compiler<'src> {
             }
             // integer division
             (Some(Register::Int(left)), Some(Value::Int(right)), InfixOp::Div | InfixOp::Rem) => {
+                // free the rhs register
+                if let IntValue::Register(_) = &right {
+                    self.used_registers.pop();
+                }
+
+                // free the lhs register
+                self.used_registers.pop();
+
                 // make sure the rax and rdx registers are free
                 let spilled_rax = self.spill_int_if_used(IntRegister::Rax);
                 let spilled_rdx = self.spill_int_if_used(IntRegister::Rdx);
-
-                let pop_rhs_reg = matches!(&right, IntValue::Register(_));
 
                 // move lhs result into rax
                 // analyzer guarantees `left` and `right` to be 8 bytes in size
@@ -80,11 +86,6 @@ impl<'src> Compiler<'src> {
                     }
                 };
 
-                // free the rhs register
-                if pop_rhs_reg {
-                    self.used_registers.pop();
-                }
-
                 // sign-extend lhs to 128 bits (required for IDIV)
                 self.function_body.push(Instruction::Cqo);
 
@@ -101,6 +102,10 @@ impl<'src> Compiler<'src> {
                         _ => unreachable!("this arm only matches with `/` or `%`"),
                     }),
                 ));
+
+                // allocate result reg as used
+                let _new_reg = self.get_free_register(Size::Qword);
+                debug_assert_eq!(left, _new_reg);
 
                 // reload spilled registers
                 self.reload_int_if_used(spilled_rax);

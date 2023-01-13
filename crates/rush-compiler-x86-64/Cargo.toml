@@ -7,4 +7,4 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-rush-analyzer = { path = "../rush-analyzer", version = "0.1.0" }
+rush-analyzer = { path = "../rush-analyzer", version = "0.1.2" }

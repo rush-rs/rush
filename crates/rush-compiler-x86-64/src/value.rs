@@ -47,6 +47,10 @@ impl Pointer {
     pub fn new(size: Size, base: IntRegister, offset: Offset) -> Self {
         Self { size, base, offset }
     }
+
+    pub fn in_size(self, size: Size) -> Self {
+        Self { size, ..self }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,9 +85,10 @@ impl TryFrom<Type> for Size {
         match value {
             Type::Int(0) | Type::Float(0) => Ok(Size::Qword),
             Type::Bool(0) | Type::Char(0) => Ok(Size::Byte),
+            // pointers are 64-bit on x86_64
+            Type::Int(_) | Type::Float(_) | Type::Bool(_) | Type::Char(_) => Ok(Size::Qword),
             Type::Unit | Type::Never => Err(()),
             Type::Unknown => unreachable!("the analyzer guarantees one of the above to match"),
-            _ => todo!(), // TODO: handle pointers
         }
     }
 }

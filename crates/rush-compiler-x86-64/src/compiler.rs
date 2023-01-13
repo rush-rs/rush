@@ -1180,6 +1180,14 @@ impl<'src> Compiler<'src> {
     }
 
     fn prefix_expr(&mut self, node: AnalyzedPrefixExpr<'src>) -> Option<Value> {
+        if let (AnalyzedExpression::Ident(ident), PrefixOp::Ref) = (&node.expr, node.op) {
+            let reg = self.get_free_register(Size::Qword);
+            let var = self.get_var(ident.ident).as_ref()?;
+            self.function_body
+                .push(Instruction::Lea(reg, var.ptr.clone()));
+            return Some(Value::Int(reg.into()));
+        }
+
         let expr_type = node.expr.result_type();
         let expr = self.expression(node.expr);
         match (expr, expr_type, node.op) {
@@ -1228,6 +1236,35 @@ impl<'src> Compiler<'src> {
                 }
                 IntValue::Immediate(num) => Some(Value::Int(IntValue::Immediate(num ^ 1))),
             },
+            (
+                Some(Value::Int(value)),
+                Type::Int(count) | Type::Float(count) | Type::Bool(count) | Type::Char(count),
+                PrefixOp::Deref,
+            ) if count > 0 => {
+                let result_size = Size::try_from(expr_type.sub_deref().expect("count is > 0"))
+                    .expect("type is not `()` or `!`");
+                let reg = match value {
+                    IntValue::Register(reg) => reg.in_size(result_size),
+                    _ => {
+                        let reg = self.get_free_register(result_size);
+                        self.function_body
+                            .push(Instruction::Mov(reg.in_qword_size().into(), value));
+                        reg
+                    }
+                };
+                let ptr = Pointer::new(result_size, reg.in_qword_size(), Offset::Immediate(0));
+                if count > 1 || !matches!(expr_type, Type::Float(_)) {
+                    self.function_body
+                        .push(Instruction::Mov(reg.into(), ptr.into()));
+                    Some(Value::Int(reg.into()))
+                } else {
+                    self.used_registers.pop();
+                    let reg = self.get_free_float_register();
+                    self.function_body
+                        .push(Instruction::Movsd(reg.into(), ptr.into()));
+                    Some(Value::Float(reg.into()))
+                }
+            }
             (Some(Value::Float(value)), Type::Float(0), PrefixOp::Neg) => {
                 let reg = self.float_value_to_reg(value, false, false);
                 let negate_symbol =
@@ -1332,22 +1369,55 @@ impl<'src> Compiler<'src> {
     fn assign_expr(&mut self, node: AnalyzedAssignExpr<'src>) -> Option<Value> {
         let var = self.get_var(node.assignee).clone()?;
 
+        // dereference var pointer
+        let (ptr, reg) = if node.assignee_ptr_count > 0 {
+            let reg = self.get_free_register(Size::Qword);
+            self.function_body
+                .push(Instruction::Mov(reg.into(), var.ptr.into()));
+            let ptr = Pointer::new(Size::Qword, reg, Offset::Immediate(0));
+            for _ in 1..node.assignee_ptr_count {
+                self.function_body
+                    .push(Instruction::Mov(reg.into(), ptr.clone().into()))
+            }
+            (
+                ptr.in_size(
+                    node.expr
+                        .result_type()
+                        .without_indirection()
+                        .try_into()
+                        .expect("analyzer guarantees type with size"),
+                ),
+                Some(reg),
+            )
+        } else {
+            (var.ptr, None)
+        };
+
         if node.op == AssignOp::Pow {
+            let mut deref_expr = AnalyzedExpression::Ident(AnalyzedIdentExpr {
+                result_type: Type::Int(node.assignee_ptr_count),
+                ident: node.assignee,
+            });
+            for i in (0..node.assignee_ptr_count).rev() {
+                deref_expr = AnalyzedExpression::Prefix(
+                    AnalyzedPrefixExpr {
+                        result_type: Type::Int(i),
+                        op: PrefixOp::Deref,
+                        expr: deref_expr,
+                    }
+                    .into(),
+                )
+            }
             let new_val = self.call_func(
                 Type::Int(0),
                 "__rush_internal_pow_int".into(),
-                vec![
-                    AnalyzedExpression::Ident(AnalyzedIdentExpr {
-                        result_type: Type::Int(0),
-                        ident: node.assignee,
-                    }),
-                    node.expr,
-                ],
+                vec![deref_expr, node.expr],
             )?;
             self.function_body.push(Instruction::Mov(
-                var.ptr.into(),
+                ptr.into(),
                 new_val.expect_int("the analyzer guarantees int types for pow operations"),
             ));
+            reg.map(|_| self.used_registers.pop());
             return None;
         }
 
@@ -1357,11 +1427,11 @@ impl<'src> Compiler<'src> {
         match (val, node.op) {
             (Value::Int(IntValue::Immediate(1)), AssignOp::Plus)
             | (Value::Int(IntValue::Immediate(-1)), AssignOp::Minus) => {
-                self.function_body.push(Instruction::Inc(var.ptr.into()))
+                self.function_body.push(Instruction::Inc(ptr.into()))
             }
             (Value::Int(IntValue::Immediate(-1)), AssignOp::Plus)
             | (Value::Int(IntValue::Immediate(1)), AssignOp::Minus) => {
-                self.function_body.push(Instruction::Dec(var.ptr.into()))
+                self.function_body.push(Instruction::Dec(ptr.into()))
             }
 
             (Value::Int(val), AssignOp::Basic) => {
@@ -1375,7 +1445,7 @@ impl<'src> Compiler<'src> {
                     val => val,
                 };
                 self.function_body
-                    .push(Instruction::Mov(var.ptr.into(), source));
+                    .push(Instruction::Mov(ptr.into(), source));
             }
             (
                 Value::Int(rhs),
@@ -1398,16 +1468,16 @@ impl<'src> Compiler<'src> {
                     rhs => rhs,
                 };
                 self.function_body.push(match node.op {
-                    AssignOp::Plus => Instruction::Add(var.ptr.clone().into(), rhs),
-                    AssignOp::Minus => Instruction::Sub(var.ptr.clone().into(), rhs),
-                    AssignOp::BitOr => Instruction::Or(var.ptr.clone().into(), rhs),
-                    AssignOp::BitAnd => Instruction::And(var.ptr.clone().into(), rhs),
-                    AssignOp::BitXor => Instruction::Xor(var.ptr.clone().into(), rhs),
+                    AssignOp::Plus => Instruction::Add(ptr.clone().into(), rhs),
+                    AssignOp::Minus => Instruction::Sub(ptr.clone().into(), rhs),
+                    AssignOp::BitOr => Instruction::Or(ptr.clone().into(), rhs),
+                    AssignOp::BitAnd => Instruction::And(ptr.clone().into(), rhs),
+                    AssignOp::BitXor => Instruction::Xor(ptr.clone().into(), rhs),
                     _ => unreachable!("this block is only entered with above ops"),
                 });
                 if is_char {
                     self.function_body
-                        .push(Instruction::And(var.ptr.into(), 0x7f.into()));
+                        .push(Instruction::And(ptr.into(), 0x7f.into()));
                 }
             }
             // integer shifts
@@ -1433,8 +1503,8 @@ impl<'src> Compiler<'src> {
 
                 // shift
                 self.function_body.push(match node.op {
-                    AssignOp::Shl => Instruction::Shl(var.ptr.into(), rhs),
-                    AssignOp::Shr => Instruction::Sar(var.ptr.into(), rhs),
+                    AssignOp::Shl => Instruction::Shl(ptr.into(), rhs),
+                    AssignOp::Shr => Instruction::Sar(ptr.into(), rhs),
                     _ => unreachable!("this arm is only entered with `<<` or `>>` operator"),
                 });
 
@@ -1444,20 +1514,20 @@ impl<'src> Compiler<'src> {
             (Value::Float(val), AssignOp::Basic) => {
                 let reg = self.float_value_to_reg(val, true, true);
                 self.function_body
-                    .push(Instruction::Movsd(var.ptr.into(), reg.into()));
+                    .push(Instruction::Movsd(ptr.into(), reg.into()));
             }
             (rhs, op) => {
                 let lhs = match rhs {
                     Value::Int(_) => {
-                        let reg = self.get_free_register(var.ptr.size);
+                        let reg = self.get_free_register(ptr.size);
                         self.function_body
-                            .push(Instruction::Mov(reg.into(), var.ptr.clone().into()));
+                            .push(Instruction::Mov(reg.into(), ptr.clone().into()));
                         Some(Register::Int(reg))
                     }
                     Value::Float(_) => {
                         let reg = self.get_free_float_register();
                         self.function_body
-                            .push(Instruction::Movsd(reg.into(), var.ptr.clone().into()));
+                            .push(Instruction::Movsd(reg.into(), ptr.clone().into()));
                         Some(Register::Float(reg))
                     }
                 };
@@ -1485,7 +1555,7 @@ impl<'src> Compiler<'src> {
                         IntValue::Register(reg) => {
                             // set var to result
                             self.function_body
-                                .push(Instruction::Mov(var.ptr.into(), reg.into()));
+                                .push(Instruction::Mov(ptr.into(), reg.into()));
                             // free the register
                             self.used_registers.pop();
                         }
@@ -1500,7 +1570,7 @@ impl<'src> Compiler<'src> {
                         FloatValue::Register(reg) => {
                             // set var to result
                             self.function_body
-                                .push(Instruction::Movsd(var.ptr.into(), reg.into()));
+                                .push(Instruction::Movsd(ptr.into(), reg.into()));
                             // free the register
                             self.used_float_registers.pop();
                         }
@@ -1512,6 +1582,7 @@ impl<'src> Compiler<'src> {
             }
         }
 
+        reg.map(|_| self.used_registers.pop());
         None
     }
 

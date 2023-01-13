@@ -64,6 +64,18 @@ impl Type {
             Type::Unknown => None,
         }
     }
+
+    pub fn without_indirection(self) -> Self {
+        match self {
+            Self::Int(_) => Self::Int(0),
+            Self::Float(_) => Self::Float(0),
+            Self::Bool(_) => Self::Bool(0),
+            Self::Char(_) => Self::Char(0),
+            Self::Unit => Self::Unit,
+            Self::Never => Self::Never,
+            Self::Unknown => Self::Unknown,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -7,7 +7,7 @@ use std::{
 use crate::{
     condition::Condition,
     register::{FloatRegister, IntRegister},
-    value::{FloatValue, IntValue},
+    value::{FloatValue, IntValue, Pointer},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,9 +27,12 @@ pub enum Instruction {
     QuadFloat(u64),
     Octa(u128),
 
+    Syscall,
+    /// Load effective address
+    Lea(IntRegister, Pointer),
+
     Leave,
     Ret,
-    Syscall,
     Call(Rc<str>),
     Push(IntRegister),
     Pop(IntRegister),
@@ -137,9 +140,10 @@ impl Display for Instruction {
                 )
             }
             Instruction::Octa(num) => write!(f, "    {:11} {num:#034x}\t# = {num}", ".octa"),
+            Instruction::Syscall => write!(f, "    syscall"),
+            Instruction::Lea(dest, ptr) => write!(f, "    {:11} {dest}, {ptr}", "lea"),
             Instruction::Leave => write!(f, "    leave"),
             Instruction::Ret => write!(f, "    ret"),
-            Instruction::Syscall => write!(f, "    syscall"),
             Instruction::Call(symbol) => write!(f, "    {:11} {symbol}", "call"),
             Instruction::Push(reg) => write!(f, "    {:11} {reg}", "push"),
             Instruction::Pop(reg) => write!(f, "    {:11} {reg}", "pop "),
