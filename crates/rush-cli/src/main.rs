@@ -14,6 +14,8 @@ mod riscv;
 mod wasm;
 mod x86;
 
+const VM_MEM_SIZE: usize = 10_024;
+
 fn main() -> anyhow::Result<()> {
     let root_args = Cli::parse();
 
@@ -98,7 +100,7 @@ fn main() -> anyhow::Result<()> {
                         Ok(code) => code,
                         Err(err) => bail!(format!("interpreter crashed: {err}")),
                     },
-                    RunnableBackend::Vm => match rush_interpreter_vm::run(tree) {
+                    RunnableBackend::Vm => match rush_interpreter_vm::run::<VM_MEM_SIZE>(tree) {
                         Ok(code) => code,
                         Err(err) => bail!(format!("vm crashed: {err}")),
                     },

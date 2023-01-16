@@ -1,6 +1,5 @@
 use std::{
     fmt::{self, Display, Formatter},
-    mem::size_of,
     thread::sleep,
     time::Duration,
 };
@@ -10,11 +9,15 @@ use crate::{
     value::{Pointer, Value},
 };
 
-pub struct Vm {
+//const MEM_SIZE: usize = 1024;
+const STACK_LIMIT: usize = 1024;
+const CALL_STACK_LIMIT: usize = 1024;
+
+pub struct Vm<const MEM_SIZE: usize> {
     /// Working memory for temporary values
     stack: Vec<Value>,
     /// Linear memory for variables.
-    mem: Vec<Option<Value>>,
+    mem: [Option<Value>; MEM_SIZE],
     /// The memory pointer points to the last free location in memory.
     /// The value is always positive, however using `isize` is beneficial in order to avoid casts.
     mem_ptr: isize,
@@ -29,9 +32,6 @@ struct CallFrame {
     /// Specifies the function pointer
     fp: usize,
 }
-
-const STACK_LIMIT: usize = 1024;
-const CALL_STACK_LIMIT: usize = 1024;
 
 pub type Result<T> = std::result::Result<T, RuntimeError>;
 
@@ -57,6 +57,7 @@ impl RuntimeError {
 pub enum RuntimeErrorKind {
     StackOverflow,
     Arithmetic,
+    OutOfMem,
 }
 
 impl Display for RuntimeErrorKind {
@@ -67,22 +68,23 @@ impl Display for RuntimeErrorKind {
             match self {
                 Self::StackOverflow => "StackOverflowError",
                 Self::Arithmetic => "ArithmeticError",
+                Self::OutOfMem => "OutOfMemory",
             }
         )
     }
 }
 
-impl Default for Vm {
+impl<const MEM_SIZE: usize> Default for Vm<MEM_SIZE> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Vm {
+impl<const MEM_SIZE: usize> Vm<MEM_SIZE> {
     pub fn new() -> Self {
         Self {
             stack: vec![],
-            mem: vec![],
+            mem: [None; MEM_SIZE],
             mem_ptr: 0,
             // start execution at the first instruction of the prelude
             call_stack: vec![CallFrame::default()],
@@ -131,7 +133,7 @@ impl Vm {
             let instruction = &program.0[self.call_frame().fp][self.call_frame().ip];
 
             println!(
-                "[{fp:02}/{ip:02}] {instr:15} | {stack:>40} | mp = {mp} | used = {used_mem:4}b | {mem}",
+                "[{fp:02}/{ip:02}] {instr:15} | {stack:>40} | mp = {mp} | clstck = {call_stack} | {mem:?}",
                 fp = self.call_frame().fp,
                 ip = self.call_frame().ip,
                 instr = instruction.to_string(),
@@ -143,15 +145,15 @@ impl Vm {
                     .collect::<Vec<String>>()
                     .join(", "),
                 mp = self.mem_ptr,
-                used_mem = self.mem.len() * size_of::<Value>(),
-                mem = self.mem[self.mem_ptr as usize..]
-                    .iter()
+                call_stack = self.call_stack.len(),
+                mem = &self.mem[0..=self.mem_ptr as usize],
+                    /* .iter()
                     .map(|v| match v {
                         Some(v) => v.to_string(),
                         None => "NONE".to_string(),
                     })
                     .collect::<Vec<String>>()
-                    .join(", ")
+                    .join(", ") */
             );
             sleep(Duration::from_millis(1000 / clock_hz));
 
@@ -202,11 +204,11 @@ impl Vm {
 
                 let addr = match inst {
                     Instruction::SetVarImm(Pointer::Rel(offset)) => {
-                        (self.mem_ptr + offset) as usize
+                        (self.mem_ptr + offset - 1) as usize
                     }
                     Instruction::SetVarImm(Pointer::Abs(addr)) => *addr,
                     _ => match self.pop().unwrap_ptr() {
-                        Pointer::Rel(offset) => (self.mem_ptr + offset) as usize,
+                        Pointer::Rel(offset) => (self.mem_ptr + offset - 1) as usize,
                         Pointer::Abs(addr) => addr,
                     },
                 };
@@ -215,15 +217,12 @@ impl Vm {
                 // otherwise, new memory is allocated
                 match self.mem.get_mut(addr) {
                     Some(var) => *var = Some(val),
-                    None => {
-                        self.mem.resize(addr + 1, None);
-                        self.mem[addr] = Some(val)
-                    }
+                    None => self.mem[addr] = Some(val),
                 }
             }
             Instruction::GetVar => {
                 let addr = match self.pop().unwrap_ptr() {
-                    Pointer::Rel(offset) => (self.mem_ptr + offset) as usize,
+                    Pointer::Rel(offset) => (self.mem_ptr + offset - 1) as usize,
                     Pointer::Abs(addr) => addr,
                 };
                 self.push(self.mem[addr].expect("variables are always initialized"))?
@@ -244,10 +243,12 @@ impl Vm {
             }
             Instruction::SetMp(offset) => {
                 self.mem_ptr += offset;
-                self.mem.resize(self.mem_ptr as usize + 1, None);
+                if self.mem_ptr < 0 || self.mem_ptr as usize >= MEM_SIZE {
+                    return Err(RuntimeError::new(RuntimeErrorKind::OutOfMem, format!("Out of memory: the memory limit of {MEM_SIZE} cells was exceeded")))
+                }
             }
             Instruction::RelToAddr(offset) => {
-                let addr = (self.mem_ptr + offset) as usize;
+                let addr = (self.mem_ptr + offset - 1) as usize;
                 self.push(Value::Ptr(Pointer::Abs(addr)))?;
             }
             Instruction::Ret => {
