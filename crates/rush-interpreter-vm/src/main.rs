@@ -12,9 +12,10 @@ fn main() {
         0
     };
 
-    let start = Instant::now();
-
     let code = fs::read_to_string(&path).unwrap();
+
+    let mut start = Instant::now();
+
     let (ast, _) = rush_analyzer::analyze(&code, &path).unwrap();
 
     let program = rush_interpreter_vm::compile(ast);
@@ -22,6 +23,10 @@ fn main() {
     if debug {
         println!("{program}");
     }
+
+    println!("compilation: {:?}", start.elapsed());
+
+    start = Instant::now();
 
     let code = match debug {
         true => Vm::new().debug_run(program, clock),
@@ -32,6 +37,6 @@ fn main() {
         process::exit(1);
     });
     println!("Program exited with code {code}");
-    println!("{:?}", start.elapsed());
+    println!("execution: {:?}", start.elapsed());
     process::exit(code as i32);
 }

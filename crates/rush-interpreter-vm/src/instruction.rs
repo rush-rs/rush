@@ -4,6 +4,7 @@ use rush_analyzer::{AssignOp, InfixOp, PrefixOp, Type as AnalyzerType};
 
 use crate::{value::Pointer, Value};
 
+#[derive(Clone)]
 pub struct Program(pub(crate) Vec<Vec<Instruction>>);
 
 impl Display for Program {
@@ -66,7 +67,7 @@ impl Display for Type {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Instruction {
     /// Does nothing.
     Nop,
