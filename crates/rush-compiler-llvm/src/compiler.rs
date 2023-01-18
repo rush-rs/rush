@@ -866,7 +866,6 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                 .i64_type()
                 .const_int(*value as u64, true)
                 .as_basic_value_enum(),
-
             AnalyzedExpression::Float(value) => self
                 .context
                 .f64_type()
