@@ -28,6 +28,8 @@ pub fn compile(ast: AnalyzedProgram, args: BuildArgs) -> anyhow::Result<()> {
 
     if args.llvm_show_ir {
         println!("{ir}");
+        eprintln!("LLVM IR printed: omitting output file generation");
+        return Ok(());
     }
 
     // get output path
@@ -45,8 +47,6 @@ pub fn compile(ast: AnalyzedProgram, args: BuildArgs) -> anyhow::Result<()> {
     }
 
     let bin_path = &output.with_extension("");
-
-    dbg!(&bin_path);
 
     // invoke gcc to link the file
     let command = Command::new("gcc")
