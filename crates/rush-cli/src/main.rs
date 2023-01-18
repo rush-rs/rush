@@ -14,6 +14,8 @@ mod riscv;
 mod wasm;
 mod x86;
 
+const VM_MEM_SIZE: usize = 10_024;
+
 fn main() -> anyhow::Result<()> {
     let root_args = Cli::parse();
 
@@ -58,10 +60,10 @@ fn main() -> anyhow::Result<()> {
                 }
 
                 if root_args.time {
-                    println!("file read:        {file_read_time:?}");
-                    println!("analyze:          {analyze_time:?}");
-                    println!("compile:          {:?}", start.elapsed());
-                    println!(
+                    eprintln!("file read:        {file_read_time:?}");
+                    eprintln!("analyze:          {analyze_time:?}");
+                    eprintln!("compile:          {:?}", start.elapsed());
+                    eprintln!(
                         "\x1b[90mtotal:            {:?}\x1b[0m",
                         total_start.elapsed()
                     );
@@ -98,7 +100,7 @@ fn main() -> anyhow::Result<()> {
                         Ok(code) => code,
                         Err(err) => bail!(format!("interpreter crashed: {err}")),
                     },
-                    RunnableBackend::Vm => match rush_interpreter_vm::run(tree) {
+                    RunnableBackend::Vm => match rush_interpreter_vm::run::<VM_MEM_SIZE>(tree) {
                         Ok(code) => code,
                         Err(err) => bail!(format!("vm crashed: {err}")),
                     },
@@ -116,10 +118,10 @@ fn main() -> anyhow::Result<()> {
                 };
 
                 if root_args.time {
-                    println!("file read:            {file_read_time:?}");
-                    println!("analyze:              {analyze_time:?}");
-                    println!("run / compile:        {:?}", start.elapsed());
-                    println!(
+                    eprintln!("file read:            {file_read_time:?}");
+                    eprintln!("analyze:              {analyze_time:?}");
+                    eprintln!("run / compile:        {:?}", start.elapsed());
+                    eprintln!(
                         "\x1b[90mtotal:                {:?}\x1b[0m",
                         total_start.elapsed()
                     );
@@ -145,9 +147,9 @@ fn main() -> anyhow::Result<()> {
                 analyze(&text, &path)?;
 
                 if root_args.time {
-                    println!("file read:        {file_read_time:?}");
-                    println!("analyze:          {:?}", start.elapsed());
-                    println!(
+                    eprintln!("file read:        {file_read_time:?}");
+                    eprintln!("analyze:          {:?}", start.elapsed());
+                    eprintln!(
                         "\x1b[90mtotal:            {:?}\x1b[0m",
                         total_start.elapsed()
                     );

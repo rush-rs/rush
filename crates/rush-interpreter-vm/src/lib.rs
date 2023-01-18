@@ -23,9 +23,9 @@ pub fn compile(ast: AnalyzedProgram<'_>) -> Program {
 /// Executes the given program using the VM.
 /// The `Ok(_)` variant also returns non-error diagnostics.
 /// The `Err(_)` variant returns a `Vec<Diagnostic>` which contains at least one error.
-pub fn run(ast: AnalyzedProgram<'_>) -> Result<i64, RuntimeError> {
+pub fn run<const MEM_SIZE: usize>(ast: AnalyzedProgram<'_>) -> Result<i64, RuntimeError> {
     let program = Compiler::new().compile(ast);
-    let mut vm = Vm::new();
+    let mut vm: Vm<MEM_SIZE> = Vm::new();
     let exit_code = vm.run(program)?;
     Ok(exit_code)
 }
@@ -33,9 +33,12 @@ pub fn run(ast: AnalyzedProgram<'_>) -> Result<i64, RuntimeError> {
 /// Executes the given program using the VM on debug mode.
 /// The `Ok(_)` variant also returns non-error diagnostics.
 /// The `Err(_)` variant returns a `Vec<Diagnostic>` which contains at least one error.
-pub fn debug_run(ast: AnalyzedProgram<'_>, clock_hz: u64) -> Result<i64, RuntimeError> {
+pub fn debug_run<const MEM_SIZE: usize>(
+    ast: AnalyzedProgram<'_>,
+    clock_hz: u64,
+) -> Result<i64, RuntimeError> {
     let program = Compiler::new().compile(ast);
-    let mut vm = Vm::new();
+    let mut vm: Vm<MEM_SIZE> = Vm::new();
     let exit_code = vm.debug_run(program, clock_hz)?;
     Ok(exit_code)
 }
