@@ -384,19 +384,19 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                 Type::Char(0) => BasicMetadataTypeEnum::IntType(self.context.i8_type()),
                 Type::Int(count) => BasicMetadataTypeEnum::PointerType(create_pointer_type(
                     count,
-                    self.context.i64_type().ptr_type(AddressSpace::Generic),
+                    self.context.i64_type().ptr_type(AddressSpace::default()),
                 )),
                 Type::Bool(count) => BasicMetadataTypeEnum::PointerType(create_pointer_type(
                     count,
-                    self.context.bool_type().ptr_type(AddressSpace::Generic),
+                    self.context.bool_type().ptr_type(AddressSpace::default()),
                 )),
                 Type::Char(count) => BasicMetadataTypeEnum::PointerType(create_pointer_type(
                     count,
-                    self.context.i8_type().ptr_type(AddressSpace::Generic),
+                    self.context.i8_type().ptr_type(AddressSpace::default()),
                 )),
                 Type::Float(count) => BasicMetadataTypeEnum::PointerType(create_pointer_type(
                     count,
-                    self.context.f64_type().ptr_type(AddressSpace::Generic),
+                    self.context.f64_type().ptr_type(AddressSpace::default()),
                 )),
                 Type::Unit => BasicMetadataTypeEnum::IntType(self.context.bool_type()),
                 Type::Never | Type::Unknown => {
@@ -413,22 +413,22 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
             Type::Bool(0) => self.context.bool_type().fn_type(&params, false),
             Type::Int(count) => create_pointer_type(
                 count,
-                self.context.i64_type().ptr_type(AddressSpace::Generic),
+                self.context.i64_type().ptr_type(AddressSpace::default()),
             )
             .fn_type(&params, false),
             Type::Bool(count) => create_pointer_type(
                 count,
-                self.context.bool_type().ptr_type(AddressSpace::Generic),
+                self.context.bool_type().ptr_type(AddressSpace::default()),
             )
             .fn_type(&params, false),
             Type::Char(count) => create_pointer_type(
                 count,
-                self.context.i8_type().ptr_type(AddressSpace::Generic),
+                self.context.i8_type().ptr_type(AddressSpace::default()),
             )
             .fn_type(&params, false),
             Type::Float(count) => create_pointer_type(
                 count,
-                self.context.f64_type().ptr_type(AddressSpace::Generic),
+                self.context.f64_type().ptr_type(AddressSpace::default()),
             )
             .fn_type(&params, false),
             Type::Unit => self.context.bool_type().fn_type(&params, false),
@@ -479,22 +479,22 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                             Type::Int(_) => self
                                 .context
                                 .i64_type()
-                                .ptr_type(AddressSpace::Generic)
+                                .ptr_type(AddressSpace::default())
                                 .as_basic_type_enum(),
                             Type::Bool(_) => self
                                 .context
                                 .bool_type()
-                                .ptr_type(AddressSpace::Generic)
+                                .ptr_type(AddressSpace::default())
                                 .as_basic_type_enum(),
                             Type::Char(_) => self
                                 .context
                                 .i8_type()
-                                .ptr_type(AddressSpace::Generic)
+                                .ptr_type(AddressSpace::default())
                                 .as_basic_type_enum(),
                             Type::Float(_) => self
                                 .context
                                 .f64_type()
-                                .ptr_type(AddressSpace::Generic)
+                                .ptr_type(AddressSpace::default())
                                 .as_basic_type_enum(),
                             Type::Unit => self.context.bool_type().as_basic_type_enum(),
                             Type::Never | Type::Unknown => {
@@ -1404,5 +1404,5 @@ fn create_pointer_type(nested_level: usize, ptr_type: PointerType) -> PointerTyp
     if nested_level == 1 {
         return ptr_type;
     }
-    create_pointer_type(nested_level - 1, ptr_type).ptr_type(AddressSpace::Generic)
+    create_pointer_type(nested_level - 1, ptr_type).ptr_type(AddressSpace::default())
 }

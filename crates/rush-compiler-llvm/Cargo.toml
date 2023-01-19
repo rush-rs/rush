@@ -7,5 +7,5 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master", features = ["llvm14-0"] }
+inkwell = { git = "https://github.com/TheDan64/inkwell", rev = "c77d05639c9b73d9bede713789b9707d45863530", features = ["llvm14-0"] }
 rush-analyzer = { path = "../rush-analyzer/", version = "0.1.0" }
