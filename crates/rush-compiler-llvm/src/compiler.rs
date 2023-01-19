@@ -205,9 +205,19 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         pass_manager_builder.set_optimization_level(self.optimization);
         pass_manager_builder.set_size_level(0); // either 0, 1, or 2
 
-        let pass_manager = PassManager::create(());
-        pass_manager_builder.populate_module_pass_manager(&pass_manager);
-        pass_manager.run_on(&self.module);
+        let fpm = PassManager::create(());
+
+        fpm.add_instruction_combining_pass();
+        fpm.add_reassociate_pass();
+        fpm.add_gvn_pass();
+        fpm.add_cfg_simplification_pass();
+        fpm.add_basic_alias_analysis_pass();
+        fpm.add_promote_memory_to_register_pass();
+        fpm.add_instruction_combining_pass();
+        fpm.add_reassociate_pass();
+
+        pass_manager_builder.populate_module_pass_manager(&fpm);
+        fpm.run_on(&self.module);
 
         // perform LTO optimizations (for function inlining)
         let link_time_optimizations = PassManager::create(());
