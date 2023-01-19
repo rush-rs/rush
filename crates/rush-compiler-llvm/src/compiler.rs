@@ -309,20 +309,21 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
     }
 
     fn main_fn(&mut self, node: &'src AnalyzedBlock) {
+        let fn_name = if self.compile_main_fn {
+            "main"
+        } else {
+            "_start"
+        };
+
         let fn_type = if self.compile_main_fn {
             self.context.i32_type().fn_type(&[], false)
         } else {
             self.context.void_type().fn_type(&[], false)
         };
-        let fn_type = self.module.add_function(
-            if self.compile_main_fn {
-                "main"
-            } else {
-                "_start"
-            },
-            fn_type,
-            Some(Linkage::External),
-        );
+
+        let fn_type = self
+            .module
+            .add_function(fn_name, fn_type, Some(Linkage::External));
 
         // create basic blocks for the function
         let entry_block = self.context.append_basic_block(fn_type, "entry");
