@@ -452,10 +452,10 @@ impl<'src> Compiler<'src> {
             AnalyzedExpression::Block(node) => self.block(*node, true),
             AnalyzedExpression::If(node) => self.if_expr(*node),
             AnalyzedExpression::Prefix(node) => self.prefix_expr(*node),
-            AnalyzedExpression::Infix(node) => self.infix_expr(*node),
             AnalyzedExpression::Assign(node) => self.assign_expr(*node),
-            AnalyzedExpression::Call(node) => self.call_expr(*node),
             AnalyzedExpression::Cast(node) => self.cast_expr(*node),
+            AnalyzedExpression::Infix(node) => self.infix_expr(*node),
+            AnalyzedExpression::Call(node) => self.call_expr(*node),
             AnalyzedExpression::Grouped(node) => self.expression(*node),
         }
     }
