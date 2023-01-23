@@ -195,7 +195,7 @@ impl<'src> TokenKind<'src> {
             TokenKind::Star | TokenKind::Slash | TokenKind::Percent => (21, 22),
             TokenKind::As => (23, 24),
             TokenKind::Pow => (26, 25), // inverse order for right associativity
-            TokenKind::LParen => (28, 29),
+            TokenKind::LParen => (28, 29), // for calls
             _ => (0, 0),
         }
     }
