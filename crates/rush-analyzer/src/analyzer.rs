@@ -1006,7 +1006,6 @@ impl<'src> Analyzer<'src> {
 
     fn expression(&mut self, node: Expression<'src>) -> AnalyzedExpression<'src> {
         let res = match node {
-            Expression::Block(node) => self.block_expr(*node),
             Expression::If(node) => self.if_expr(*node),
             Expression::Int(node) => AnalyzedExpression::Int(node.inner),
             Expression::Float(node) => AnalyzedExpression::Float(node.inner),
@@ -1031,6 +1030,7 @@ impl<'src> Analyzer<'src> {
             Expression::Assign(node) => self.assign_expr(*node),
             Expression::Call(node) => self.call_expr(*node),
             Expression::Cast(node) => self.cast_expr(*node),
+            Expression::Block(node) => self.block_expr(*node),
             Expression::Grouped(node) => {
                 let expr = self.expression(*node.inner);
                 match expr.as_constant() {
