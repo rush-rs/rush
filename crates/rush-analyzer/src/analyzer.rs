@@ -12,13 +12,13 @@ use crate::{ast::*, Diagnostic, DiagnosticLevel, ErrorKind};
 pub struct Analyzer<'src> {
     functions: HashMap<&'src str, Function<'src>>,
     diagnostics: Vec<Diagnostic<'src>>,
-    builtin_functions: HashMap<&'static str, BuiltinFunction>,
     scopes: Vec<HashMap<&'src str, Variable<'src>>>,
     curr_func_name: &'src str,
+    /// Specifies the depth of loops, `break` / `continue` legal if > 0.
+    loop_count: usize,
+    builtin_functions: HashMap<&'static str, BuiltinFunction>,
     /// The names of all used builtin functions
     used_builtins: HashSet<&'src str>,
-    /// Specifies the depth of loops.
-    loop_count: usize,
     /// Specifies whether there is at least one `break` statement inside the current loop.
     current_loop_is_terminated: bool,
     /// The source code of the program to be analyzed
