@@ -552,14 +552,14 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         let start_loc = self.curr_tok.span.start;
 
         let mut lhs = match self.curr_tok.kind {
-            TokenKind::LBrace => Expression::Block(self.block()?.into()),
-            TokenKind::If => Expression::If(self.if_expr()?.into()),
             TokenKind::Int(num) => Expression::Int(self.atom(num)?),
             TokenKind::Float(num) => Expression::Float(self.atom(num)?),
             TokenKind::True => Expression::Bool(self.atom(true)?),
             TokenKind::False => Expression::Bool(self.atom(false)?),
             TokenKind::Char(char) => Expression::Char(self.atom(char)?),
             TokenKind::Ident(ident) => Expression::Ident(self.atom(ident)?),
+            TokenKind::LBrace => Expression::Block(self.block()?.into()),
+            TokenKind::If => Expression::If(self.if_expr()?.into()),
             TokenKind::Not => Expression::Prefix(self.prefix_expr(PrefixOp::Not, false)?.into()),
             TokenKind::Minus => Expression::Prefix(self.prefix_expr(PrefixOp::Neg, false)?.into()),
             TokenKind::Star => Expression::Prefix(self.prefix_expr(PrefixOp::Deref, false)?.into()),
@@ -578,11 +578,11 @@ impl<'src, Lexer: Lex<'src>> Parser<'src, Lexer> {
         while self.curr_tok.kind.prec().0 > prec {
             lhs = match self.curr_tok.kind {
                 TokenKind::Plus => self.infix_expr(start_loc, lhs, InfixOp::Plus)?,
-                TokenKind::Minus => self.infix_expr(start_loc, lhs, InfixOp::Minus)?,
                 TokenKind::Star => self.infix_expr(start_loc, lhs, InfixOp::Mul)?,
                 TokenKind::Slash => self.infix_expr(start_loc, lhs, InfixOp::Div)?,
-                TokenKind::Percent => self.infix_expr(start_loc, lhs, InfixOp::Rem)?,
                 TokenKind::Pow => self.infix_expr(start_loc, lhs, InfixOp::Pow)?,
+                TokenKind::Minus => self.infix_expr(start_loc, lhs, InfixOp::Minus)?,
+                TokenKind::Percent => self.infix_expr(start_loc, lhs, InfixOp::Rem)?,
                 TokenKind::Eq => self.infix_expr(start_loc, lhs, InfixOp::Eq)?,
                 TokenKind::Neq => self.infix_expr(start_loc, lhs, InfixOp::Neq)?,
                 TokenKind::Lt => self.infix_expr(start_loc, lhs, InfixOp::Lt)?,
