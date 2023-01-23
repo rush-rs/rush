@@ -129,18 +129,18 @@ pub enum AnalyzedExpression<'src> {
 impl AnalyzedExpression<'_> {
     pub fn result_type(&self) -> Type {
         match self {
-            Self::Block(expr) => expr.result_type,
             Self::Int(_) => Type::Int(0),
             Self::Float(_) => Type::Float(0),
             Self::Bool(_) => Type::Bool(0),
             Self::Char(_) => Type::Char(0),
             Self::Ident(expr) => expr.result_type,
-            Self::If(expr) => expr.result_type,
             Self::Prefix(expr) => expr.result_type,
             Self::Infix(expr) => expr.result_type,
             Self::Assign(expr) => expr.result_type,
             Self::Call(expr) => expr.result_type,
             Self::Cast(expr) => expr.result_type,
+            Self::If(expr) => expr.result_type,
+            Self::Block(expr) => expr.result_type,
             Self::Grouped(expr) => expr.result_type(),
         }
     }
