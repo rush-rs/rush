@@ -619,12 +619,12 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
                 self.builder.build_store(ptr, rhs);
 
                 // insert the pointer into the current scope (for later reference)
-                self.scope_mut()
-                    .insert(node.name, Variable::new_mut(ptr, node.expr.result_type()));
+                let var = Variable::new_mut(ptr, node.expr.result_type());
+                self.scope_mut().insert(node.name, var);
             }
             false => {
-                self.scope_mut()
-                    .insert(node.name, Variable::new_const(rhs, node.expr.result_type()));
+                let var = Variable::new_const(rhs, node.expr.result_type());
+                self.scope_mut().insert(node.name, var);
             }
         };
     }
