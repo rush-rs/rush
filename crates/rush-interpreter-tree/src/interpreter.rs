@@ -4,6 +4,7 @@ use rush_analyzer::{ast::*, AssignOp, InfixOp, PrefixOp, Type};
 
 use crate::value::{InterruptKind, Value};
 
+pub(crate) type Error = Cow<'static, str>;
 type ExprResult = Result<Value, InterruptKind>;
 type StmtResult = Result<(), InterruptKind>;
 type Scope<'src> = HashMap<&'src str, Rc<RefCell<Value>>>;
@@ -19,7 +20,7 @@ impl<'src> Interpreter<'src> {
         Self::default()
     }
 
-    pub fn run(mut self, tree: AnalyzedProgram<'src>) -> Result<i64, Cow<'static, str>> {
+    pub fn run(mut self, tree: AnalyzedProgram<'src>) -> Result<i64, Error> {
         for func in tree.functions.into_iter().filter(|f| f.used) {
             self.functions.insert(func.name, func.into());
         }

@@ -1,4 +1,6 @@
-use std::{borrow::Cow, cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
+
+use crate::interpreter;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
@@ -21,7 +23,7 @@ pub enum InterruptKind {
     Return(Value),
     Break,
     Continue,
-    Error(Cow<'static, str>),
+    Error(interpreter::Error),
     Exit(i64),
 }
 
@@ -37,7 +39,7 @@ impl InterruptKind {
 
 impl<S> From<S> for InterruptKind
 where
-    S: Into<Cow<'static, str>>,
+    S: Into<interpreter::Error>,
 {
     fn from(msg: S) -> Self {
         Self::Error(msg.into())

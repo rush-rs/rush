@@ -2,7 +2,7 @@ mod interpreter;
 mod ops;
 mod value;
 
-use std::{borrow::Cow, fmt::Debug};
+use std::fmt::Debug;
 
 pub use interpreter::Interpreter;
 use rush_analyzer::Diagnostic;
@@ -21,7 +21,7 @@ pub fn run<'src>(
 
 pub enum RunError<'src> {
     Analyzer(Vec<Diagnostic<'src>>),
-    Runtime(Cow<'static, str>),
+    Runtime(interpreter::Error),
 }
 
 impl<'src> From<Vec<Diagnostic<'src>>> for RunError<'src> {
@@ -30,8 +30,8 @@ impl<'src> From<Vec<Diagnostic<'src>>> for RunError<'src> {
     }
 }
 
-impl From<Cow<'static, str>> for RunError<'_> {
-    fn from(err: Cow<'static, str>) -> Self {
+impl From<interpreter::Error> for RunError<'_> {
+    fn from(err: interpreter::Error) -> Self {
         Self::Runtime(err)
     }
 }
