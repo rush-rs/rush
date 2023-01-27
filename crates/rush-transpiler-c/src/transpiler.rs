@@ -81,7 +81,7 @@ impl<'src> Transpiler<'src> {
                 return value;
             }
         }
-        unreachable!("the analyzer guarantees valid variable refrences")
+        unreachable!("the analyzer guarantees valid variable references")
     }
 
     pub fn transpile(&mut self, tree: AnalyzedProgram<'src>) -> CProgram {
