@@ -24,14 +24,10 @@ impl<'tree> Display for Block<'tree> {
                 .map(|(i, comment)| (i.to_string(), comment))
                 .filter(|(i, _)| !i.is_empty())
                 .map(|(i, comment)| {
-                    format!(
-                        "    {:32} {}\n",
-                        i.replace('\n', "\n    "),
-                        match comment.to_owned() {
-                            Some(msg) => format!("# {msg}"),
-                            None => String::new(),
-                        }
-                    )
+                    match comment.to_owned() {
+                        Some(msg) => format!("    {:32} # {msg}\n", i.replace('\n', "\n    "),),
+                        None => format!("    {}\n", i.replace('\n', "\n    ")),
+                    }
                 })
                 .collect::<String>()
         )
