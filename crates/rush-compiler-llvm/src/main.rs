@@ -9,13 +9,13 @@ fn main() {
     let ast = match rush_analyzer::analyze(&file, &filename) {
         Ok(res) => {
             for diagnostic in &res.1 {
-                println!("{:#}", diagnostic);
+                println!("{diagnostic:#}");
             }
             res.0
         }
         Err(diagnostics) => {
             for diagnostic in diagnostics {
-                println!("{:#}", diagnostic);
+                println!("{diagnostic:#}");
             }
             panic!("Analyzer detected issues");
         }
