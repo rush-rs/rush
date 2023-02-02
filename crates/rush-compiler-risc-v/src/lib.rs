@@ -1,4 +1,5 @@
 pub use compiler::Compiler;
+pub use instruction::CommentConfig;
 use rush_analyzer::Diagnostic;
 
 mod call;
@@ -14,8 +15,9 @@ mod utils;
 pub fn compile<'tree>(
     text: &'tree str,
     path: &'tree str,
+    comment_config: &CommentConfig,
 ) -> Result<(String, Vec<Diagnostic<'tree>>), Vec<Diagnostic<'tree>>> {
     let (tree, diagnostics) = rush_analyzer::analyze(text, path)?;
-    let asm = Compiler::new().compile(tree);
+    let asm = Compiler::new().compile(tree, comment_config);
     Ok((asm, diagnostics))
 }

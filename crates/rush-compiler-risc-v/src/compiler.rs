@@ -3,7 +3,7 @@ use std::{borrow::Cow, collections::HashMap, rc::Rc};
 use rush_analyzer::{ast::*, AssignOp, InfixOp, PrefixOp, Type};
 
 use crate::{
-    instruction::{Block, Condition, Instruction, Pointer},
+    instruction::{Block, Condition, Instruction, Pointer, CommentConfig},
     register::{FloatRegister, IntRegister, Register},
     utils::{DataObj, DataObjType, Function, Loop, Size, Variable},
 };
@@ -57,7 +57,7 @@ impl<'tree> Compiler<'tree> {
     }
 
     /// Compiles the source AST into a RISC-V targeted Assembly program.
-    pub fn compile(&mut self, ast: AnalyzedProgram<'tree>) -> String {
+    pub fn compile(&mut self, ast: AnalyzedProgram<'tree>, comment_config: &CommentConfig) -> String {
         // declare globals
         for var in ast.globals.into_iter().filter(|g| g.used) {
             self.declare_global(var.name, var.mutable, var.expr)
@@ -72,12 +72,12 @@ impl<'tree> Compiler<'tree> {
         }
 
         // generate Assembly
-        self.codegen()
+        self.codegen(comment_config)
     }
 
     /// Generates the Assembly representation from the compiled program.
     /// This function is invoked in the last step of compilation and only generates the output.
-    fn codegen(&self) -> String {
+    fn codegen(&self, comment_config: &CommentConfig) -> String {
         let mut output = String::new();
 
         // `.global` label exports
@@ -92,7 +92,7 @@ impl<'tree> Compiler<'tree> {
         output += &self
             .blocks
             .iter()
-            .map(|d| d.to_string())
+            .map(|b| b.display(comment_config))
             .collect::<String>();
 
         // zero-values for globals under the `.data` section

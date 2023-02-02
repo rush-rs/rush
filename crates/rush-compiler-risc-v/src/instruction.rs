@@ -4,6 +4,11 @@ use rush_analyzer::InfixOp;
 
 use crate::register::{FloatRegister, IntRegister};
 
+pub enum CommentConfig {
+    NoComments,
+    Emit { line_width: u8 },
+}
+
 pub(crate) struct Block<'tree> {
     pub(crate) label: Rc<str>,
     /// Holds the block's instructions.
@@ -13,10 +18,9 @@ pub(crate) struct Block<'tree> {
     pub(crate) is_terminated: bool,
 }
 
-impl<'tree> Display for Block<'tree> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
+impl<'tree> Block<'tree> {
+    pub(crate) fn display(&self, config: &CommentConfig) -> String {
+        format!(
             "\n{}:\n{}",
             self.label,
             self.instructions
@@ -24,9 +28,20 @@ impl<'tree> Display for Block<'tree> {
                 .map(|(i, comment)| (i.to_string(), comment))
                 .filter(|(i, _)| !i.is_empty())
                 .map(|(i, comment)| {
-                    match comment.to_owned() {
-                        Some(msg) => format!("    {:32} # {msg}\n", i.replace('\n', "\n    "),),
-                        None => format!("    {}\n", i.replace('\n', "\n    ")),
+                    match (comment.to_owned(), config) {
+                        (
+                            Some(msg),
+                            CommentConfig::Emit {
+                                line_width,
+                            },
+                        ) => format!(
+                            "    {:width$} # {msg}\n",
+                            i.replace('\n', "\n    "),
+                            width = *line_width as usize
+                        ),
+                        (None, _) | (_, CommentConfig::NoComments) => {
+                            format!("    {}\n", i.replace('\n', "\n    "))
+                        }
                     }
                 })
                 .collect::<String>()
