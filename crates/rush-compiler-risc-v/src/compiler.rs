@@ -857,25 +857,16 @@ impl<'tree> Compiler<'tree> {
                     (lhs, rhs, op) => {
                         let lhs_type = lhs.result_type();
 
+                        // compile RHS and mark the LHS register as used
                         let lhs_reg = self.expression(lhs)?;
-                        // mark the lhs register as used
                         self.use_reg(lhs_reg, Size::from(lhs_type));
 
-                        //let rhs_type = rhs.result_type();
                         let rhs_reg = self.expression(rhs)?;
 
-                        // mark the rhs register as used
-                        //self.use_reg(rhs_reg, Size::from(rhs_type));
-
-                        // release the usage block of the operands
+                        // set LHS register as unused
                         self.release_reg(lhs_reg);
-                        // self.release_reg(rhs_reg);
 
                         let res = self.infix_helper(lhs_reg, rhs_reg, op, lhs_type);
-
-                        // TODO: if the above is broken, release the operands here
-                        // self.release_reg(lhs_reg);
-                        // self.release_reg(rhs_reg);
 
                         Some(res)
                     }
