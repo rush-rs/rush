@@ -3,7 +3,7 @@ use std::{borrow::Cow, collections::HashMap, rc::Rc};
 use rush_analyzer::{ast::*, AssignOp, InfixOp, PrefixOp, Type};
 
 use crate::{
-    instruction::{Block, Condition, Instruction, Pointer, CommentConfig},
+    instruction::{Block, CommentConfig, Condition, Instruction, Pointer},
     register::{FloatRegister, IntRegister, Register},
     utils::{DataObj, DataObjType, Function, Loop, Size, Variable},
 };
@@ -11,29 +11,24 @@ use crate::{
 pub struct Compiler<'tree> {
     /// Specifies all exported labels of the program.
     pub(crate) exports: Vec<Cow<'static, str>>,
-
     /// Labels and their basic blocks which contain instructions.
     pub(crate) blocks: Vec<Block<'tree>>,
     /// Maps the raw label to their count of occurrences.
     pub(crate) label_count: HashMap<&'static str, usize>,
     /// Points to the current section which is inserted to.
     pub(crate) curr_block: usize,
-
     /// Data section for storing global variables.
     pub(crate) data_section: Vec<DataObj>,
     /// Read-only data section for storing constant values (like floats).
     pub(crate) rodata_section: Vec<DataObj>,
-
     /// Holds metadata about the current function
     pub(crate) curr_fn: Option<Function>,
     /// Holds metadata about the current loop
     pub(crate) loops: Vec<Loop>,
-
     /// The first element is the root scope, the last element is the current scope.
     pub(crate) scopes: Vec<HashMap<&'tree str, Variable>>,
     /// Holds the global variables of the program.
     pub(crate) globals: HashMap<&'tree str, Variable>,
-
     /// Specifies all registers which are currently in use and may not be overwritten.
     pub(crate) used_registers: Vec<(Register, Size)>,
 }
@@ -57,7 +52,11 @@ impl<'tree> Compiler<'tree> {
     }
 
     /// Compiles the source AST into a RISC-V targeted Assembly program.
-    pub fn compile(&mut self, ast: AnalyzedProgram<'tree>, comment_config: &CommentConfig) -> String {
+    pub fn compile(
+        &mut self,
+        ast: AnalyzedProgram<'tree>,
+        comment_config: &CommentConfig,
+    ) -> String {
         // declare globals
         for var in ast.globals.into_iter().filter(|g| g.used) {
             self.declare_global(var.name, var.mutable, var.expr)
@@ -904,6 +903,7 @@ impl<'tree> Compiler<'tree> {
             (Type::Char(0), InfixOp::Plus) => {
                 self.insert(Instruction::Add(dest_regi, lhs.into(), rhs.into()));
 
+                // TODO: is this really required?
                 self.use_reg(dest_regi.into(), Size::Byte);
                 let mask = self.alloc_ireg();
                 self.insert(Instruction::Li(mask, 0x7f));
@@ -916,6 +916,7 @@ impl<'tree> Compiler<'tree> {
             (Type::Char(0), InfixOp::Minus) => {
                 self.insert(Instruction::Sub(dest_regi, lhs.into(), rhs.into()));
 
+                // TODO: is this really required?
                 self.use_reg(dest_regi.into(), Size::Byte);
                 let mask = self.alloc_ireg();
                 self.insert(Instruction::Li(mask, 0x7f));
@@ -1033,6 +1034,7 @@ impl<'tree> Compiler<'tree> {
         // if the lhs is an indirected pointer, perform required indirections
         if node.assignee_ptr_count > 0 {
             let mut ptr_count = node.assignee_ptr_count;
+            // TODO: is this really required?
             self.use_reg(ptr_reg.into(), Size::Dword);
 
             while ptr_count > 0 {
