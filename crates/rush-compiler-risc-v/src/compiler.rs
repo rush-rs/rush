@@ -151,7 +151,6 @@ impl<'tree> Compiler<'tree> {
         self.blocks[self.curr_block].instructions = prologue;
 
         self.blocks.push(Block::new(Rc::clone(&epilogue_label)));
-        self.insert_at(&epilogue_label);
         self.epilogue()
     }
 
