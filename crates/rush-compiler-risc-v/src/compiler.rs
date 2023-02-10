@@ -570,14 +570,11 @@ impl<'tree> Compiler<'tree> {
         comment_prefix: String,
     ) -> Option<Pointer> {
         let type_ = node.result_type();
-
-        let rhs_reg = self.expression(node)?;
-
-        let comment = format!("{comment_prefix} = {rhs_reg}").into();
-
+        let reg = self.expression(node)?;
+        let comment = format!("{comment_prefix} = {reg}").into();
         let offset = self.get_offset(Size::from(type_));
 
-        match rhs_reg {
+        match reg {
             Register::Int(reg) => match type_ {
                 Type::Bool(0) | Type::Char(0) => self.insert_w_comment(
                     Instruction::Sb(reg, Pointer::Register(IntRegister::Fp, offset)),
