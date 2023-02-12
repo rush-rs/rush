@@ -1756,9 +1756,10 @@ impl<'src> Analyzer<'src> {
                     );
                     self.hint(
                         format!(
-                            "function `{}` defined here with {} parameters",
+                            "function `{}` defined here with {} parameter{}",
                             node.func.inner,
-                            func_params.inner.len()
+                            func_params.inner.len(),
+                            if func_params.inner.len() > 1 { "s" } else { "" }
                         ),
                         func_params.span,
                     );
