@@ -95,17 +95,14 @@ impl<'tree> Compiler<'tree> {
 
         for (reg, size) in self.used_registers.clone() {
             let offset = self.spill_reg(reg, size);
-
-            if reg.is_caller_saved() {
-                regs_on_stack.push((reg, offset, size));
-            }
+            regs_on_stack.push((reg, offset, size));
         }
 
         // save the previous state of the used registers
         let used_regs_prev = mem::take(&mut self.used_registers);
 
-        // specifies the count of occurrences of the current register relative to its type
-        // `a0` would be `int_cnt = 0`, `fa0` would be `float_cnt = 0`
+        // specifies the argument position of the specified register type
+        // type dependent: (`a0` -> `int_cnt = 0`), (`fa0` -> `float_cnt = 0`)
         let mut float_cnt = 0;
         let mut int_cnt = 0;
 
@@ -115,10 +112,9 @@ impl<'tree> Compiler<'tree> {
             match arg.result_type() {
                 Type::Unit | Type::Never | Type::Unknown => continue,
                 Type::Float(0) => {
-                    if IntRegister::nth_param(float_cnt).is_none() {
+                    if FloatRegister::nth_param(float_cnt).is_none() {
                         spill_param_size += 8;
                     }
-
                     float_cnt += 1;
                 }
                 Type::Int(_) | Type::Bool(_) | Type::Char(_) | Type::Float(_) => {
@@ -155,33 +151,20 @@ impl<'tree> Compiler<'tree> {
                     self.expression(arg);
                 }
                 Type::Float(0) => {
-                    let res_reg = self
-                        .expression(arg)
-                        .expect("none variants filtered out above");
-
+                    let res_reg = self.expression(arg).expect("`None` filtered above");
                     match FloatRegister::nth_param(float_cnt) {
                         Some(curr_reg) => {
                             param_regs.push(curr_reg.to_reg());
                             self.use_reg(curr_reg.to_reg(), Size::Dword);
-
-                            // if the reg from the expr is not the expected one, move it
-                            // TODO: if this is broken, uncomment following code
-                            if curr_reg.to_reg() != res_reg {
-                                unreachable!("experimental edge case happened");
-                                /* self.insert_w_comment(
-                                    Instruction::Fmv(curr_reg, res_reg.into()),
-                                    format!("{res_reg} not expected {curr_reg}"),
-                                ) */
-                            }
                         }
                         None => {
-                            // no more params: spilling required
+                            // no more param registers: spilling required
                             self.insert_w_comment(
                                 Instruction::Fsd(
                                     res_reg.into(),
                                     Pointer::Register(IntRegister::Sp, spill_count * 8),
                                 ),
-                                format!("{} byte param spill", Size::Dword.byte_count()).into(),
+                                format!("{} byte param spill", Size::Dword.byte_count(),).into(),
                             );
                             spill_count += 1;
                         }
@@ -190,29 +173,11 @@ impl<'tree> Compiler<'tree> {
                 }
                 Type::Int(_) | Type::Bool(_) | Type::Char(_) | Type::Float(_) => {
                     let type_ = arg.result_type();
-
-                    let res_reg = match self.expression(arg) {
-                        Some(reg) => reg,
-                        None => continue,
-                    };
-
+                    let res_reg = self.expression(arg).expect("`None` filtered above");
                     match IntRegister::nth_param(int_cnt) {
                         Some(curr_reg) => {
                             param_regs.push(curr_reg.to_reg());
                             self.use_reg(curr_reg.to_reg(), Size::from(type_));
-
-                            // TODO: if this is broken, uncomment following code
-                            // if the reg from the expr is not the expected one, move it
-                            if curr_reg.to_reg() != res_reg {
-                                unreachable!(
-                                    "experimental edge case happened: {} != {res_reg}",
-                                    curr_reg
-                                );
-                                /* self.insert_w_comment(
-                                    Instruction::Mov(curr_reg, res_reg.into()),
-                                    format!("{res_reg} not expected {curr_reg}"),
-                                ) */
-                            }
                         }
                         None => {
                             // no more params: spilling required

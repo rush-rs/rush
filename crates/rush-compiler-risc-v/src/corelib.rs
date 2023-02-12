@@ -18,9 +18,7 @@ impl<'tree> Compiler<'tree> {
         // TODO: maybe remove the need for clone
         for (reg, size) in self.used_registers.clone() {
             let offset = self.spill_reg(reg, size);
-            if reg.is_caller_saved() {
-                regs_on_stack.push((reg, offset, size));
-            }
+            regs_on_stack.push((reg, offset, size));
         }
 
         // prepare the arguments
@@ -47,9 +45,7 @@ impl<'tree> Compiler<'tree> {
         // TODO: maybe remove the need for clone
         for (reg, size) in self.used_registers.clone() {
             let offset = self.spill_reg(reg, size);
-            if reg.is_caller_saved() {
-                regs_on_stack.push((reg, offset, size));
-            }
+            regs_on_stack.push((reg, offset, size));
         }
 
         // prepare the argument
@@ -73,9 +69,7 @@ impl<'tree> Compiler<'tree> {
         // TODO: maybe remove the need for clone
         for (reg, size) in self.used_registers.clone() {
             let offset = self.spill_reg(reg, size);
-            if reg.is_caller_saved() {
-                regs_on_stack.push((reg, offset, size));
-            }
+            regs_on_stack.push((reg, offset, size));
         }
 
         // prepare the argument

@@ -6,15 +6,6 @@ pub enum Register {
     Float(FloatRegister),
 }
 
-impl Register {
-    pub(crate) fn is_caller_saved(&self) -> bool {
-        match self {
-            Register::Int(reg) => reg.is_caller_saved(),
-            Register::Float(reg) => reg.is_caller_saved(),
-        }
-    }
-}
-
 impl Display for Register {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -159,24 +150,6 @@ impl IntRegister {
         })
     }
 
-    pub(crate) fn is_caller_saved(&self) -> bool {
-        !matches!(
-            self,
-            Self::Fp
-                | Self::S1
-                | Self::S2
-                | Self::S3
-                | Self::S4
-                | Self::S5
-                | Self::S6
-                | Self::S7
-                | Self::S8
-                | Self::S9
-                | Self::S10
-                | Self::S11
-        )
-    }
-
     #[inline]
     pub(crate) fn to_reg(self) -> Register {
         Register::Int(self)
@@ -251,24 +224,6 @@ impl FloatRegister {
             7 => Self::Fa7,
             _ => return None,
         })
-    }
-
-    pub(crate) fn is_caller_saved(&self) -> bool {
-        !matches!(
-            self,
-            Self::Fs0
-                | Self::Fs1
-                | Self::Fs2
-                | Self::Fs3
-                | Self::Fs4
-                | Self::Fs5
-                | Self::Fs6
-                | Self::Fs7
-                | Self::Fs8
-                | Self::Fs9
-                | Self::Fs10
-                | Self::Fs11
-        )
     }
 
     #[inline]
