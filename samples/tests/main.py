@@ -2,7 +2,6 @@ import subprocess
 import os
 import sys
 
-
 # maps an input file to a desired exit-code
 tests = {
     './basic/complete.rush': 50,
@@ -17,6 +16,7 @@ tests = {
     './basic/wrapping.rush': 42,
     './basic/exit_0.rush': 0,
     './basic/blocks.rush': 20,
+    './basic/nested_calls.rush': 21,
     # 'evil exits' test if the `!` type can occur everywhere
     './exits/infix.rush': 5,
     './exits/if_else.rush': 6,
@@ -70,7 +70,7 @@ def run():
     failed_backends = set()
 
     for name, cmd in backends.items():
-        if not name.endswith(sys.argv[1] if len(sys.argv) >= 2 else ''):
+        if not name.endswith(sys.argv[2] if len(sys.argv) == 3 else ''):
             continue
         backends_ran.add(name)
         os.chdir(f'../../crates/{name}')
@@ -124,4 +124,16 @@ def run_test(file: str, code: int, name: str, cmd: str):
 
 
 if __name__ == '__main__':
-    run()
+    if len(sys.argv) < 2 or len(sys.argv) > 3:
+        print(
+            f'Expected at least one, at most two arguments, got {len(sys.argv) - 1}'
+        )
+        exit(1)
+
+    if sys.argv[1] == 'run':
+        run()
+    elif sys.argv[1] == 'count-tests':
+        print(len(tests))
+    else:
+        print(f'Invalid command-line argument: {sys.argv[1]}')
+        exit(1)
