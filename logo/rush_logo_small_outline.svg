@@ -2,8 +2,8 @@
     <style>
         :root {
             --color: black;
-            background-color: white;
-            --outline: none;
+            /* background-color: white; */
+            --outline: white;
             --outline-width: 5;
         }
     </style>

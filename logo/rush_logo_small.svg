@@ -2,61 +2,32 @@
     <style>
         :root {
             --color: black;
+            /* background-color: white; */
+            --outline: none;
+            --outline-width: 5;
         }
     </style>
 
-    <g transform="scale(2.56)">
-        <defs>
-            <path
-                id="wedge"
-                d="M -22 -32 Q 0 32 22 -32 Z"
-                transform="translate(100, 30)"
-                fill="black"
-            />
-            <mask id="gear">
-                <rect x="0" y="0" width="100" height="200" fill="white" />
-                <rect
-                    x="100"
-                    y="100"
-                    width="100"
-                    height="100"
-                    fill="black"
-                    transform="rotate(36, 100, 100)"
-                />
-                <use href="#wedge" />
-                <use href="#wedge" transform="rotate(180, 100, 100)" />
-                <use href="#wedge" transform="rotate(216, 100, 100)" />
-                <use href="#wedge" transform="rotate(252, 100, 100)" />
-                <use href="#wedge" transform="rotate(288, 100, 100)" />
-                <use href="#wedge" transform="rotate(324, 100, 100)" />
-                <circle cx="100" cy="100" r="45" />
-            </mask>
-        </defs>
-        <circle cx="100" cy="100" r="90" mask="url(#gear)" fill="var(--color, black)" />
+    <g
+        fill="var(--color, black)"
+        stroke="var(--outline, none)"
+        stroke-width="var(--outline-width)"
+        transform="scale(2.56)"
+    >
+        <!-- Gear -->
         <path
-            d="M 110 120 h 70"
-            stroke="var(--color, black)"
-            stroke-width="15"
-            stroke-linecap="round"
+            d="M 34.178 161.38 A 90 90 0 0 1 21.284 143.633 Q 49.587 116.38 10.671 110.968 A 90 90 0 0 1 10.671 89.032 Q 49.587 83.62 21.284 56.367 A 90 90 0 0 1 34.178 38.62 Q 68.843 57.116 61.964 18.432 A 90 90 0 0 1 82.827 11.654 C 88.551 23.433 94.276 29.323 100 29.323 L 100 55 A 45 45 0 0 0 73.55 136.406 L 58.457 157.179 C 53.826 153.814 45.733 155.215 34.178 161.38 Z"
         />
-        <path
-            d="M 100 150 h 70"
-            stroke="var(--color, black)"
-            stroke-width="15"
-            stroke-linecap="round"
-        />
-        <path
-            d="M 70 180 h 70"
-            stroke="var(--color, black)"
-            stroke-width="15"
-            stroke-linecap="round"
-        />
+
+        <!-- Lines -->
+        <path d="M 110 120 m 0 -7.5 a 1 1 0 0 0 0 15 h 70 a 1 1 0 0 0 0 -15 Z" />
+        <path d="M 100 150 m 0 -7.5 a 1 1 0 0 0 0 15 h 70 a 1 1 0 0 0 0 -15 Z" />
+        <path d="M 70 180 m 0 -7.5 a 1 1 0 0 0 0 15 h 70 a 1 1 0 0 0 0 -15 Z" />
 
         <!-- Created using https://danmarshall.github.io/google-font-to-svg-path/ with 'Museo Moderno' font -->
         <path
-            transform="translate(130, -15), scale(1.5)"
-            fill="var(--color, black)"
-            d="M 15.5 73 L 0 73 L 5.7 36.4 A 20.977 20.977 0 0 1 7.155 31.289 A 15.762 15.762 0 0 1 11.3 25.6 A 15.712 15.712 0 0 1 19.06 22.008 A 21.778 21.778 0 0 1 22.8 21.7 L 38 21.7 L 36.1 34.4 L 25 34.4 A 3.881 3.881 0 0 0 22.558 35.263 A 4.896 4.896 0 0 0 22.45 35.35 Q 21.3 36.3 21.1 37.8 L 15.5 73 Z"
+            transform="translate(130, -15)"
+            d="M 23.25 109.5 L 0 109.5 L 8.55 54.6 A 31.4655 31.4655 90 0 1 10.7325 46.9335 A 23.643 23.643 90 0 1 16.95 38.4 A 23.568 23.568 90 0 1 28.59 33.012 A 32.667 32.667 90 0 1 34.2 32.55 L 57 32.55 L 54.15 51.6 L 37.5 51.6 A 5.8215 5.8215 90 0 0 33.837 52.8945 A 7.344 7.344 90 0 0 33.675 53.025 Q 31.95 54.45 31.65 56.7 L 23.25 109.5 Z"
         />
     </g>
 </svg>
