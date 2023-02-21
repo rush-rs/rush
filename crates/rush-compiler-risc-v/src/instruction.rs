@@ -29,12 +29,7 @@ impl<'tree> Block<'tree> {
                 .filter(|(i, _)| !i.is_empty())
                 .map(|(i, comment)| {
                     match (comment.to_owned(), config) {
-                        (
-                            Some(msg),
-                            CommentConfig::Emit {
-                                line_width,
-                            },
-                        ) => format!(
+                        (Some(msg), CommentConfig::Emit { line_width }) => format!(
                             "    {:width$} # {msg}\n",
                             i.replace('\n', "\n    "),
                             width = *line_width as usize
@@ -66,6 +61,7 @@ pub enum Instruction {
 
     Jmp(Rc<str>),
     BrCond(Condition, IntRegister, IntRegister, Rc<str>),
+    Beqz(IntRegister, Rc<str>),
 
     // base integer instructions
     SetIntCondition(Condition, IntRegister, IntRegister, IntRegister),
@@ -121,6 +117,7 @@ impl Display for Instruction {
             Instruction::Comment(msg) => write!(f, "# {msg}"),
             Instruction::Jmp(label) => write!(f, "j {label}"),
             Instruction::BrCond(cond, l, r, lbl) => write!(f, "b{cond} {l}, {r}, {lbl}"),
+            Instruction::Beqz(reg, lbl) => write!(f, "beqz {reg}, {lbl}"),
             Instruction::SetIntCondition(cond, dest, l, r) => match cond {
                 Condition::Lt => write!(f, "slt {dest}, {l}, {r}"),
                 // Because RISC-V does not support the sle instruction, it is emulated here

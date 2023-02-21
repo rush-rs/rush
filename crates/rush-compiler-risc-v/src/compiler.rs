@@ -465,9 +465,7 @@ impl<'tree> Compiler<'tree> {
         };
 
         // if the condition evaluates to `false`, break out of the loop
-        self.insert(Instruction::BrCond(
-            Condition::Eq,
-            IntRegister::Zero,
+        self.insert(Instruction::Beqz(
             cond.into(),
             Rc::clone(&after_loop),
         ));
@@ -520,9 +518,7 @@ impl<'tree> Compiler<'tree> {
             return
         };
 
-        self.insert(Instruction::BrCond(
-            Condition::Eq,
-            IntRegister::Zero,
+        self.insert(Instruction::Beqz(
             cond.into(),
             Rc::clone(&after_loop_label),
         ));
