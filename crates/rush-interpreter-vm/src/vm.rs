@@ -19,7 +19,7 @@ pub struct Vm<const MEM_SIZE: usize> {
     /// Linear memory for variables.
     mem: [Option<Value>; MEM_SIZE],
     /// The memory pointer points to the last free location in memory.
-    /// The value is always positive, however using `isize` is beneficial in order to avoid casts.
+    /// The value is always positive, but using `isize` does not require casts.
     mem_ptr: isize,
     /// Holds information about the current position (like ip / fp).
     call_stack: Vec<CallFrame>,
