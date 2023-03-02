@@ -11,7 +11,6 @@ use crate::{
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)] // TODO: remove this attribute
 pub enum Instruction {
     /// Wraps an instruction with an additional comment
     Commented(Box<Instruction>, Cow<'static, str>),
@@ -27,7 +26,6 @@ pub enum Instruction {
     QuadFloat(u64),
     Octa(u128),
 
-    Syscall,
     /// Load effective address
     Lea(IntRegister, Pointer),
 
@@ -35,7 +33,6 @@ pub enum Instruction {
     Ret,
     Call(Rc<str>),
     Push(IntRegister),
-    Pop(IntRegister),
 
     Jmp(Rc<str>),
     JCond(Condition, Rc<str>),
@@ -140,13 +137,11 @@ impl Display for Instruction {
                 )
             }
             Instruction::Octa(num) => write!(f, "    {:11} {num:#034x}\t# = {num}", ".octa"),
-            Instruction::Syscall => write!(f, "    syscall"),
             Instruction::Lea(dest, ptr) => write!(f, "    {:11} {dest}, {ptr}", "lea"),
             Instruction::Leave => write!(f, "    leave"),
             Instruction::Ret => write!(f, "    ret"),
             Instruction::Call(symbol) => write!(f, "    {:11} {symbol}", "call"),
             Instruction::Push(reg) => write!(f, "    {:11} {reg}", "push"),
-            Instruction::Pop(reg) => write!(f, "    {:11} {reg}", "pop "),
             Instruction::Jmp(symbol) => write!(f, "    {:11} {symbol}", "jmp "),
             Instruction::JCond(cond, symbol) => write!(f, "    j{:10} {symbol}", cond.to_string()),
             Instruction::SetCond(cond, reg) => write!(f, "    set{:8} {reg}", cond.to_string()),
