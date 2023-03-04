@@ -6,7 +6,8 @@ use std::{
 fn main() {
     //// X86_64 corelib ////
     // rebuild if the corelib directory has changed
-    println!("cargo:rerun-if-changed=../rush-compiler-x86-64/corelib/");
+    println!("cargo:rerun-if-changed=../rush-compiler-x86-64/corelib/src");
+    println!("cargo:rerun-if-changed=../rush-compiler-x86-64/corelib/Makefile");
 
     let path = Path::canonicalize(Path::new("../rush-compiler-x86-64/corelib/")).unwrap();
     let out = Command::new("make")
@@ -27,7 +28,8 @@ fn main() {
 
     //// RISC-V corelib ////
     // rebuild if the corelib directory has changed
-    println!("cargo:rerun-if-changed=../rush-compiler-risc-v/corelib/");
+    println!("cargo:rerun-if-changed=../rush-compiler-risc-v/corelib/src");
+    println!("cargo:rerun-if-changed=../rush-compiler-x86-64/corelib/Makefile");
 
     let path = Path::canonicalize(Path::new("../rush-compiler-risc-v/corelib/")).unwrap();
     let out = Command::new("make")
