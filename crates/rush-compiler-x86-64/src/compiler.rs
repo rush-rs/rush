@@ -22,7 +22,7 @@ pub struct Compiler<'src> {
     /// Whether the compiler is currently inside function args, `true` when not `0`. Stored as a
     /// counter for nested calls.
     pub(crate) in_args: usize,
-    /// Maps variable names to `Option<Pointer>`, or `None` when of type `()` or `!`
+    /// Maps variable names to `Option<Variable>`, or `None` when of type `()` or `!`
     pub(crate) scopes: Vec<HashMap<&'src str, Option<Variable>>>,
     /// Internal stack pointer, separate from `%rsp`, used for pushing and popping
     /// inside the stack frame. Relative to `%rbp`, always positive.
@@ -259,13 +259,10 @@ impl<'src> Compiler<'src> {
     ) -> Pointer {
         // add padding for correct alignment
         Self::align(&mut self.stack_pointer, size);
-
         // allocate space on stack
         self.stack_pointer += size.byte_count();
-
         // possibly expand frame size
         self.frame_size = self.frame_size.max(self.stack_pointer);
-
         // get pointer to location in stack
         let ptr = Pointer::new(
             size,
@@ -293,7 +290,9 @@ impl<'src> Compiler<'src> {
     ) {
         let offset = match ptr.offset {
             Offset::Immediate(offset) => -offset,
-            Offset::Symbol(_) => panic!("called `Compiler::pop()` with a symbol offset in ptr"),
+            Offset::Symbol(_) => {
+                panic!("called `Compiler::pop_from_stack()` with a symbol offset in ptr")
+            }
         };
         // assert the pointer is in the top 8 bytes of the stack
         debug_assert_eq!(ptr.base, IntRegister::Rbp);
