@@ -7,21 +7,19 @@ use std::{
 use anyhow::{anyhow, bail, Context};
 use rush_analyzer::ast::AnalyzedProgram;
 use rush_compiler_risc_v::{CommentConfig, Compiler};
-use tempfile::tempdir;
+use tempfile::TempDir;
 
 use crate::cli::{BuildArgs, RunArgs};
 
-pub fn compile(ast: AnalyzedProgram, args: BuildArgs) -> anyhow::Result<()> {
-    let asm = Compiler::new().compile(
-        ast,
-        &CommentConfig::Emit {
-            line_width: 32,
-        },
-    );
+pub fn compile(ast: AnalyzedProgram, args: BuildArgs, tmpdir: &TempDir) -> anyhow::Result<()> {
+    let asm = Compiler::new().compile(ast, &CommentConfig::Emit { line_width: 32 });
 
     // get output path
     let output = match args.output_file {
-        Some(out) => out,
+        Some(mut out) => {
+            out.set_extension("s");
+            out
+        }
         None => {
             let mut path = PathBuf::from(
                 args.path
@@ -36,19 +34,8 @@ pub fn compile(ast: AnalyzedProgram, args: BuildArgs) -> anyhow::Result<()> {
     fs::write(&output, asm)
         .with_context(|| format!("cannot write to `{file}`", file = output.to_string_lossy()))?;
 
-    Ok(())
-}
-
-pub fn run(ast: AnalyzedProgram, args: RunArgs) -> anyhow::Result<i64> {
-    let tmpdir = tempdir()?;
-
-    let mut args: BuildArgs = args.try_into()?;
-
-    let asm_path = tmpdir.path().join("output.s");
-    args.output_file = Some(asm_path.clone());
-    compile(ast, args)?;
-
-    let bin_path = tmpdir.path().join("output");
+    let mut bin_path = output.clone();
+    bin_path.set_extension("");
     let libcore_file_path = tmpdir.path().join("libcore.a");
     let libcore_bytes =
         include_bytes!("../../rush-compiler-risc-v/corelib/libcore-rush-riscv-lp64d.a");
@@ -56,7 +43,7 @@ pub fn run(ast: AnalyzedProgram, args: RunArgs) -> anyhow::Result<i64> {
 
     let process = Command::new("riscv64-linux-gnu-gcc")
         .args(["-nostdlib", "-static"])
-        .arg(asm_path)
+        .arg(output)
         .arg(libcore_file_path)
         .arg("-o")
         .arg(&bin_path)
@@ -73,6 +60,19 @@ pub fn run(ast: AnalyzedProgram, args: RunArgs) -> anyhow::Result<i64> {
             String::from_utf8_lossy(&out.stderr),
         ),
     }
+
+    Ok(())
+}
+
+pub fn run(ast: AnalyzedProgram, args: RunArgs) -> anyhow::Result<i64> {
+    let tmpdir = tempfile::tempdir()?;
+
+    let mut args: BuildArgs = args.try_into()?;
+    let asm_path = tmpdir.path().join("output.s");
+    let bin_path = tmpdir.path().join("output");
+    args.output_file = Some(asm_path.clone());
+
+    compile(ast, args, &tmpdir)?;
 
     match Command::new("qemu-riscv64")
         .arg(bin_path)

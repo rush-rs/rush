@@ -71,8 +71,6 @@ pub const FLOAT_PARAM_REGISTERS: &[FloatRegister] = &[
 pub enum FloatRegister {
     Xmm0,  Xmm1,  Xmm2,  Xmm3,  Xmm4,  Xmm5,  Xmm6,  Xmm7,
     Xmm8,  Xmm9,  Xmm10, Xmm11, Xmm12, Xmm13, Xmm14, Xmm15,
-    Xmm16, Xmm17, Xmm18, Xmm19, Xmm20, Xmm21, Xmm22, Xmm23,
-    Xmm24, Xmm25, Xmm26, Xmm27, Xmm28, Xmm29, Xmm30, Xmm31,
 }
 
 impl Display for IntRegister {
@@ -288,7 +286,7 @@ impl IntRegister {
 
 impl FloatRegister {
     pub fn next(&self) -> Self {
-        if *self == Self::Xmm31 {
+        if *self == Self::Xmm15 {
             panic!("no registers left after `{self}`");
         }
 

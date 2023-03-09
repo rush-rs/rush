@@ -52,7 +52,7 @@ fn main() -> anyhow::Result<()> {
                 match args.backend {
                     CompilerBackend::Llvm => llvm::compile(tree, args)?,
                     CompilerBackend::Wasm => wasm::compile(tree, args)?,
-                    CompilerBackend::RiscV => riscv::compile(tree, args)?,
+                    CompilerBackend::RiscV => riscv::compile(tree, args, &tempfile::tempdir()?)?,
                     CompilerBackend::X86_64 => {
                         x86::compile(tree, args)?;
                     }
