@@ -33,5 +33,3 @@ execution and compilation.
 
 - [Language Server](./crates/rush-ls/)
 - [rush CLI](./crates/rush-cli/)
-
-> **Note:** This project is in early active development
