@@ -70,7 +70,7 @@ pub fn run(ast: AnalyzedProgram, args: RunArgs) -> anyhow::Result<i64> {
     let mut args: BuildArgs = args.try_into()?;
     let asm_path = tmpdir.path().join("output.s");
     let bin_path = tmpdir.path().join("output");
-    args.output_file = Some(asm_path.clone());
+    args.output_file = Some(asm_path);
 
     compile(ast, args, &tmpdir)?;
 
