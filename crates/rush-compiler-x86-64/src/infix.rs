@@ -71,6 +71,9 @@ impl<'src> Compiler<'src> {
                 self.function_body
                     .push(Instruction::Mov(IntRegister::Rax.into(), left.into()));
 
+                // sign-extend lhs to 128 bits (required for IDIV)
+                self.function_body.push(Instruction::Cqo);
+
                 // get source operand
                 let source = match right {
                     right @ IntValue::Ptr(_) => right,
@@ -85,9 +88,6 @@ impl<'src> Compiler<'src> {
                         reg.into()
                     }
                 };
-
-                // sign-extend lhs to 128 bits (required for IDIV)
-                self.function_body.push(Instruction::Cqo);
 
                 // divide
                 self.function_body.push(Instruction::Idiv(source));
