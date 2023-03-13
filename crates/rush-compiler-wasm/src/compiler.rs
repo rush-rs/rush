@@ -764,7 +764,7 @@ impl<'src> Compiler<'src> {
                     instructions::I32_EQZ,
                     instructions::IF,
                     types::I32,
-                    // then return true
+                    // then return false
                     instructions::I32_CONST,
                     0,
                     // else return rhs
