@@ -15,6 +15,7 @@ fn display_stmts(stmts: &[Statement]) -> String {
 
 #[derive(Debug, Clone, Copy)]
 pub enum CType {
+    Int(usize),
     LongLongInt(usize),
     Bool(usize),
     Char(usize),
@@ -25,6 +26,7 @@ pub enum CType {
 impl Display for CType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            CType::Int(ptr) => write!(f, "int{}", "*".repeat(*ptr)),
             CType::LongLongInt(ptr) => write!(f, "long long int{}", "*".repeat(*ptr)),
             CType::Bool(ptr) => write!(f, "bool{}", "*".repeat(*ptr)),
             CType::Char(ptr) => write!(f, "char{}", "*".repeat(*ptr)),
@@ -132,7 +134,11 @@ impl Display for FnSignature {
         write!(
             f,
             "{type_} {name}({params})",
-            type_ = self.type_,
+            type_ = if self.name == "main" {
+                CType::Int(0)
+            } else {
+                self.type_
+            },
             name = self.name,
         )
     }
@@ -164,7 +170,11 @@ impl Display for FnDefinition {
         write!(
             f,
             "{type_} {name}({params}) {body}",
-            type_ = self.type_,
+            type_ = if self.name == "main" {
+                CType::Int(0)
+            } else {
+                self.type_
+            },
             name = self.name,
         )
     }
