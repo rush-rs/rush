@@ -15,20 +15,20 @@ fn display_stmts(stmts: &[Statement]) -> String {
 
 #[derive(Debug, Clone, Copy)]
 pub enum CType {
-    Int(usize),
+    LongLongInt(usize),
     Bool(usize),
     Char(usize),
-    Float(usize),
+    Double(usize),
     Void,
 }
 
 impl Display for CType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CType::Int(ptr) => write!(f, "int{}", "*".repeat(*ptr)),
+            CType::LongLongInt(ptr) => write!(f, "long long int{}", "*".repeat(*ptr)),
             CType::Bool(ptr) => write!(f, "bool{}", "*".repeat(*ptr)),
             CType::Char(ptr) => write!(f, "char{}", "*".repeat(*ptr)),
-            CType::Float(ptr) => write!(f, "float{}", "*".repeat(*ptr)),
+            CType::Double(ptr) => write!(f, "double{}", "*".repeat(*ptr)),
             CType::Void => write!(f, "void"),
         }
     }
@@ -37,8 +37,8 @@ impl Display for CType {
 impl From<Type> for CType {
     fn from(src: Type) -> Self {
         match src {
-            Type::Int(ptr) => Self::Int(ptr),
-            Type::Float(ptr) => Self::Float(ptr),
+            Type::Int(ptr) => Self::LongLongInt(ptr),
+            Type::Float(ptr) => Self::Double(ptr),
             Type::Bool(ptr) => Self::Bool(ptr),
             Type::Char(ptr) => Self::Char(ptr),
             Type::Unit | Type::Never => Self::Void,
