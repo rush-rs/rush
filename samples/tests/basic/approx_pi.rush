@@ -1,0 +1,21 @@
+let ITERATIONS = 1000000;
+
+fn main() {
+    let mut k = 3f;
+    let mut s = 1f;
+
+    for i = 0; i < ITERATIONS; i+= 1 {
+        s = s-((1f / k) * ((-1) ** i) as float);
+        k += 2f;
+    }
+
+    let result = ((4f * s) * 100000f) as int;
+
+    if result == 314159 {
+        // success, the computation was successful
+        exit(0);
+    } else {
+        // failure
+        exit(1);
+    }
+}

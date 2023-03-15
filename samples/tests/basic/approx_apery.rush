@@ -1,0 +1,18 @@
+let APERY = 1.2020569;
+
+fn main() {
+    let mut res = 1f;
+
+    for i = 2; i < 30000; i += 1 {
+        res += (1f / (i ** 3) as float);
+    }
+
+    let FAC = 10000000f;
+    if (APERY * FAC) as int == (res * FAC) as int {
+        // success
+        exit(0);
+    } else {
+        // failure
+        exit(1);
+    }
+}

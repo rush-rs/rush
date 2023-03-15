@@ -1,0 +1,22 @@
+let E = 2.718281828459045;
+
+fn main() {
+    let mut e = 1f;
+    let mut f = 1f;
+
+    for i = 2; i < 100_000; i += 1 {
+        e += 1f / f;
+        f *= i as float;
+    }
+
+    let result = (e * 1000000000000000f) as int;
+    let expected = (E * 1000000000000000f) as int;
+
+    if result == expected {
+        // success
+        exit(0);
+    } else {
+        // failure
+        exit(1);
+    }
+}

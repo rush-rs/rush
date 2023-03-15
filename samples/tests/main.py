@@ -1,3 +1,4 @@
+#!/bin/python3
 import subprocess
 import os
 import sys
@@ -17,6 +18,9 @@ tests = {
     './basic/exit_0.rush': 0,
     './basic/blocks.rush': 20,
     './basic/nested_calls.rush': 21,
+    './basic/approx_pi.rush': 0,
+    './basic/approx_e.rush': 0,
+    './basic/approx_apery.rush': 0,
     # 'evil exits' test if the `!` type can occur everywhere
     './exits/infix.rush': 5,
     './exits/if_else.rush': 6,
