@@ -27,6 +27,10 @@ return_0:
 	mov %rax, 0
 	ret
 
+return_1:
+	mov %rax, 1
+	ret
+
 return_127:
 	mov %rax, 127
 	ret
@@ -70,6 +74,10 @@ __rush_internal_pow_int:
 	# if exponent < 0 { return 0; }
 	cmp %rsi, 0
 	jl return_0
+
+	# if exponent == 0 { return 1; }
+	cmp %rsi, 0
+	je return_1
 
 	# let mut accumulator = 1;
 	mov %rax, 1
