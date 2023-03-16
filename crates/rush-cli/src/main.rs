@@ -2,14 +2,20 @@ use std::{fs, process, time::Instant};
 
 use anyhow::{bail, Context};
 use clap::Parser;
-use cli::{Cli, Command, CompilerBackend, LlvmOpt, RunnableBackend};
+use cli::{Cli, Command, CompilerBackend, RunnableBackend};
+
+#[cfg(feature = "llvm")]
+use cli::LlvmOpt;
 use rush_analyzer::{ast::AnalyzedProgram, Diagnostic};
 use rush_interpreter_tree::Interpreter;
 
 mod cli;
 
 mod c;
+
+#[cfg(feature = "llvm")]
 mod llvm;
+
 mod riscv;
 mod wasm;
 mod x86;
@@ -21,6 +27,7 @@ fn main() -> anyhow::Result<()> {
 
     match root_args.command {
         Command::Build(args) => {
+            #[cfg(feature = "llvm")]
             if args.backend != CompilerBackend::Llvm {
                 if args.llvm_show_ir {
                     bail!("cannot show llvm IR when not using LLVM backend")
@@ -50,6 +57,7 @@ fn main() -> anyhow::Result<()> {
                 start = Instant::now();
 
                 match args.backend {
+                    #[cfg(feature = "llvm")]
                     CompilerBackend::Llvm => llvm::compile(tree, args)?,
                     CompilerBackend::Wasm => wasm::compile(tree, args)?,
                     CompilerBackend::RiscV => riscv::compile(tree, args, &tempfile::tempdir()?)?,
@@ -74,6 +82,7 @@ fn main() -> anyhow::Result<()> {
             compile_func().with_context(|| "compilation failed")?;
         }
         Command::Run(args) => {
+            #[cfg(feature = "llvm")]
             if args.backend != RunnableBackend::Llvm && args.llvm_opt != LlvmOpt::None {
                 bail!("cannot set LLVM optimization level when not using LLVM backend")
             }
@@ -104,6 +113,7 @@ fn main() -> anyhow::Result<()> {
                         Ok(code) => code,
                         Err(err) => bail!(format!("vm crashed: {err}")),
                     },
+                    #[cfg(feature = "llvm")]
                     RunnableBackend::Llvm => {
                         llvm::run(tree, args).with_context(|| "cannot run using `LLVM`")?
                     }

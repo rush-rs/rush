@@ -2,6 +2,7 @@ use std::{fmt::Display, path::PathBuf};
 
 use anyhow::anyhow;
 use clap::{Args, Parser, Subcommand, ValueEnum};
+#[cfg(feature = "llvm")]
 use rush_compiler_llvm::inkwell::OptimizationLevel;
 
 #[derive(Parser, Debug)]
@@ -38,7 +39,11 @@ pub struct RunArgs {
     pub backend: RunnableBackend,
 
     /// The optimization level when using the LLVM backend
-    #[clap(short = 'O', long, value_parser, default_value = "0")]
+    #[cfg_attr(
+        feature = "llvm",
+        clap(short = 'O', long, value_parser, default_value = "0")
+    )]
+    #[cfg(feature = "llvm")]
     pub llvm_opt: LlvmOpt,
 
     /// Path to rush source file
@@ -56,15 +61,21 @@ pub struct BuildArgs {
     pub output_file: Option<PathBuf>,
 
     /// The optimization level when using the LLVM backend
-    #[clap(short = 'O', long, value_parser, default_value = "0")]
+    #[cfg_attr(
+        feature = "llvm",
+        clap(short = 'O', long, value_parser, default_value = "0")
+    )]
+    #[cfg(feature = "llvm")]
     pub llvm_opt: LlvmOpt,
 
     /// The target triplet to use when using the LLVM backend, defaults to native
-    #[clap(long, value_parser)]
+    #[cfg_attr(feature = "llvm", clap(long, value_parser))]
+    #[cfg(feature = "llvm")]
     pub llvm_target: Option<String>,
 
     /// Print the generated LLVM IR to stdout
-    #[clap(long, value_parser)]
+    #[cfg_attr(feature = "llvm", clap(long, value_parser))]
+    #[cfg(feature = "llvm")]
     pub llvm_show_ir: bool,
 
     /// Path to rush source file
@@ -78,8 +89,11 @@ impl TryFrom<RunArgs> for BuildArgs {
         Ok(Self {
             backend: args.backend.try_into()?,
             output_file: None,
+            #[cfg(feature = "llvm")]
             llvm_opt: args.llvm_opt,
+            #[cfg(feature = "llvm")]
             llvm_target: None,
+            #[cfg(feature = "llvm")]
             llvm_show_ir: false,
             path: args.path,
         })
@@ -89,6 +103,7 @@ impl TryFrom<RunArgs> for BuildArgs {
 #[derive(ValueEnum, Clone, Debug, PartialEq, Eq)]
 pub enum CompilerBackend {
     /// LLVM compiler: requires GCC
+    #[cfg(feature = "llvm")]
     Llvm,
     /// WebAssembly compiler: requires wasm runtime for later execution
     Wasm,
@@ -109,6 +124,7 @@ pub enum RunnableBackend {
     /// VM interpreter: no dependencies
     Vm,
     /// LLVM compiler: requires GCC
+    #[cfg(feature = "llvm")]
     Llvm,
     /// RISC-V compiler: requires RISC-V toolchain (alias = riscv)
     #[clap(alias = "riscv")]
@@ -128,6 +144,7 @@ impl TryFrom<RunnableBackend> for CompilerBackend {
             RunnableBackend::Tree | RunnableBackend::Vm => {
                 Err(anyhow!("cannot use interpreter backends for compilation"))
             }
+            #[cfg(feature = "llvm")]
             RunnableBackend::Llvm => Ok(CompilerBackend::Llvm),
             RunnableBackend::RiscV => Ok(CompilerBackend::RiscV),
             RunnableBackend::X86_64 => Ok(CompilerBackend::X86_64),
@@ -142,6 +159,7 @@ impl Display for CompilerBackend {
             f,
             "{}",
             match self {
+                #[cfg(feature = "llvm")]
                 CompilerBackend::Llvm => "llvm",
                 CompilerBackend::Wasm => "wasm",
                 CompilerBackend::RiscV => "risc-v",
@@ -160,6 +178,7 @@ impl Display for RunnableBackend {
             match self {
                 RunnableBackend::Tree => "tree",
                 RunnableBackend::Vm => "vm",
+                #[cfg(feature = "llvm")]
                 RunnableBackend::Llvm => "llvm",
                 RunnableBackend::RiscV => "risc-v",
                 RunnableBackend::X86_64 => "x86_64",
@@ -170,6 +189,7 @@ impl Display for RunnableBackend {
 }
 
 #[derive(ValueEnum, Clone, Debug, PartialEq, Eq)]
+#[cfg(feature = "llvm")]
 pub enum LlvmOpt {
     #[clap(name = "0")]
     /// No optimization
@@ -185,6 +205,7 @@ pub enum LlvmOpt {
     Aggressive,
 }
 
+#[cfg(feature = "llvm")]
 impl From<LlvmOpt> for OptimizationLevel {
     fn from(src: LlvmOpt) -> Self {
         match src {
