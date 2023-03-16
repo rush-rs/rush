@@ -22,7 +22,8 @@ mod x86;
 
 const VM_MEM_SIZE: usize = 10_024;
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     let root_args = Cli::parse();
 
     match root_args.command {
@@ -172,6 +173,7 @@ fn main() -> anyhow::Result<()> {
                 format!("checking `{file}` failed", file = path.to_string_lossy())
             })?;
         }
+        Command::Ls => rush_ls::start_service().await,
     }
 
     Ok(())

@@ -30,6 +30,8 @@ pub enum Command {
         /// Rush Source file
         file: PathBuf,
     },
+    /// Launches the rush language server
+    Ls,
 }
 
 #[derive(Args, Debug)]
