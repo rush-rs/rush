@@ -1,5 +1,6 @@
 use std::{
     fs,
+    io::ErrorKind,
     path::PathBuf,
     process::{Command, Stdio},
 };
@@ -10,6 +11,20 @@ use rush_compiler_risc_v::{CommentConfig, Compiler};
 use tempfile::TempDir;
 
 use crate::cli::{BuildArgs, RunArgs};
+
+fn command_executable(path: &str) -> anyhow::Result<bool> {
+    match Command::new(path)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(_) => Ok(true),
+        Err(e) if e.kind() == ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(anyhow!("Unexpected command error: `{e}`")),
+    }
+}
+
+const GCC_VARIANTS: &[&str] = &["riscv-none-elf-gcc", "riscv64-linux-gnu-gcc"];
 
 pub fn compile(ast: AnalyzedProgram, args: BuildArgs, tmpdir: &TempDir) -> anyhow::Result<()> {
     let asm = Compiler::new().compile(ast, &CommentConfig::Emit { line_width: 32 });
@@ -41,7 +56,22 @@ pub fn compile(ast: AnalyzedProgram, args: BuildArgs, tmpdir: &TempDir) -> anyho
         include_bytes!("../../rush-compiler-risc-v/corelib/libcore-rush-riscv-lp64d.a");
     fs::write(&libcore_file_path, libcore_bytes)?;
 
-    let process = Command::new("riscv64-linux-gnu-gcc")
+    // determine RISC-V GCC
+    let mut gcc_bin = None;
+    for gcc in GCC_VARIANTS {
+        if command_executable(gcc).with_context(|| "Could not determine GCC backend")? {
+            gcc_bin = Some(gcc);
+            break;
+        }
+    }
+    let Some(gcc) = gcc_bin else {
+        bail!(
+            "No suitable RISC-V GCC backend has been detected. options: [{}]",
+            GCC_VARIANTS.join(", ")
+        )
+    };
+
+    let process = Command::new(gcc)
         .args(["-nostdlib", "-static"])
         .arg(output)
         .arg(libcore_file_path)
@@ -49,7 +79,7 @@ pub fn compile(ast: AnalyzedProgram, args: BuildArgs, tmpdir: &TempDir) -> anyho
         .arg(&bin_path)
         .stderr(Stdio::piped())
         .spawn()
-        .with_context(|| "could not invoke `riscv64-linux-gnu-gcc`")?;
+        .with_context(|| format!("could not invoke `{gcc}`"))?;
 
     let out = process.wait_with_output()?;
     match out.status.success() {
