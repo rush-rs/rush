@@ -1,7 +1,7 @@
 use std::{
     fmt::{self, Display, Formatter},
     thread::sleep,
-    time::Duration,
+    time::Duration, error::Error,
 };
 
 use crate::{
@@ -39,6 +39,12 @@ pub type Result<T> = std::result::Result<T, RuntimeError>;
 pub struct RuntimeError {
     pub kind: RuntimeErrorKind,
     pub msg: String,
+}
+
+impl Error for RuntimeError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        None
+    }
 }
 
 impl Display for RuntimeError {
