@@ -1,4 +1,4 @@
-use std::{env, fs, time::Instant, process};
+use std::{env, fs, process, time::Instant};
 
 fn main() {
     let start = Instant::now();
@@ -19,5 +19,7 @@ fn main() {
             process::exit(1);
         }
     };
-    println!("{:?}", start.elapsed());
+    if Some("-t".to_string()) == env::args().nth(2) {
+        println!("{:?}", start.elapsed());
+    }
 }
