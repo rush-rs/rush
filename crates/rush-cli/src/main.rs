@@ -11,6 +11,7 @@ use rush_interpreter_tree::Interpreter;
 
 mod cli;
 
+mod vm;
 mod c;
 
 #[cfg(feature = "llvm")]
@@ -19,8 +20,6 @@ mod llvm;
 mod riscv;
 mod wasm;
 mod x86;
-
-const VM_MEM_SIZE: usize = 10_024;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -66,6 +65,7 @@ async fn main() -> anyhow::Result<()> {
                         x86::compile(tree, args)?;
                     }
                     CompilerBackend::C => c::compile(tree, args)?,
+                    CompilerBackend::Vm => vm::compile(tree, args)?,
                 }
 
                 if root_args.time {
@@ -86,6 +86,10 @@ async fn main() -> anyhow::Result<()> {
             #[cfg(feature = "llvm")]
             if args.backend != RunnableBackend::Llvm && args.llvm_opt != LlvmOpt::None {
                 bail!("cannot set LLVM optimization level when not using LLVM backend")
+            }
+
+            if args.backend != RunnableBackend::Vm && args.vm_speed.is_some() {
+                bail!("cannot set VM clock speed when not using the VM backend")
             }
 
             let path = args.path.clone();
@@ -110,10 +114,7 @@ async fn main() -> anyhow::Result<()> {
                         Ok(code) => code,
                         Err(err) => bail!(format!("interpreter crashed: {err}")),
                     },
-                    RunnableBackend::Vm => match rush_interpreter_vm::run::<VM_MEM_SIZE>(tree) {
-                        Ok(code) => code,
-                        Err(err) => bail!(format!("vm crashed: {err}")),
-                    },
+                    RunnableBackend::Vm => vm::run(tree, args)?,
                     #[cfg(feature = "llvm")]
                     RunnableBackend::Llvm => {
                         llvm::run(tree, args).with_context(|| "cannot run using `LLVM`")?

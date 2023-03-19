@@ -48,6 +48,10 @@ pub struct RunArgs {
     #[cfg(feature = "llvm")]
     pub llvm_opt: LlvmOpt,
 
+    /// The clock speed of the VM, enables debug mode
+    #[clap(short='s', long, value_parser)]
+    pub vm_speed: Option<u64>,
+
     /// Path to rush source file
     pub path: PathBuf,
 }
@@ -117,6 +121,8 @@ pub enum CompilerBackend {
     X86_64,
     /// ANSI C transpiler: requires GCC
     C,
+    /// rush VM compiler
+    Vm,
 }
 
 #[derive(ValueEnum, Clone, Debug, PartialEq, Eq)]
@@ -167,6 +173,7 @@ impl Display for CompilerBackend {
                 CompilerBackend::RiscV => "risc-v",
                 CompilerBackend::X86_64 => "x86_64",
                 CompilerBackend::C => "c",
+                CompilerBackend::Vm => "vm",
             }
         )
     }
