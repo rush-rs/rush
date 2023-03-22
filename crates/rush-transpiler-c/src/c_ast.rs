@@ -1,9 +1,10 @@
+use core::fmt;
 use std::{
     collections::{HashSet, VecDeque},
-    fmt::Display,
+    fmt::{Display, Formatter},
 };
 
-use rush_analyzer::{AssignOp, InfixOp, PrefixOp, Type};
+use rush_analyzer::{AssignOp, InfixOp, Type};
 
 fn display_stmts(stmts: &[Statement]) -> String {
     stmts
@@ -24,7 +25,7 @@ pub enum CType {
 }
 
 impl Display for CType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             CType::Int(ptr) => write!(f, "int{}", "*".repeat(*ptr)),
             CType::LongLongInt(ptr) => write!(f, "long long int{}", "*".repeat(*ptr)),
@@ -57,7 +58,7 @@ pub struct CProgram {
 }
 
 impl Display for CProgram {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let includes = match self.includes.is_empty() {
             true => String::new(),
             false => format!(
@@ -123,7 +124,7 @@ impl From<&FnDefinition> for FnSignature {
 }
 
 impl Display for FnSignature {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let params = self
             .params
             .iter()
@@ -153,7 +154,7 @@ pub struct FnDefinition {
 }
 
 impl Display for FnDefinition {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let params = self
             .params
             .iter()
@@ -196,7 +197,7 @@ pub enum Statement {
 }
 
 impl Display for Statement {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Statement::VarDeclaration(node) => write!(f, "{node}"),
             Statement::VarDefinition(ident, type_) => write!(f, "{type_} {ident};"),
@@ -224,7 +225,7 @@ pub struct VarDeclaration {
 }
 
 impl Display for VarDeclaration {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "{type_} {ident} = {expr};",
@@ -242,7 +243,7 @@ pub struct WhileStmt {
 }
 
 impl Display for WhileStmt {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "while ({cond}) {{\n{body}\n}}",
@@ -261,7 +262,7 @@ pub struct AssignStmt {
 }
 
 impl Display for AssignStmt {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "{ptrs}{ident} {op} {expr};",
@@ -281,7 +282,7 @@ pub struct IfStmt {
 }
 
 impl Display for IfStmt {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let then_block = display_stmts(&self.then_block);
 
         let else_part = match &self.else_block {
@@ -315,7 +316,7 @@ pub enum Expression {
 }
 
 impl Display for Expression {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Expression::Call(node) => write!(f, "{node}"),
             Expression::Prefix(node) => write!(f, "{node}"),
@@ -341,7 +342,7 @@ pub struct CallExpr {
 }
 
 impl Display for CallExpr {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let args = self
             .args
             .iter()
@@ -365,8 +366,19 @@ pub struct PrefixExpr {
 }
 
 impl Display for PrefixExpr {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{op}{expr}", op = self.op, expr = self.expr)
+    }
+}
+
+impl From<rush_analyzer::PrefixOp> for PrefixOp {
+    fn from(value: rush_analyzer::PrefixOp) -> Self {
+        match value {
+            rush_analyzer::PrefixOp::Not => unreachable!("This decision is made in the transpiler"),
+            rush_analyzer::PrefixOp::Neg => Self::Neg,
+            rush_analyzer::PrefixOp::Ref => Self::Ref,
+            rush_analyzer::PrefixOp::Deref => Self::Deref,
+        }
     }
 }
 
@@ -378,7 +390,7 @@ pub struct InfixExpr {
 }
 
 impl Display for InfixExpr {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let lhs = self.lhs.to_string();
         let rhs = self.rhs.to_string();
 
@@ -391,6 +403,36 @@ impl Display for InfixExpr {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrefixOp {
+    /// !
+    BoolNot,
+    /// ~
+    BinNot,
+    /// -
+    Neg,
+    /// &
+    Ref,
+    /// *
+    Deref,
+}
+
+impl Display for PrefixOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                PrefixOp::BoolNot => "!",
+                PrefixOp::BinNot => "~",
+                PrefixOp::Neg => "-",
+                PrefixOp::Ref => "&",
+                PrefixOp::Deref => "*",
+            }
+        )
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct CastExpr {
     pub expr: Expression,
@@ -398,7 +440,7 @@ pub struct CastExpr {
 }
 
 impl Display for CastExpr {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "({type_}) {expr}", type_ = self.type_, expr = self.expr)
     }
 }

@@ -3,7 +3,7 @@ use std::{
     mem,
 };
 
-use rush_analyzer::{ast::*, AssignOp, InfixOp, PrefixOp, Type};
+use rush_analyzer::{ast::*, AssignOp, InfixOp, Type};
 
 use crate::c_ast::*;
 
@@ -386,7 +386,7 @@ impl<'src> Transpiler<'src> {
         let cond_check = Statement::If(IfStmt {
             cond: Expression::Prefix(Box::new(PrefixExpr {
                 expr: Expression::Grouped(Box::new(cond)),
-                op: PrefixOp::Not,
+                op: PrefixOp::BoolNot,
             })),
             then_block: vec![Statement::Goto(break_label.clone())],
             else_block: None,
@@ -455,7 +455,7 @@ impl<'src> Transpiler<'src> {
         let cond_check = Statement::If(IfStmt {
             cond: Expression::Prefix(Box::new(PrefixExpr {
                 expr: Expression::Grouped(Box::new(cond)),
-                op: PrefixOp::Not,
+                op: PrefixOp::BoolNot,
             })),
             then_block: vec![Statement::Goto(break_label.clone())],
             else_block: None,
@@ -612,8 +612,16 @@ impl<'src> Transpiler<'src> {
         &mut self,
         node: AnalyzedPrefixExpr<'src>,
     ) -> (Vec<Statement>, Option<Expression>) {
+        let expr_type = node.expr.result_type();
         let (stmts, expr) = self.expression(node.expr);
-        let expr = expr.map(|expr| Expression::Prefix(Box::new(PrefixExpr { expr, op: node.op })));
+        let expr = expr.map(|expr| {
+            let op = match (expr_type, node.op) {
+                (Type::Int(0), rush_analyzer::PrefixOp::Not) => PrefixOp::BinNot,
+                (_, rush_analyzer::PrefixOp::Not) => PrefixOp::BoolNot,
+                (_, op) => op.into(),
+            };
+            Expression::Prefix(Box::new(PrefixExpr { expr, op }))
+        });
         (stmts, expr)
     }
 
@@ -671,7 +679,7 @@ impl<'src> Transpiler<'src> {
                                 true => expr,
                                 false => Expression::Prefix(Box::new(PrefixExpr {
                                     expr: Expression::Grouped(Box::new(expr)),
-                                    op: PrefixOp::Not,
+                                    op: PrefixOp::BoolNot,
                                 })),
                             },
                             None => Expression::Bool(true),
