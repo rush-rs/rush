@@ -21,6 +21,8 @@ tests = {
     './basic/approx_pi.rush': 0,
     './basic/approx_e.rush': 0,
     './basic/approx_apery.rush': 0,
+    './basic/wasm_test.rush': 37,
+    './basic/x64_test.rush': 170,
     # 'evil exits' test if the `!` type can occur everywhere
     './exits/infix.rush': 5,
     './exits/if_else.rush': 6,
@@ -45,6 +47,7 @@ tests = {
     './pointers/for_loop.rush': 15,
     './pointers/assignment_edge_cases.rush': 104,
     './pointers/as_return_type.rush': 69,
+    './pointers/shadow_ref.rush': 42,
 }
 
 # saves the backend and any additional commands to be executed after `cargo r`

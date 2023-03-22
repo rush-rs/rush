@@ -5,9 +5,10 @@ fn set() {
     a += b;
 }
 
+// Should be 37
 fn main() {
     set();
-    exit(a);
+    exit(a - fib(10) - pow(12, 2));
 }
 
 fn fib(mut n: int) -> int {

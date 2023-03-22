@@ -67,6 +67,6 @@ pub fn type_to_byte(type_: Type) -> Option<u8> {
         Type::Char(0) => Some(types::I32),
         Type::Unit | Type::Never => None,
         Type::Unknown => unreachable!("the analyzer guarantees one of the above to match"),
-        _ => todo!(), // TODO: what to do with pointers?
+        _ => panic!("Pointers are not supported in the WASM backend"), // TODO: what to do with pointers?
     }
 }

@@ -1,0 +1,6 @@
+fn main() {
+    let mut a = 41;
+    let a = &a;
+    *a += 1;
+    exit(*a);
+}
