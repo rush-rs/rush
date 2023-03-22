@@ -950,7 +950,7 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
         // perform the function call
         let res = self
             .builder
-            .build_call(func, &args, format!("ret_{}", node.func).as_str())
+            .build_call(func, &args, &format!("ret_{}", node.func))
             .try_as_basic_value();
 
         res.left_or(self.unit_value())
