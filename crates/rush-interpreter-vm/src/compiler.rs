@@ -546,12 +546,14 @@ impl<'src> Compiler<'src> {
         let assignee = self.resolve_var(node.assignee);
 
         let ptr = match assignee {
-            Variable::Local { offset } => Pointer::Rel(offset),
-            Variable::Global { addr } => Pointer::Abs(addr),
-            Variable::Unit => unreachable!("cannot assign to unit values"),
+            Variable::Local { offset } => Some(Pointer::Rel(offset)),
+            Variable::Global { addr } => Some(Pointer::Abs(addr)),
+            Variable::Unit => None,
         };
 
-        self.insert(Instruction::Push(Value::Ptr(ptr)));
+        if let Some(ptr) = ptr {
+            self.insert(Instruction::Push(Value::Ptr(ptr)));
+        }
 
         let mut ptr_count = node.assignee_ptr_count;
         while ptr_count > 0 {
