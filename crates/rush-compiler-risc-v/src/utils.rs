@@ -182,7 +182,7 @@ impl<'tree> Compiler<'tree> {
                 return *reg;
             }
         }
-        unreachable!("out of registers!")
+        panic!("out of integer registers")
     }
 
     /// Allocates and returns the next unused float register.
@@ -197,7 +197,7 @@ impl<'tree> Compiler<'tree> {
                 return *reg;
             }
         }
-        unreachable!("out of float registers!")
+        panic!("out of float registers")
     }
 
     /// Helper function which marks a register as used
