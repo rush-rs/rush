@@ -841,7 +841,7 @@ impl<'tree> Compiler<'tree> {
             (lhs, rhs, op) => {
                 let lhs_type = lhs.result_type();
 
-                // compile RHS and mark the LHS register as used
+                // mark LHS register as used and compile RHS
                 let lhs_reg = self.expression(lhs)?;
                 self.use_reg(lhs_reg, Size::from(lhs_type));
 
