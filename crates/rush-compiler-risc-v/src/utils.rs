@@ -106,7 +106,7 @@ impl<'tree> Compiler<'tree> {
                     if call_return_reg == Some(Register::Int(IntRegister::A0))
                         && reg == IntRegister::A0
                     {
-                        let new_res_reg = self.alloc_ireg();
+                        let new_res_reg = self.get_int_reg();
                         call_return_reg = Some(new_res_reg.to_reg());
                         // copy the return value into the new result value
                         self.insert(Instruction::Mov(new_res_reg, IntRegister::A0));
@@ -172,7 +172,7 @@ impl<'tree> Compiler<'tree> {
 
     /// Allocates and returns the next unused int register.
     /// Does not mark the register as used.
-    pub(crate) fn alloc_ireg(&self) -> IntRegister {
+    pub(crate) fn get_int_reg(&self) -> IntRegister {
         for reg in INT_REGISTERS {
             if !self
                 .used_registers
@@ -267,7 +267,7 @@ impl<'tree> Compiler<'tree> {
     ) -> Register {
         match type_ {
             Type::Bool(0) | Type::Char(0) => {
-                let dest_reg = self.alloc_ireg();
+                let dest_reg = self.get_int_reg();
                 self.insert_w_comment(Instruction::Lb(dest_reg, ptr), ident.into());
                 Register::Int(dest_reg)
             }
@@ -277,7 +277,7 @@ impl<'tree> Compiler<'tree> {
                 Register::Float(dest_reg)
             }
             Type::Int(_) | Type::Float(_) | Type::Bool(_) | Type::Char(_) => {
-                let dest_reg = self.alloc_ireg();
+                let dest_reg = self.get_int_reg();
                 self.insert_w_comment(Instruction::Ld(dest_reg, ptr), ident.into());
                 Register::Int(dest_reg)
             }
