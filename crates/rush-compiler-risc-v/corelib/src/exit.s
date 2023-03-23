@@ -8,5 +8,5 @@
 .global exit
 
 exit:
-	li a7, 93 # syscall type is `exit`
-	ecall     # exit code is already in `a0`
+    li a7, 93 # syscall type is `exit`
+    ecall     # exit code is already in `a0`
