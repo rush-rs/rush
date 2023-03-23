@@ -23,13 +23,13 @@ pub struct Compiler<'tree> {
     pub(crate) rodata_section: Vec<DataObj>,
     /// Holds metadata about the current function
     pub(crate) curr_fn: Option<Function>,
-    /// Holds metadata about the current loop
+    /// Holds metadata about the current loop(s)
     pub(crate) loops: Vec<Loop>,
-    /// The first element is the root scope, the last element is the current scope.
+    /// The last element is the current scope.
     pub(crate) scopes: Vec<HashMap<&'tree str, Variable>>,
     /// Holds the global variables of the program.
     pub(crate) globals: HashMap<&'tree str, Variable>,
-    /// Specifies all registers which are currently in use and may not be overwritten.
+    /// Specifies all currentlu used registers.
     pub(crate) used_registers: Vec<(Register, Size)>,
 }
 
