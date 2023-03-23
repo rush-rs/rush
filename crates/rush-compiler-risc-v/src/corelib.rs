@@ -14,12 +14,12 @@ impl<'tree> Compiler<'tree> {
         exponent: IntRegister,
     ) -> IntRegister {
         // before the function is called, all currently used registers are saved
-        let mut regs_on_stack = vec![];
-        // TODO: maybe remove the need for clone
-        for (reg, size) in self.used_registers.clone() {
-            let offset = self.spill_reg(reg, size);
-            regs_on_stack.push((reg, offset, size));
-        }
+        let regs_on_stack = self
+            .used_registers
+            .clone()
+            .iter()
+            .map(|(reg, size)| (*reg, self.spill_reg(*reg, *size), *size))
+            .collect();
 
         // prepare the arguments
         if base != IntRegister::A0 {
@@ -41,12 +41,12 @@ impl<'tree> Compiler<'tree> {
     /// Calls the `__rush_internal_cast_int_to_char` function in the rush corelib.
     pub(crate) fn __rush_internal_cast_int_to_char(&mut self, src: IntRegister) -> IntRegister {
         // before the function is called, all currently used registers are saved
-        let mut regs_on_stack = vec![];
-        // TODO: maybe remove the need for clone
-        for (reg, size) in self.used_registers.clone() {
-            let offset = self.spill_reg(reg, size);
-            regs_on_stack.push((reg, offset, size));
-        }
+        let regs_on_stack = self
+            .used_registers
+            .clone()
+            .iter()
+            .map(|(reg, size)| (*reg, self.spill_reg(*reg, *size), *size))
+            .collect();
 
         // prepare the argument
         if src != IntRegister::A0 {
@@ -65,12 +65,12 @@ impl<'tree> Compiler<'tree> {
     /// Calls the `__rush_internal_cast_float_to_char` function in the rush corelib.
     pub(crate) fn __rush_internal_cast_float_to_char(&mut self, src: FloatRegister) -> IntRegister {
         // before the function is called, all currently used registers are saved
-        let mut regs_on_stack = vec![];
-        // TODO: maybe remove the need for clone
-        for (reg, size) in self.used_registers.clone() {
-            let offset = self.spill_reg(reg, size);
-            regs_on_stack.push((reg, offset, size));
-        }
+        let regs_on_stack = self
+            .used_registers
+            .clone()
+            .iter()
+            .map(|(reg, size)| (*reg, self.spill_reg(*reg, *size), *size))
+            .collect();
 
         // prepare the argument
         if src != FloatRegister::Fa0 {

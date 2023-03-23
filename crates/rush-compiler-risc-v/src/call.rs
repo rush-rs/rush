@@ -91,12 +91,12 @@ impl<'tree> Compiler<'tree> {
     /// After the call has been performed, all previously saved registers are restored from memory.
     pub(crate) fn call_expr(&mut self, node: AnalyzedCallExpr<'tree>) -> Option<Register> {
         // before the function is called, all currently used registers are saved
-        let mut regs_on_stack = vec![];
-
-        for (reg, size) in self.used_registers.clone() {
-            let offset = self.spill_reg(reg, size);
-            regs_on_stack.push((reg, offset, size));
-        }
+        let regs_on_stack = self
+            .used_registers
+            .clone()
+            .iter()
+            .map(|(reg, size)| (*reg, self.spill_reg(*reg, *size), *size))
+            .collect();
 
         // save the previous state of the used registers
         let used_regs_prev = mem::take(&mut self.used_registers);
