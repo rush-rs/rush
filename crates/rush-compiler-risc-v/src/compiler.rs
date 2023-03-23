@@ -63,7 +63,7 @@ impl<'tree> Compiler<'tree> {
         }
 
         // compile `main` fn
-        self.declare_main_fn(ast.main_fn);
+        self.define_main_fn(ast.main_fn);
 
         // compile other functions
         for func in ast.functions.into_iter().filter(|f| f.used) {
@@ -120,7 +120,7 @@ impl<'tree> Compiler<'tree> {
     }
 
     /// Creates the `_start` label and compiles a call to the compiled `main` function.
-    fn declare_main_fn(&mut self, node: AnalyzedBlock<'tree>) {
+    fn define_main_fn(&mut self, node: AnalyzedBlock<'tree>) {
         let start_label = "_start";
         self.blocks.push(Block::new(start_label.into()));
         self.exports.push(start_label.into());
