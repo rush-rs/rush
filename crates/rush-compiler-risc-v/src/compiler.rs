@@ -57,9 +57,9 @@ impl<'tree> Compiler<'tree> {
         ast: AnalyzedProgram<'tree>,
         comment_config: &CommentConfig,
     ) -> String {
-        // declare globals
+        // define globals
         for var in ast.globals.into_iter().filter(|g| g.used) {
-            self.declare_global(var.name, var.mutable, var.expr)
+            self.define_global(var.name, var.mutable, var.expr)
         }
 
         // compile `main` fn
@@ -67,7 +67,7 @@ impl<'tree> Compiler<'tree> {
 
         // compile other functions
         for func in ast.functions.into_iter().filter(|f| f.used) {
-            self.function_declaration(func)
+            self.function_definition(func)
         }
 
         // generate Assembly
@@ -105,7 +105,7 @@ impl<'tree> Compiler<'tree> {
             );
         }
 
-        // declares constants (like floats) under the `.rodata` section
+        // defines constants (like floats) under the `.rodata` section
         if !self.rodata_section.is_empty() {
             output += &format!(
                 "\n.section .rodata\n{}",
@@ -154,10 +154,10 @@ impl<'tree> Compiler<'tree> {
         self.epilogue()
     }
 
-    /// Declares a new global variable.
+    /// Defines a new global variable.
     /// If the global is mutable, it is placed in the `.data` section.
     /// Otherwise, it is placed in the `.rodata` section.
-    fn declare_global(
+    fn define_global(
         &mut self,
         label: &'tree str,
         mutable: bool,
@@ -206,7 +206,7 @@ impl<'tree> Compiler<'tree> {
     }
 
     /// Compiles an [`AnalyzedFunctionDefinition`] declaration.
-    fn function_declaration(&mut self, node: AnalyzedFunctionDefinition<'tree>) {
+    fn function_definition(&mut self, node: AnalyzedFunctionDefinition<'tree>) {
         let fn_block = format!("main..{}", node.name).into();
         self.blocks.push(Block::new(Rc::clone(&fn_block)));
 
