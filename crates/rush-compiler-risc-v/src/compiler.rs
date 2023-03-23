@@ -611,7 +611,7 @@ impl<'tree> Compiler<'tree> {
                 Some(Register::Int(dest_reg))
             }
             AnalyzedExpression::Float(value) => {
-                let dest_reg = self.alloc_freg();
+                let dest_reg = self.get_float_reg();
 
                 // if there is already a float constant with this value, use its label
                 // otherwise, create a new float constant under the `.rodata` section
@@ -702,7 +702,7 @@ impl<'tree> Compiler<'tree> {
                 Some(dest_reg.to_reg())
             }
             (Type::Float(0), PrefixOp::Neg) => {
-                let dest_reg = self.alloc_freg();
+                let dest_reg = self.get_float_reg();
                 self.insert(Instruction::FNeg(dest_reg, lhs_reg.into()));
                 Some(dest_reg.to_reg())
             }
@@ -729,7 +729,7 @@ impl<'tree> Compiler<'tree> {
                 Some(dest_reg.into())
             }
             (Type::Float(1), PrefixOp::Deref) => {
-                let dest_reg = self.alloc_freg();
+                let dest_reg = self.get_float_reg();
 
                 self.insert_w_comment(
                     Instruction::Fld(dest_reg, Pointer::Register(lhs_reg.into(), 0)),
@@ -872,7 +872,7 @@ impl<'tree> Compiler<'tree> {
         // creates the two result registers
         // eventually, just one of the two is used
         let dest_regi = self.get_int_reg();
-        let dest_regf = self.alloc_freg();
+        let dest_regf = self.get_float_reg();
 
         match (type_, op) {
             (Type::Int(0), InfixOp::Plus) => {
@@ -1129,12 +1129,12 @@ impl<'tree> Compiler<'tree> {
             | (Type::Char(0), Type::Int(0)) => lhs_reg,
             // integer base type casts
             (Type::Int(0), Type::Float(0)) => {
-                let dest_reg = self.alloc_freg();
+                let dest_reg = self.get_float_reg();
                 self.insert(Instruction::CastIntToFloat(dest_reg, lhs_reg.into()));
                 dest_reg.to_reg()
             }
             (Type::Char(0) | Type::Bool(0), Type::Float(0)) => {
-                let dest_reg = self.alloc_freg();
+                let dest_reg = self.get_float_reg();
                 self.insert(Instruction::CastByteToFloat(dest_reg, lhs_reg.into()));
                 dest_reg.to_reg()
             }
@@ -1175,7 +1175,7 @@ impl<'tree> Compiler<'tree> {
                 };
 
                 // load value from float constant into a free float register
-                let zero_float_reg = self.alloc_freg();
+                let zero_float_reg = self.get_float_reg();
                 self.insert(Instruction::Fld(
                     zero_float_reg,
                     Pointer::Label(float_zero_label),
@@ -1210,7 +1210,7 @@ impl<'tree> Compiler<'tree> {
 
         // will later hold the result of the branch
         let res_reg = match node.result_type {
-            Type::Float(0) => Some(self.alloc_freg().to_reg()),
+            Type::Float(0) => Some(self.get_float_reg().to_reg()),
             Type::Int(0) | Type::Bool(0) | Type::Char(0) => Some(self.get_int_reg().to_reg()),
             _ => None, // other types require no register
         };

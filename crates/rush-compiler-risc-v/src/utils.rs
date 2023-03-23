@@ -130,7 +130,7 @@ impl<'tree> Compiler<'tree> {
                     if call_return_reg == Some(Register::Float(FloatRegister::Fa0))
                         && reg == FloatRegister::Fa0
                     {
-                        let new_res_reg = self.alloc_freg();
+                        let new_res_reg = self.get_float_reg();
                         call_return_reg = Some(new_res_reg.to_reg());
                         // copy the return value into the new result value
                         self.insert(Instruction::Fmv(new_res_reg, FloatRegister::Fa0));
@@ -187,7 +187,7 @@ impl<'tree> Compiler<'tree> {
 
     /// Allocates and returns the next unused float register.
     /// Does not mark the register as used.
-    pub(crate) fn alloc_freg(&self) -> FloatRegister {
+    pub(crate) fn get_float_reg(&self) -> FloatRegister {
         for reg in FLOAT_REGISTERS {
             if !self
                 .used_registers
@@ -272,7 +272,7 @@ impl<'tree> Compiler<'tree> {
                 Register::Int(dest_reg)
             }
             Type::Float(0) => {
-                let dest_reg = self.alloc_freg();
+                let dest_reg = self.get_float_reg();
                 self.insert_w_comment(Instruction::Fld(dest_reg, ptr), ident.into());
                 Register::Float(dest_reg)
             }
