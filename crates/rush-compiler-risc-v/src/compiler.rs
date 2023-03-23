@@ -144,7 +144,7 @@ impl<'tree> Compiler<'tree> {
         self.function_body(node);
         self.pop_scope();
 
-        // prologue is inserted after the body (because it now knows about the frame size)
+        // insertion after body was compiled; frame size is now known
         let mut prologue = self.prologue();
         self.insert_at(main_label); // resets the current block back to the fn block
         prologue.append(&mut self.blocks[self.curr_block].instructions);
