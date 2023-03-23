@@ -166,8 +166,8 @@ impl<'tree> Compiler<'tree> {
         let type_ = value.result_type();
         let data = match (type_, value) {
             (Type::Int(0), AnalyzedExpression::Int(val)) => DataObjType::Dword(val),
-            (Type::Bool(0), AnalyzedExpression::Bool(val)) => DataObjType::Byte(val as i64),
-            (Type::Char(0), AnalyzedExpression::Char(val)) => DataObjType::Byte(val as i64),
+            (Type::Bool(0), AnalyzedExpression::Bool(val)) => DataObjType::Byte(val as u8),
+            (Type::Char(0), AnalyzedExpression::Char(val)) => DataObjType::Byte(val),
             (Type::Float(0), AnalyzedExpression::Float(val)) => DataObjType::Float(val),
             _ => unreachable!("other types cannot occur in globals"),
         };

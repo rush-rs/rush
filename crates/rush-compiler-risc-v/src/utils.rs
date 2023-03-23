@@ -409,7 +409,7 @@ pub(crate) enum DataObjType {
     /// Holds an int value of the `.dword` size.
     Dword(i64),
     /// Holds 1 byte values like `char` and `bool`
-    Byte(i64),
+    Byte(u8),
 }
 
 impl Display for DataObjType {
