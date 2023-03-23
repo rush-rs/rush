@@ -137,17 +137,18 @@ pub enum IntRegister {
 
 impl IntRegister {
     pub(crate) fn nth_param(n: usize) -> Option<Self> {
-        Some(match n {
-            0 => Self::A0,
-            1 => Self::A1,
-            2 => Self::A2,
-            3 => Self::A3,
-            4 => Self::A4,
-            5 => Self::A5,
-            6 => Self::A6,
-            7 => Self::A7,
-            _ => return None,
-        })
+        [
+            Self::A0,
+            Self::A1,
+            Self::A2,
+            Self::A3,
+            Self::A4,
+            Self::A5,
+            Self::A6,
+            Self::A7,
+        ]
+        .into_iter()
+        .nth(n)
     }
 
     #[inline]
@@ -213,17 +214,18 @@ pub enum FloatRegister {
 
 impl FloatRegister {
     pub(crate) fn nth_param(n: usize) -> Option<Self> {
-        Some(match n {
-            0 => Self::Fa0,
-            1 => Self::Fa1,
-            2 => Self::Fa2,
-            3 => Self::Fa3,
-            4 => Self::Fa4,
-            5 => Self::Fa5,
-            6 => Self::Fa6,
-            7 => Self::Fa7,
-            _ => return None,
-        })
+        [
+            Self::Fa0,
+            Self::Fa1,
+            Self::Fa2,
+            Self::Fa3,
+            Self::Fa4,
+            Self::Fa5,
+            Self::Fa6,
+            Self::Fa7,
+        ]
+        .into_iter()
+        .nth(n)
     }
 
     #[inline]
