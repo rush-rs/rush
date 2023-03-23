@@ -159,7 +159,7 @@ impl<'tree> Compiler<'tree> {
                         }
                         None => {
                             // no more param registers: spilling required
-                            self.insert_w_comment(
+                            self.insert_with_comment(
                                 Instruction::Fsd(
                                     res_reg.into(),
                                     Pointer::Register(IntRegister::Sp, spill_count * 8),
@@ -181,7 +181,7 @@ impl<'tree> Compiler<'tree> {
                         }
                         None => {
                             // no more params: spilling required
-                            self.insert_w_comment(
+                            self.insert_with_comment(
                                 Instruction::Sd(
                                     res_reg.into(),
                                     Pointer::Register(IntRegister::Sp, spill_count * 8),

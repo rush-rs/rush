@@ -566,18 +566,18 @@ impl<'tree> Compiler<'tree> {
 
         match reg {
             Register::Int(reg) => match type_ {
-                Type::Bool(0) | Type::Char(0) => self.insert_w_comment(
+                Type::Bool(0) | Type::Char(0) => self.insert_with_comment(
                     Instruction::Sb(reg, Pointer::Register(IntRegister::Fp, offset)),
                     comment,
                 ),
                 Type::Int(_) | Type::Float(_) | Type::Bool(_) | Type::Char(_) => self
-                    .insert_w_comment(
+                    .insert_with_comment(
                         Instruction::Sd(reg, Pointer::Register(IntRegister::Fp, offset)),
                         comment,
                     ),
                 _ => unreachable!("only the types above use int registers"),
             },
-            Register::Float(reg) => self.insert_w_comment(
+            Register::Float(reg) => self.insert_with_comment(
                 Instruction::Fsd(reg, Pointer::Register(IntRegister::Fp, offset)),
                 comment,
             ),
@@ -671,12 +671,12 @@ impl<'tree> Compiler<'tree> {
                     .expect("the analyzer guarantees valid pointers")
                 {
                     Pointer::Register(_, offset) => {
-                        self.insert_w_comment(
+                        self.insert_with_comment(
                             Instruction::Addi(dest_reg, IntRegister::Fp, offset),
                             format!("&{}", ident.ident).into(),
                         );
                     }
-                    Pointer::Label(label) => self.insert_w_comment(
+                    Pointer::Label(label) => self.insert_with_comment(
                         Instruction::La(dest_reg, Rc::clone(&label)),
                         format!("&{label}").into(),
                     ),
@@ -715,7 +715,7 @@ impl<'tree> Compiler<'tree> {
 
                 self.insert(Instruction::Mov(dest_reg, lhs_reg.into()));
 
-                self.insert_w_comment(
+                self.insert_with_comment(
                     Instruction::Lb(dest_reg, Pointer::Register(dest_reg, 0)),
                     "deref".into(),
                 );
@@ -725,7 +725,7 @@ impl<'tree> Compiler<'tree> {
             (Type::Float(1), PrefixOp::Deref) => {
                 let dest_reg = self.get_float_reg();
 
-                self.insert_w_comment(
+                self.insert_with_comment(
                     Instruction::Fld(dest_reg, Pointer::Register(lhs_reg.into(), 0)),
                     "deref".into(),
                 );
@@ -737,7 +737,7 @@ impl<'tree> Compiler<'tree> {
 
                 self.insert(Instruction::Mov(dest_reg, lhs_reg.into()));
 
-                self.insert_w_comment(
+                self.insert_with_comment(
                     Instruction::Ld(dest_reg, Pointer::Register(dest_reg, 0)),
                     "deref".into(),
                 );
@@ -764,7 +764,7 @@ impl<'tree> Compiler<'tree> {
             };
 
             // jump to the merge block if the result is determined by the lhs
-            self.insert_w_comment(
+            self.insert_with_comment(
                 Instruction::BrCond(
                     condition,
                     lhs.into(),
@@ -1011,7 +1011,7 @@ impl<'tree> Compiler<'tree> {
             self.use_reg(ptr_reg.into(), Size::Dword);
 
             while ptr_count > 0 {
-                self.insert_w_comment(
+                self.insert_with_comment(
                     Instruction::Ld(
                         ptr_reg,
                         src_ptr

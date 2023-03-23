@@ -76,8 +76,8 @@ impl<'tree> Compiler<'tree> {
                 let ptr = Pointer::Register(IntRegister::Fp, offset);
 
                 match size {
-                    Size::Byte => self.insert_w_comment(Instruction::Sb(reg, ptr), comment),
-                    Size::Dword => self.insert_w_comment(Instruction::Sd(reg, ptr), comment),
+                    Size::Byte => self.insert_with_comment(Instruction::Sb(reg, ptr), comment),
+                    Size::Dword => self.insert_with_comment(Instruction::Sd(reg, ptr), comment),
                 }
             }
             Register::Float(reg) => self.insert(Instruction::Fsd(
@@ -114,11 +114,11 @@ impl<'tree> Compiler<'tree> {
 
                     // perform different load operations depending on the size
                     match size {
-                        Size::Byte => self.insert_w_comment(
+                        Size::Byte => self.insert_with_comment(
                             Instruction::Lb(reg, Pointer::Register(IntRegister::Fp, offset)),
                             comment,
                         ),
-                        Size::Dword => self.insert_w_comment(
+                        Size::Dword => self.insert_with_comment(
                             Instruction::Ld(reg, Pointer::Register(IntRegister::Fp, offset)),
                             comment,
                         ),
@@ -136,7 +136,7 @@ impl<'tree> Compiler<'tree> {
                         self.insert(Instruction::Fmv(new_res_reg, FloatRegister::Fa0));
                     }
 
-                    self.insert_w_comment(
+                    self.insert_with_comment(
                         Instruction::Fld(reg, Pointer::Register(IntRegister::Fp, offset)),
                         comment,
                     );
@@ -268,17 +268,17 @@ impl<'tree> Compiler<'tree> {
         match type_ {
             Type::Bool(0) | Type::Char(0) => {
                 let dest_reg = self.get_int_reg();
-                self.insert_w_comment(Instruction::Lb(dest_reg, ptr), ident.into());
+                self.insert_with_comment(Instruction::Lb(dest_reg, ptr), ident.into());
                 Register::Int(dest_reg)
             }
             Type::Float(0) => {
                 let dest_reg = self.get_float_reg();
-                self.insert_w_comment(Instruction::Fld(dest_reg, ptr), ident.into());
+                self.insert_with_comment(Instruction::Fld(dest_reg, ptr), ident.into());
                 Register::Float(dest_reg)
             }
             Type::Int(_) | Type::Float(_) | Type::Bool(_) | Type::Char(_) => {
                 let dest_reg = self.get_int_reg();
-                self.insert_w_comment(Instruction::Ld(dest_reg, ptr), ident.into());
+                self.insert_with_comment(Instruction::Ld(dest_reg, ptr), ident.into());
                 Register::Int(dest_reg)
             }
             Type::Unit | Type::Never | Type::Unknown => {
@@ -293,7 +293,7 @@ impl<'tree> Compiler<'tree> {
         // only insert a jump if the current block is not already terminated
         if !self.curr_block().is_terminated {
             match comment {
-                Some(comment) => self.insert_w_comment(Instruction::Jmp(label), comment),
+                Some(comment) => self.insert_with_comment(Instruction::Jmp(label), comment),
                 None => self.insert(Instruction::Jmp(label)),
             }
             self.curr_block_mut().is_terminated = true;
@@ -320,7 +320,7 @@ impl<'tree> Compiler<'tree> {
 
     /// Inserts an [`Instruction`] at the end of the current basic block.
     /// Also inserts the specified comment at the end of the instruction.
-    pub(crate) fn insert_w_comment(&mut self, instruction: Instruction, comment: Cow<'tree, str>) {
+    pub(crate) fn insert_with_comment(&mut self, instruction: Instruction, comment: Cow<'tree, str>) {
         self.blocks[self.curr_block]
             .instructions
             .push((instruction, Some(comment)));
