@@ -105,43 +105,10 @@ impl<'tree> Compiler<'tree> {
         // type dependent: (`a0` -> `int_cnt = 0`), (`fa0` -> `float_cnt = 0`)
         let mut float_cnt = 0;
         let mut int_cnt = 0;
-
         // calculate the total byte size of spilled params
         let mut spill_param_size = 0;
-        for arg in &node.args {
-            match arg.result_type() {
-                Type::Unit | Type::Never | Type::Unknown => continue,
-                Type::Float(0) => {
-                    if FloatRegister::nth_param(float_cnt).is_none() {
-                        spill_param_size += 8;
-                    }
-                    float_cnt += 1;
-                }
-                Type::Int(_) | Type::Bool(_) | Type::Char(_) | Type::Float(_) => {
-                    if IntRegister::nth_param(int_cnt).is_none() {
-                        spill_param_size += 8;
-                    }
-                    int_cnt += 1;
-                }
-            }
-        }
-
-        // reset counters for new iterations
-        int_cnt = 0;
-        float_cnt = 0;
-
-        // will later contain all registers used as params (needed for releasing locks later)
+        // needed for freeing registers later
         let mut param_regs = vec![];
-
-        // if there are caller saved registers, allocate space on the stack
-        if spill_param_size > 0 {
-            self.insert(Instruction::Addi(
-                IntRegister::Sp,
-                IntRegister::Sp,
-                -spill_param_size,
-            ));
-        }
-
         // specifies the count of the current register spill
         let mut spill_count = 0;
 
@@ -151,52 +118,49 @@ impl<'tree> Compiler<'tree> {
                     self.expression(arg);
                 }
                 Type::Float(0) => {
-                    let res_reg = self.expression(arg).expect("`None` filtered above");
-                    match FloatRegister::nth_param(float_cnt) {
-                        Some(curr_reg) => {
-                            param_regs.push(curr_reg.to_reg());
-                            self.use_reg(curr_reg.to_reg(), Size::Dword);
-                        }
-                        None => {
-                            // no more param registers: spilling required
-                            self.insert_with_comment(
-                                Instruction::Fsd(
-                                    res_reg.into(),
-                                    Pointer::Register(IntRegister::Sp, spill_count * 8),
-                                ),
-                                format!("{} byte param spill", Size::Dword.byte_count(),).into(),
-                            );
-                            spill_count += 1;
-                        }
+                    let res_reg = self.expression(arg).expect("type is float");
+
+                    if let Some(reg) = FloatRegister::nth_param(float_cnt) {
+                        param_regs.push(reg.to_reg());
+                        self.use_reg(reg.to_reg(), Size::Dword);
+                    } else {
+                        // no more param registers: spilling required
+                        self.insert_with_comment(
+                            Instruction::Fsd(
+                                res_reg.into(),
+                                Pointer::Register(IntRegister::Sp, spill_count * 8),
+                            ),
+                            format!("{} byte param spill", Size::Dword.byte_count(),).into(),
+                        );
+                        spill_count += 1;
+                        spill_param_size += 8;
                     }
                     float_cnt += 1;
                 }
                 Type::Int(_) | Type::Bool(_) | Type::Char(_) | Type::Float(_) => {
                     let type_ = arg.result_type();
                     let res_reg = self.expression(arg).expect("`None` filtered above");
-                    match IntRegister::nth_param(int_cnt) {
-                        Some(curr_reg) => {
-                            param_regs.push(curr_reg.to_reg());
-                            self.use_reg(curr_reg.to_reg(), Size::from(type_));
-                        }
-                        None => {
-                            // no more params: spilling required
-                            self.insert_with_comment(
-                                Instruction::Sd(
-                                    res_reg.into(),
-                                    Pointer::Register(IntRegister::Sp, spill_count * 8),
-                                ),
-                                format!("{} byte param spill", Size::from(type_).byte_count())
-                                    .into(),
-                            );
-                            spill_count += 1;
-                        }
+                    if let Some(reg) = IntRegister::nth_param(int_cnt) {
+                        param_regs.push(reg.to_reg());
+                        self.use_reg(reg.to_reg(), Size::from(type_));
+                    } else {
+                        // no more params: spilling required
+                        self.insert_with_comment(
+                            Instruction::Sd(
+                                res_reg.into(),
+                                Pointer::Register(IntRegister::Sp, spill_count * 8),
+                            ),
+                            format!("{} byte param spill", Size::from(type_).byte_count()).into(),
+                        );
+                        spill_count += 1;
+                        spill_param_size += 8;
                     }
-
                     int_cnt += 1;
                 }
             }
         }
+
+        self.curr_fn_mut().stack_allocs += spill_param_size;
 
         // perform function call
         let func_label = match node.func {
@@ -208,15 +172,6 @@ impl<'tree> Compiler<'tree> {
             func => format!("main..{func}").into(),
         };
         self.insert(Instruction::Call(func_label));
-
-        // if there were spilled params, deallocate stack space
-        if spill_param_size > 0 {
-            self.insert(Instruction::Addi(
-                IntRegister::Sp,
-                IntRegister::Sp,
-                spill_param_size,
-            ));
-        }
 
         // restore the old list of used registers
         self.used_registers = used_regs_prev;
