@@ -110,7 +110,7 @@ impl<'tree> Compiler<'tree> {
         // needed for freeing registers later
         let mut param_regs = vec![];
         // specifies the count of the current register spill
-        let mut spill_count = 0;
+        let mut spill_cnt = 0;
 
         for arg in node.args {
             match arg.result_type() {
@@ -128,18 +128,18 @@ impl<'tree> Compiler<'tree> {
                         self.insert_with_comment(
                             Instruction::Fsd(
                                 res_reg.into(),
-                                Pointer::Register(IntRegister::Sp, spill_count * 8),
+                                Pointer::Register(IntRegister::Sp, spill_cnt * 8),
                             ),
                             format!("{} byte param spill", Size::Dword.byte_count(),).into(),
                         );
-                        spill_count += 1;
+                        spill_cnt += 1;
                         spill_param_size += 8;
                     }
                     float_cnt += 1;
                 }
                 Type::Int(_) | Type::Bool(_) | Type::Char(_) | Type::Float(_) => {
                     let type_ = arg.result_type();
-                    let res_reg = self.expression(arg).expect("`None` filtered above");
+                    let res_reg = self.expression(arg).expect("type is int");
                     if let Some(reg) = IntRegister::nth_param(int_cnt) {
                         param_regs.push(reg.to_reg());
                         self.use_reg(reg.to_reg(), Size::from(type_));
@@ -148,11 +148,11 @@ impl<'tree> Compiler<'tree> {
                         self.insert_with_comment(
                             Instruction::Sd(
                                 res_reg.into(),
-                                Pointer::Register(IntRegister::Sp, spill_count * 8),
+                                Pointer::Register(IntRegister::Sp, spill_cnt * 8),
                             ),
                             format!("{} byte param spill", Size::from(type_).byte_count()).into(),
                         );
-                        spill_count += 1;
+                        spill_cnt += 1;
                         spill_param_size += 8;
                     }
                     int_cnt += 1;
@@ -165,7 +165,7 @@ impl<'tree> Compiler<'tree> {
         // perform function call
         let func_label = match node.func {
             "exit" => {
-                // mark the current block as terminated (avoid future useless jumps)
+                // mark the current block as terminated (avoid useless jumps)
                 self.curr_block_mut().is_terminated = true;
                 "exit".into()
             }
@@ -181,8 +181,7 @@ impl<'tree> Compiler<'tree> {
             Type::Int(_) | Type::Char(_) | Type::Bool(_) | Type::Float(_) => {
                 Some(IntRegister::A0.to_reg())
             }
-            Type::Unit | Type::Never => None,
-            Type::Unknown => unreachable!("analyzer would have failed"),
+            Type::Unit | Type::Never | Type::Unknown => None,
         };
 
         // restore all caller saved registers again
