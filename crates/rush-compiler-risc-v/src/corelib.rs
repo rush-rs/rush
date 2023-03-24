@@ -23,10 +23,10 @@ impl<'tree> Compiler<'tree> {
 
         // prepare the arguments
         if base != IntRegister::A0 {
-            self.insert(Instruction::Mov(IntRegister::A0, base));
+            self.insert(Instruction::Mv(IntRegister::A0, base));
         }
         if exponent != IntRegister::A1 {
-            self.insert(Instruction::Mov(IntRegister::A1, exponent));
+            self.insert(Instruction::Mv(IntRegister::A1, exponent));
         }
 
         // perform the function call
@@ -50,7 +50,7 @@ impl<'tree> Compiler<'tree> {
 
         // prepare the argument
         if src != IntRegister::A0 {
-            self.insert(Instruction::Mov(IntRegister::A0, src));
+            self.insert(Instruction::Mv(IntRegister::A0, src));
         }
 
         // perform the function call

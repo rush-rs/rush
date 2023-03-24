@@ -109,7 +109,7 @@ impl<'tree> Compiler<'tree> {
                         let new_res_reg = self.get_int_reg();
                         call_return_reg = Some(new_res_reg.to_reg());
                         // copy the return value into the new result value
-                        self.insert(Instruction::Mov(new_res_reg, IntRegister::A0));
+                        self.insert(Instruction::Mv(new_res_reg, IntRegister::A0));
                     }
 
                     // perform different load operations depending on the size

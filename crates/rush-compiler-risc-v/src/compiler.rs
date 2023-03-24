@@ -351,7 +351,7 @@ impl<'tree> Compiler<'tree> {
             // if the result register does not match the desired register, insert a move instruction
             match self.expression(expr) {
                 Some(Register::Int(reg)) => {
-                    self.insert(Instruction::Mov(IntRegister::A0, reg));
+                    self.insert(Instruction::Mv(IntRegister::A0, reg));
                 }
                 Some(Register::Float(reg)) => {
                     self.insert(Instruction::Fmv(FloatRegister::Fa0, reg));
@@ -413,7 +413,7 @@ impl<'tree> Compiler<'tree> {
                 None => {}                                      // returns unit, do nothing
                 Some(Register::Int(IntRegister::A0)) => {}      // already in correct register
                 Some(Register::Float(FloatRegister::Fa0)) => {} // already in correct register
-                Some(Register::Int(reg)) => self.insert(Instruction::Mov(IntRegister::A0, reg)),
+                Some(Register::Int(reg)) => self.insert(Instruction::Mv(IntRegister::A0, reg)),
                 Some(Register::Float(reg)) => {
                     self.insert(Instruction::Fmv(FloatRegister::Fa0, reg))
                 }
@@ -713,7 +713,7 @@ impl<'tree> Compiler<'tree> {
             (Type::Bool(1) | Type::Char(1), PrefixOp::Deref) => {
                 let dest_reg = self.get_int_reg();
 
-                self.insert(Instruction::Mov(dest_reg, lhs_reg.into()));
+                self.insert(Instruction::Mv(dest_reg, lhs_reg.into()));
 
                 self.insert_with_comment(
                     Instruction::Lb(dest_reg, Pointer::Register(dest_reg, 0)),
@@ -735,7 +735,7 @@ impl<'tree> Compiler<'tree> {
             (Type::Int(_) | Type::Bool(_) | Type::Char(_) | Type::Float(_), PrefixOp::Deref) => {
                 let dest_reg = self.get_int_reg();
 
-                self.insert(Instruction::Mov(dest_reg, lhs_reg.into()));
+                self.insert(Instruction::Mv(dest_reg, lhs_reg.into()));
 
                 self.insert_with_comment(
                     Instruction::Ld(dest_reg, Pointer::Register(dest_reg, 0)),
@@ -1225,7 +1225,7 @@ impl<'tree> Compiler<'tree> {
         // if the `then` block returns a register other than res, move the block register into res
         match (res_reg, then_reg) {
             (Some(Register::Int(res)), Some(Register::Int(then_reg))) => {
-                self.insert(Instruction::Mov(res, then_reg));
+                self.insert(Instruction::Mv(res, then_reg));
             }
             (Some(Register::Float(res)), Some(Register::Float(then_reg))) => {
                 self.insert(Instruction::Fmv(res, then_reg));
@@ -1245,7 +1245,7 @@ impl<'tree> Compiler<'tree> {
             // if the block returns a register other than res, move it into `res_reg`
             match (res_reg, else_reg) {
                 (Some(Register::Int(res)), Some(Register::Int(else_reg))) => {
-                    self.insert(Instruction::Mov(res, else_reg));
+                    self.insert(Instruction::Mv(res, else_reg));
                 }
                 (Some(Register::Float(res)), Some(Register::Float(else_reg))) => {
                     self.insert(Instruction::Fmv(res, else_reg));

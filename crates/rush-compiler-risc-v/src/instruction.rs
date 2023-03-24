@@ -69,7 +69,7 @@ pub enum Instruction {
     Seqz(IntRegister, IntRegister),
     Li(IntRegister, i64),
     La(IntRegister, Rc<str>),
-    Mov(IntRegister, IntRegister),
+    Mv(IntRegister, IntRegister),
     Neg(IntRegister, IntRegister),
     Not(IntRegister, IntRegister),
     Add(IntRegister, IntRegister, IntRegister),
@@ -203,7 +203,7 @@ impl Display for Instruction {
             },
             Instruction::Snez(dest, arg) => write!(f, "snez {dest}, {arg}"),
             Instruction::Seqz(dest, arg) => write!(f, "seqz {dest}, {arg}"),
-            Instruction::Mov(dest, src) => {
+            Instruction::Mv(dest, src) => {
                 if dest != src {
                     write!(f, "mv {dest}, {src}")
                 } else {
