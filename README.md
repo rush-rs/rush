@@ -20,7 +20,7 @@ execution and compilation.
 
 ### Compilers
 
-- [WASM Compiler](./crates/rush-compiler-wasm/)
+- [Wasm Compiler](./crates/rush-compiler-wasm/)
 - [LLVM Compiler](./crates/rush-compiler-llvm/)
 - [RISC-V Compiler](./crates/rush-compiler-risc-v/)
 - [x86_64 Compiler](./crates/rush-compiler-x86-64/)

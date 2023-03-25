@@ -1,19 +1,19 @@
 # WebAssembly Compiler Backend
 
 A single-target rush compiler backend which generates
-[WASM](https://webassembly.org/) files without the need for external
+[Wasm](https://webassembly.org/) files without the need for external
 dependencies.
 
 ## Prerequisites
 
 Since the compiler itself requires no external dependencies, only a WebAssembly
 runtime is to be installed. Hence, program execution requires a
-[WASM runtime](https://wasmer.io/).
+[Wasm runtime](https://wasmer.io/).
 
 ### Runtime
 
 On Arch-Linux based systems, the following package can be installed to set up a
-working WASM runtime.
+working Wasm runtime.
 
 - `wasmer` for executing `.wasm` files
 
@@ -29,9 +29,9 @@ working WASM runtime.
 cargo run your-program.rush
 ```
 
-### Running WASM Files
+### Running Wasm Files
 
-- Since you have installed a WASM runtime prior to reading this section,
+- Since you have installed a Wasm runtime prior to reading this section,
   following command can be used to execute the `.wasm` file using this runtime.
 
 ```bash

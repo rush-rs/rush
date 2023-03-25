@@ -58,7 +58,7 @@ macro_rules! leb128_impl {
 
 leb128_impl!(bool, i8, u8, i16, u16, i32, u32, i64, isize, usize);
 
-/// Convert a [`Type`] into its WASM equivalent
+/// Convert a [`Type`] into its Wasm equivalent
 pub fn type_to_byte(type_: Type) -> Option<u8> {
     match type_ {
         Type::Int(0) => Some(types::I64),
@@ -67,6 +67,6 @@ pub fn type_to_byte(type_: Type) -> Option<u8> {
         Type::Char(0) => Some(types::I32),
         Type::Unit | Type::Never => None,
         Type::Unknown => unreachable!("the analyzer guarantees one of the above to match"),
-        _ => panic!("Pointers are not supported in the WASM backend"), // TODO: what to do with pointers?
+        _ => panic!("Pointers are not supported in the Wasm backend"), // TODO: what to do with pointers?
     }
 }

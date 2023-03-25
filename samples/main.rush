@@ -65,7 +65,7 @@ fn main() {
         a += 1;
     }
 
-    exit(1); // -> ! // exit(code: int) -> (), uses WASI proc_exit(i32) when used with WASM
+    exit(1); // -> ! // exit(code: int) -> (), uses WASI proc_exit(i32) when used with Wasm
 }
 
 fn _add(left: int, right: int) -> int {
