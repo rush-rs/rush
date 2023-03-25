@@ -415,7 +415,7 @@ impl<'src> Analyzer<'src> {
                     ),
                     vec!["remove the parameters: `fn main() { ... }`".into()],
                     node.params.span,
-                )
+                );
             }
 
             // the main function must return `()`
@@ -429,7 +429,7 @@ impl<'src> Analyzer<'src> {
                         ),
                         vec!["remove the return type: `fn main() { ... }`".into()],
                         node.return_type.span,
-                    )
+                    );
                 }
             }
         }
