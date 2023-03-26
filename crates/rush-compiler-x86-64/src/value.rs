@@ -96,7 +96,7 @@ impl TryFrom<Type> for Size {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Offset {
     Immediate(i64),
-    Symbol(Rc<str>),
+    Label(Rc<str>),
 }
 
 /////////////////////////////////////////////////
@@ -169,7 +169,7 @@ impl Display for Offset {
                 Ordering::Equal => Ok(()),
                 Ordering::Greater => write!(f, "+{num}"),
             },
-            Offset::Symbol(symbol) => write!(f, "+{symbol}"),
+            Offset::Label(label) => write!(f, "+{label}"),
         }
     }
 }
@@ -222,7 +222,7 @@ impl From<i64> for Offset {
 }
 
 impl From<Rc<str>> for Offset {
-    fn from(symbol: Rc<str>) -> Self {
-        Self::Symbol(symbol)
+    fn from(label: Rc<str>) -> Self {
+        Self::Label(label)
     }
 }

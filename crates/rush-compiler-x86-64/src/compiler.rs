@@ -33,10 +33,10 @@ pub struct Compiler<'src> {
     pub(crate) requires_frame: bool,
     /// The count of general purpose blocks
     pub(crate) block_count: usize,
-    /// The start and end symbols for the currently nested loops, used for `break` and `continue`
-    pub(crate) loop_symbols: Vec<(Rc<str>, Rc<str>)>,
-    /// The symbol for the current functions epilogue
-    pub(crate) func_return_symbol: Option<Rc<str>>,
+    /// The start and end labels for the currently nested loops, used for `break` and `continue`
+    pub(crate) loop_labels: Vec<(Rc<str>, Rc<str>)>,
+    /// The label for the current functions epilogue
+    pub(crate) func_return_label: Option<Rc<str>>,
 
     /// Global symbols of the current program
     pub(crate) exports: Vec<Instruction>,
@@ -114,7 +114,7 @@ impl<'src> Compiler<'src> {
             buf.push(Instruction::Section(Section::Data));
             buf.extend(self.quad_globals.into_iter().flat_map(|(name, value)| {
                 [
-                    Instruction::Symbol(name, false),
+                    Instruction::Label(name, false),
                     Instruction::QuadInt(value),
                 ]
             }));
@@ -123,19 +123,19 @@ impl<'src> Compiler<'src> {
                     .into_iter()
                     .flat_map(|(name, value)| {
                         [
-                            Instruction::Symbol(name, false),
+                            Instruction::Label(name, false),
                             Instruction::QuadFloat(value.to_bits()),
                         ]
                     }),
             );
             buf.extend(self.long_globals.into_iter().flat_map(|(name, value)| {
-                [Instruction::Symbol(name, false), Instruction::Long(value)]
+                [Instruction::Label(name, false), Instruction::Long(value)]
             }));
             buf.extend(self.short_globals.into_iter().flat_map(|(name, value)| {
-                [Instruction::Symbol(name, false), Instruction::Short(value)]
+                [Instruction::Label(name, false), Instruction::Short(value)]
             }));
             buf.extend(self.byte_globals.into_iter().flat_map(|(name, value)| {
-                [Instruction::Symbol(name, false), Instruction::Byte(value)]
+                [Instruction::Label(name, false), Instruction::Byte(value)]
             }));
         }
 
@@ -149,11 +149,11 @@ impl<'src> Compiler<'src> {
         {
             buf.push(Instruction::Section(Section::ReadOnlyData));
             buf.extend(self.octa_constants.into_iter().flat_map(|(value, name)| {
-                [Instruction::Symbol(name, false), Instruction::Octa(value)]
+                [Instruction::Label(name, false), Instruction::Octa(value)]
             }));
             buf.extend(self.quad_constants.into_iter().flat_map(|(value, name)| {
                 [
-                    Instruction::Symbol(name, false),
+                    Instruction::Label(name, false),
                     Instruction::QuadInt(value),
                 ]
             }));
@@ -162,19 +162,19 @@ impl<'src> Compiler<'src> {
                     .into_iter()
                     .flat_map(|(value, name)| {
                         [
-                            Instruction::Symbol(name, false),
+                            Instruction::Label(name, false),
                             Instruction::QuadFloat(value),
                         ]
                     }),
             );
             buf.extend(self.long_constants.into_iter().flat_map(|(value, name)| {
-                [Instruction::Symbol(name, false), Instruction::Long(value)]
+                [Instruction::Label(name, false), Instruction::Long(value)]
             }));
             buf.extend(self.short_constants.into_iter().flat_map(|(value, name)| {
-                [Instruction::Symbol(name, false), Instruction::Short(value)]
+                [Instruction::Label(name, false), Instruction::Short(value)]
             }));
             buf.extend(self.byte_constants.into_iter().flat_map(|(value, name)| {
-                [Instruction::Symbol(name, false), Instruction::Byte(value)]
+                [Instruction::Label(name, false), Instruction::Byte(value)]
             }));
         }
 
@@ -290,7 +290,7 @@ impl<'src> Compiler<'src> {
     ) {
         let offset = match ptr.offset {
             Offset::Immediate(offset) => -offset,
-            Offset::Symbol(_) => {
+            Offset::Label(_) => {
                 panic!("called `Compiler::pop_from_stack()` with a symbol offset in ptr")
             }
         };
@@ -471,7 +471,7 @@ impl<'src> Compiler<'src> {
                     Size::try_from(node.expr.result_type())
                         .expect("the analyzer guarantees constant globals"),
                     IntRegister::Rip,
-                    Offset::Symbol(Rc::clone(&name)),
+                    Offset::Label(Rc::clone(&name)),
                 ),
                 kind: match node.expr.result_type() {
                     Type::Float(0) => VariableKind::Float,
@@ -492,12 +492,12 @@ impl<'src> Compiler<'src> {
     fn main_fn(&mut self, body: AnalyzedBlock<'src>) {
         let start_symbol = "_start".into();
         let main_fn_symbol = "main..main".into();
-        self.func_return_symbol = Some("main..main.return".into());
+        self.func_return_label = Some("main..main.return".into());
 
         self.exports
             .push(Instruction::Global(Rc::clone(&start_symbol)));
         self.text_section
-            .push(Instruction::Symbol(start_symbol, true));
+            .push(Instruction::Label(start_symbol, true));
         self.text_section
             .push(Instruction::Call(Rc::clone(&main_fn_symbol)));
         self.text_section
@@ -505,16 +505,16 @@ impl<'src> Compiler<'src> {
         self.text_section.push(Instruction::Call("exit".into()));
 
         self.text_section
-            .push(Instruction::Symbol(main_fn_symbol, true));
+            .push(Instruction::Label(main_fn_symbol, true));
         self.function_body(body);
     }
 
     fn function_definition(&mut self, node: AnalyzedFunctionDefinition<'src>) {
-        self.text_section.push(Instruction::Symbol(
+        self.text_section.push(Instruction::Label(
             format!("main..{}", node.name).into(),
             true,
         ));
-        self.func_return_symbol = Some(format!("main..{}.return", node.name).into());
+        self.func_return_label = Some(format!("main..{}.return", node.name).into());
 
         self.push_scope();
         let mut int_param_index = 0;
@@ -643,10 +643,10 @@ impl<'src> Compiler<'src> {
         self.text_section.append(&mut self.function_body);
 
         // epilogue
-        self.text_section.push(Instruction::Symbol(
-            self.func_return_symbol
+        self.text_section.push(Instruction::Label(
+            self.func_return_label
                 .take()
-                .expect("a return symbol is set at the beginning of each function"),
+                .expect("a return label is set at the beginning of each function"),
             false,
         ));
         if self.requires_frame || frame_size != 0 {
@@ -668,7 +668,7 @@ impl<'src> Compiler<'src> {
             AnalyzedStatement::Break => self.function_body.push(Instruction::Commented(
                 Instruction::Jmp(Rc::clone(
                     &self
-                        .loop_symbols
+                        .loop_labels
                         .last()
                         .expect("the analyzer guarantees loops around break-statements")
                         .1,
@@ -679,7 +679,7 @@ impl<'src> Compiler<'src> {
             AnalyzedStatement::Continue => self.function_body.push(Instruction::Commented(
                 Instruction::Jmp(Rc::clone(
                     &self
-                        .loop_symbols
+                        .loop_labels
                         .last()
                         .expect("the analyzer guarantees loops around continue-statements")
                         .0,
@@ -770,7 +770,7 @@ impl<'src> Compiler<'src> {
         }
 
         self.function_body.push(Instruction::Commented(
-            Instruction::Jmp(Rc::clone(self.func_return_symbol.as_ref().expect("asd"))).into(),
+            Instruction::Jmp(Rc::clone(self.func_return_label.as_ref().expect("asd"))).into(),
             comment.into(),
         ));
     }
@@ -778,11 +778,11 @@ impl<'src> Compiler<'src> {
     fn loop_stmt(&mut self, node: AnalyzedLoopStmt<'src>) {
         let start_loop_symbol = self.next_block_name();
         let end_loop_symbol = self.next_block_name();
-        self.loop_symbols
+        self.loop_labels
             .push((Rc::clone(&start_loop_symbol), Rc::clone(&end_loop_symbol)));
 
         self.function_body.push(Instruction::Commented(
-            Instruction::Symbol(Rc::clone(&start_loop_symbol), false).into(),
+            Instruction::Label(Rc::clone(&start_loop_symbol), false).into(),
             "loop {".into(),
         ));
 
@@ -793,11 +793,11 @@ impl<'src> Compiler<'src> {
         ));
 
         self.function_body.push(Instruction::Commented(
-            Instruction::Symbol(end_loop_symbol, false).into(),
+            Instruction::Label(end_loop_symbol, false).into(),
             "}".into(),
         ));
 
-        self.loop_symbols.pop();
+        self.loop_labels.pop();
     }
 
     fn while_stmt(&mut self, node: AnalyzedWhileStmt<'src>) {
@@ -805,7 +805,7 @@ impl<'src> Compiler<'src> {
         let end_loop_symbol = self.next_block_name();
 
         self.function_body.push(Instruction::Commented(
-            Instruction::Symbol(Rc::clone(&start_loop_symbol), false).into(),
+            Instruction::Label(Rc::clone(&start_loop_symbol), false).into(),
             "while .. {".into(),
         ));
 
@@ -816,7 +816,7 @@ impl<'src> Compiler<'src> {
             return;
         };
 
-        self.loop_symbols
+        self.loop_labels
             .push((Rc::clone(&start_loop_symbol), Rc::clone(&end_loop_symbol)));
 
         self.tmp_expr(AnalyzedExpression::Block(node.block.into()));
@@ -826,11 +826,11 @@ impl<'src> Compiler<'src> {
         ));
 
         self.function_body.push(Instruction::Commented(
-            Instruction::Symbol(end_loop_symbol, false).into(),
+            Instruction::Label(end_loop_symbol, false).into(),
             "}".into(),
         ));
 
-        self.loop_symbols.pop();
+        self.loop_labels.pop();
     }
 
     fn for_stmt(&mut self, node: AnalyzedForStmt<'src>) {
@@ -856,7 +856,7 @@ impl<'src> Compiler<'src> {
 
         // loop start
         self.function_body.push(Instruction::Commented(
-            Instruction::Symbol(Rc::clone(&start_loop_symbol), false).into(),
+            Instruction::Label(Rc::clone(&start_loop_symbol), false).into(),
             format!("for {} .. {{", node.ident).into(),
         ));
 
@@ -869,20 +869,20 @@ impl<'src> Compiler<'src> {
         }
 
         // loop body
-        self.loop_symbols
+        self.loop_labels
             .push((Rc::clone(&update_symbol), Rc::clone(&end_loop_symbol)));
         self.tmp_expr(AnalyzedExpression::Block(node.block.into()));
-        self.loop_symbols.pop();
+        self.loop_labels.pop();
 
         // update expr
         self.function_body
-            .push(Instruction::Symbol(update_symbol, false));
+            .push(Instruction::Label(update_symbol, false));
         self.tmp_expr(node.update);
 
         // loop end
         self.function_body.push(Instruction::Jmp(start_loop_symbol));
         self.function_body.push(Instruction::Commented(
-            Instruction::Symbol(end_loop_symbol, false).into(),
+            Instruction::Label(end_loop_symbol, false).into(),
             "}".into(),
         ));
 
@@ -892,7 +892,7 @@ impl<'src> Compiler<'src> {
     fn condition(
         &mut self,
         cond_expr: AnalyzedExpression<'src>,
-        false_symbol: Rc<str>,
+        false_label: Rc<str>,
         commenter: impl Fn(Option<&IntValue>) -> Option<Cow<'static, str>>,
     ) -> Option<()> {
         match Condition::try_from_expr(cond_expr) {
@@ -947,20 +947,20 @@ impl<'src> Compiler<'src> {
                             // if floats should be equal but result is unordered, jump to end
                             self.function_body.push(Instruction::JCond(
                                 Condition::Parity,
-                                Rc::clone(&false_symbol),
+                                Rc::clone(&false_label),
                             ));
                         } else if cond == Condition::NotEqual {
                             // if floats should not be equal and result is not unordered, jump to end
                             self.function_body.push(Instruction::JCond(
                                 Condition::NotParity,
-                                Rc::clone(&false_symbol),
+                                Rc::clone(&false_label),
                             ));
                         }
                     }
                     _ => unreachable!("the analyzer guarantees equal types on both sides"),
                 }
 
-                let jump_instr = Instruction::JCond(cond.negated(), false_symbol);
+                let jump_instr = Instruction::JCond(cond.negated(), false_label);
 
                 self.function_body.push(match commenter(None) {
                     Some(comment) => Instruction::Commented(jump_instr.into(), comment),
@@ -974,7 +974,7 @@ impl<'src> Compiler<'src> {
 
                 match bool {
                     IntValue::Immediate(0) => {
-                        let instr = Instruction::Jmp(false_symbol);
+                        let instr = Instruction::Jmp(false_label);
                         self.function_body
                             .push(match commenter(Some(&IntValue::Immediate(0))) {
                                 Some(comment) => Instruction::Commented(instr.into(), comment),
@@ -985,7 +985,7 @@ impl<'src> Compiler<'src> {
                     val => {
                         let comment = commenter(Some(&val));
                         self.function_body.push(Instruction::Test(val, 1));
-                        let instr = Instruction::JCond(Condition::Equal, false_symbol);
+                        let instr = Instruction::JCond(Condition::Equal, false_label);
                         self.function_body.push(match comment {
                             Some(comment) => Instruction::Commented(instr.into(), comment),
                             None => instr,
@@ -1029,7 +1029,7 @@ impl<'src> Compiler<'src> {
                     Some(Value::Int(IntValue::Ptr(Pointer::new(
                         Size::Qword,
                         IntRegister::Rip,
-                        Offset::Symbol(symbol),
+                        Offset::Label(symbol),
                     ))))
                 }
                 false => Some(Value::Int(IntValue::Immediate(num))),
@@ -1044,7 +1044,7 @@ impl<'src> Compiler<'src> {
                 Some(Value::Float(FloatValue::Ptr(Pointer::new(
                     Size::Qword,
                     IntRegister::Rip,
-                    Offset::Symbol(symbol_name),
+                    Offset::Label(symbol_name),
                 ))))
             }
             AnalyzedExpression::Bool(bool) => Some(Value::Int(IntValue::Immediate(bool as i64))),
@@ -1096,7 +1096,7 @@ impl<'src> Compiler<'src> {
             self.function_body
                 .push(Instruction::Jmp(Rc::clone(&after_if_symbol)));
             self.function_body.push(Instruction::Commented(
-                Instruction::Symbol(else_block_symbol, false).into(),
+                Instruction::Label(else_block_symbol, false).into(),
                 "} else {".into(),
             ));
 
@@ -1164,7 +1164,7 @@ impl<'src> Compiler<'src> {
             }
         }
         self.function_body.push(Instruction::Commented(
-            Instruction::Symbol(after_if_symbol, false).into(),
+            Instruction::Label(after_if_symbol, false).into(),
             "}".into(),
         ));
 
@@ -1269,7 +1269,7 @@ impl<'src> Compiler<'src> {
                 let negate_symbol =
                     Self::add_constant(&mut self.octa_constants, 1_u128 << 63, Size::Oword, 0);
                 let negate_ptr =
-                    Pointer::new(Size::Oword, IntRegister::Rip, Offset::Symbol(negate_symbol));
+                    Pointer::new(Size::Oword, IntRegister::Rip, Offset::Label(negate_symbol));
                 self.function_body
                     .push(Instruction::Xorpd(reg.into(), negate_ptr.into()));
                 Some(Value::Float(reg.into()))
@@ -1334,7 +1334,7 @@ impl<'src> Compiler<'src> {
                 }
 
                 self.function_body
-                    .push(Instruction::Symbol(skip_symbol, false));
+                    .push(Instruction::Label(skip_symbol, false));
 
                 return Some(Value::Int(IntValue::Register(result_reg)));
             }
@@ -1668,7 +1668,7 @@ impl<'src> Compiler<'src> {
                 IntValue::Immediate(num) => Some(Value::Float(FloatValue::Ptr(Pointer::new(
                     Size::Qword,
                     IntRegister::Rip,
-                    Offset::Symbol(Self::add_constant(
+                    Offset::Label(Self::add_constant(
                         &mut self.quad_float_constants,
                         (num as f64).to_bits(),
                         Size::Qword,
@@ -1724,7 +1724,7 @@ impl<'src> Compiler<'src> {
                     FloatValue::Ptr(Pointer::new(
                         Size::Qword,
                         IntRegister::Rip,
-                        Offset::Symbol(float_zero_symbol),
+                        Offset::Label(float_zero_symbol),
                     )),
                 ));
 
