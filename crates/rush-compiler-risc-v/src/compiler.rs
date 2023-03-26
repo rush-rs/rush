@@ -17,9 +17,9 @@ pub struct Compiler<'tree> {
     pub(crate) label_count: HashMap<&'static str, usize>,
     /// Points to the current section which is inserted to.
     pub(crate) curr_block: usize,
-    /// Data section for storing global variables.
+    /// Data section for storing mutabable global variables.
     pub(crate) data_section: Vec<DataObj>,
-    /// Read-only data section for storing constant values (like floats).
+    /// Data section for storing float constants and immutable globals.
     pub(crate) rodata_section: Vec<DataObj>,
     /// Holds metadata about the current function
     pub(crate) curr_fn: Option<Function>,
