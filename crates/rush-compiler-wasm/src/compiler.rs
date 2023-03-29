@@ -67,7 +67,7 @@ impl<'src> Compiler<'src> {
         Self::default()
     }
 
-    pub fn compile(mut self, tree: AnalyzedProgram<'src>) -> Vec<u8> {
+    pub fn compile(mut self, tree: AnalyzedProgram<'src>) -> Result<Vec<u8>, String> {
         // set count of imports needed
         self.import_count = tree.used_builtins.len();
         // add required imports
@@ -78,7 +78,7 @@ impl<'src> Compiler<'src> {
         }
 
         // compile program
-        self.program(tree);
+        self.program(tree)?;
 
         // add blank memory
         self.memory_section.push(vec![0, 0]);
@@ -101,7 +101,7 @@ impl<'src> Compiler<'src> {
             .append(&mut self.function_names);
 
         // concat sections
-        [
+        Ok([
             &b"\0asm"[..],        // magic
             &1_i32.to_le_bytes(), // spec version 1
             &Self::section(1, self.type_section),
@@ -122,7 +122,7 @@ impl<'src> Compiler<'src> {
                 self.global_names,
             ),
         ]
-        .concat()
+        .concat())
     }
 
     fn section(id: u8, section: Vec<Vec<u8>>) -> Vec<u8> {
@@ -215,7 +215,7 @@ impl<'src> Compiler<'src> {
 
     /////////////////////////
 
-    fn program(&mut self, node: AnalyzedProgram<'src>) {
+    fn program(&mut self, node: AnalyzedProgram<'src>) -> Result<(), String> {
         // add globals
         for global in node.globals.iter().filter(|global| global.used) {
             // get index
@@ -235,7 +235,7 @@ impl<'src> Compiler<'src> {
             self.global_scope.insert(global.name, global_idx);
 
             let mut buf = vec![
-                utils::type_to_byte(global.expr.result_type())
+                utils::type_to_byte(global.expr.result_type())?
                     .expect("globals cannot be `()` or `!`"), // type of global
                 global.mutable as u8,
             ];
@@ -294,21 +294,22 @@ impl<'src> Compiler<'src> {
 
         // add other function signatures
         for func in node.functions.iter().filter(|func| func.used) {
-            self.function_signature(func);
+            self.function_signature(func)?;
         }
 
         // compile functions
-        self.main_fn(node.main_fn);
+        self.main_fn(node.main_fn)?;
         for func in node.functions.into_iter().filter(|func| func.used) {
             self.curr_func_idx += 1;
-            self.function_definition(func);
+            self.function_definition(func)?;
         }
 
         // push bodies of builtin functions
         self.code_section.append(&mut self.builtins_code);
+        Ok(())
     }
 
-    fn main_fn(&mut self, body: AnalyzedBlock<'src>) {
+    fn main_fn(&mut self, body: AnalyzedBlock<'src>) -> Result<(), String> {
         let main_idx = self.import_count.to_uleb128();
 
         // export main func as WASI `_start` func
@@ -335,11 +336,15 @@ impl<'src> Compiler<'src> {
 
         // function body
         self.push_scope();
-        self.function_body(body);
+        self.function_body(body)?;
         self.pop_scope();
+        Ok(())
     }
 
-    fn function_signature(&mut self, node: &AnalyzedFunctionDefinition<'src>) {
+    fn function_signature(
+        &mut self,
+        node: &AnalyzedFunctionDefinition<'src>,
+    ) -> Result<(), String> {
         // add to `self.functions` map
         let func_idx = (self.function_section.len() + self.import_count).to_uleb128();
         self.functions.insert(node.name, func_idx.clone());
@@ -353,7 +358,10 @@ impl<'src> Compiler<'src> {
             .params
             .iter()
             .filter_map(|param| {
-                let wasm_type = utils::type_to_byte(param.type_);
+                let wasm_type = match utils::type_to_byte(param.type_) {
+                    Ok(type_) => type_,
+                    Err(err) => return Some(Err(err)),
+                };
                 if wasm_type.is_some() {
                     param_names.push(
                         [
@@ -364,14 +372,14 @@ impl<'src> Compiler<'src> {
                         .concat(),
                     );
                 }
-                wasm_type
+                wasm_type.map(Ok)
             })
-            .collect();
+            .collect::<Result<Vec<_>, _>>()?;
         params.len().write_uleb128(&mut buf);
         buf.append(&mut params);
 
         // add return type
-        match utils::type_to_byte(node.return_type) {
+        match utils::type_to_byte(node.return_type)? {
             // unit type => no return values
             None => buf.push(0),
             // any other type => 1 return value of that type
@@ -400,9 +408,13 @@ impl<'src> Compiler<'src> {
 
         // add param names to name section
         self.local_names.push((func_idx, param_names));
+        Ok(())
     }
 
-    fn function_definition(&mut self, node: AnalyzedFunctionDefinition<'src>) {
+    fn function_definition(
+        &mut self,
+        node: AnalyzedFunctionDefinition<'src>,
+    ) -> Result<(), String> {
         // reset param count
         self.param_count = 0;
 
@@ -411,7 +423,7 @@ impl<'src> Compiler<'src> {
         for param in node.params.into_iter() {
             scope.insert(
                 param.name,
-                utils::type_to_byte(param.type_).map(|_| {
+                utils::type_to_byte(param.type_)?.map(|_| {
                     let res = self.param_count.to_uleb128();
                     self.param_count += 1;
                     res
@@ -421,16 +433,17 @@ impl<'src> Compiler<'src> {
 
         // function body
         self.scopes.push(scope);
-        self.function_body(node.block);
+        self.function_body(node.block)?;
         self.pop_scope();
+        Ok(())
     }
 
-    fn function_body(&mut self, node: AnalyzedBlock<'src>) {
+    fn function_body(&mut self, node: AnalyzedBlock<'src>) -> Result<(), String> {
         for stmt in node.stmts {
-            self.statement(stmt);
+            self.statement(stmt)?;
         }
         if let Some(expr) = node.expr {
-            self.expression(expr);
+            self.expression(expr)?;
         }
         self.function_body.push(instructions::END);
 
@@ -449,17 +462,19 @@ impl<'src> Compiler<'src> {
             ]
             .concat(),
         );
+
+        Ok(())
     }
 
     /////////////////////////
 
-    fn statement(&mut self, node: AnalyzedStatement<'src>) {
+    fn statement(&mut self, node: AnalyzedStatement<'src>) -> Result<(), String> {
         match node {
-            AnalyzedStatement::Let(node) => self.let_stmt(node),
-            AnalyzedStatement::Return(node) => self.return_stmt(node),
-            AnalyzedStatement::Loop(node) => self.loop_stmt(node),
-            AnalyzedStatement::While(node) => self.while_stmt(node),
-            AnalyzedStatement::For(node) => self.for_stmt(node),
+            AnalyzedStatement::Let(node) => self.let_stmt(node)?,
+            AnalyzedStatement::Return(node) => self.return_stmt(node)?,
+            AnalyzedStatement::Loop(node) => self.loop_stmt(node)?,
+            AnalyzedStatement::While(node) => self.while_stmt(node)?,
+            AnalyzedStatement::For(node) => self.for_stmt(node)?,
             AnalyzedStatement::Break => {
                 self.function_body.push(instructions::BR); // jump
                 (self.block_count
@@ -475,16 +490,18 @@ impl<'src> Compiler<'src> {
             }
             AnalyzedStatement::Expr(expr) => {
                 let expr_type = expr.result_type();
-                self.expression(expr);
+                self.expression(expr)?;
                 if !matches!(expr_type, Type::Unit | Type::Never) {
                     self.function_body.push(instructions::DROP);
                 }
             }
-        }
+        };
+
+        Ok(())
     }
 
-    fn let_stmt(&mut self, node: AnalyzedLetStmt<'src>) {
-        let wasm_type = utils::type_to_byte(node.expr.result_type());
+    fn let_stmt(&mut self, node: AnalyzedLetStmt<'src>) -> Result<(), String> {
+        let wasm_type = utils::type_to_byte(node.expr.result_type())?;
         let local_idx = (self.locals.len() + self.param_count).to_uleb128();
         if let Some(byte) = wasm_type {
             self.locals.push(vec![1, byte]);
@@ -500,7 +517,7 @@ impl<'src> Compiler<'src> {
             );
         }
 
-        self.expression(node.expr);
+        self.expression(node.expr)?;
 
         self.curr_scope()
             .insert(node.name, wasm_type.map(|_| local_idx.clone()));
@@ -509,16 +526,18 @@ impl<'src> Compiler<'src> {
             self.function_body.push(instructions::LOCAL_SET);
             self.function_body.extend_from_slice(&local_idx);
         }
+        Ok(())
     }
 
-    fn return_stmt(&mut self, node: AnalyzedReturnStmt<'src>) {
+    fn return_stmt(&mut self, node: AnalyzedReturnStmt<'src>) -> Result<(), String> {
         if let Some(expr) = node {
-            self.expression(expr);
+            self.expression(expr)?;
         }
         self.function_body.push(instructions::RETURN);
+        Ok(())
     }
 
-    fn loop_stmt(&mut self, node: AnalyzedLoopStmt<'src>) {
+    fn loop_stmt(&mut self, node: AnalyzedLoopStmt<'src>) -> Result<(), String> {
         // store current block count and set break label
         let prev_block_count = self.block_count;
         self.block_count = 0;
@@ -529,7 +548,7 @@ impl<'src> Compiler<'src> {
         self.function_body.push(instructions::LOOP); // loop to jump to with `continue`
         self.function_body.push(types::VOID); // with result `()`
 
-        self.block_expr(node.block);
+        self.block_expr(node.block)?;
         self.function_body.push(instructions::BR); // jump
         self.function_body.push(0); // to start of loop
 
@@ -539,16 +558,17 @@ impl<'src> Compiler<'src> {
         // restore block count and loop labels
         self.block_count = prev_block_count;
         self.break_labels.pop();
+        Ok(())
     }
 
-    fn while_stmt(&mut self, node: AnalyzedWhileStmt<'src>) {
+    fn while_stmt(&mut self, node: AnalyzedWhileStmt<'src>) -> Result<(), String> {
         self.function_body.push(instructions::BLOCK); // outer block to jump to with `break`
         self.function_body.push(types::VOID); // with result `()`
         self.function_body.push(instructions::LOOP); // loop to jump to with `continue`
         self.function_body.push(types::VOID); // with result `()`
         self.block_count += 2;
 
-        self.expression(node.cond); // compile condition
+        self.expression(node.cond)?; // compile condition
         self.function_body.push(instructions::I32_EQZ); // negate result
         self.function_body.push(instructions::BR_IF); // jump if cond is not true
         self.function_body.push(1); // to end of outer block
@@ -558,7 +578,7 @@ impl<'src> Compiler<'src> {
         self.block_count = 0;
         self.break_labels.push(1);
 
-        self.block_expr(node.block);
+        self.block_expr(node.block)?;
         self.function_body.push(instructions::BR); // jump
         self.function_body.push(0); // to start of loop
 
@@ -568,11 +588,12 @@ impl<'src> Compiler<'src> {
         // restore block count and loop labels
         self.block_count = prev_block_count - 2;
         self.break_labels.pop();
+        Ok(())
     }
 
-    fn for_stmt(&mut self, node: AnalyzedForStmt<'src>) {
+    fn for_stmt(&mut self, node: AnalyzedForStmt<'src>) -> Result<(), String> {
         // compile the initializer
-        let wasm_type = utils::type_to_byte(node.initializer.result_type());
+        let wasm_type = utils::type_to_byte(node.initializer.result_type())?;
         let local_idx = (self.locals.len() + self.param_count).to_uleb128();
         if let Some(byte) = wasm_type {
             self.locals.push(vec![1, byte]);
@@ -588,7 +609,7 @@ impl<'src> Compiler<'src> {
             );
         }
 
-        self.expression(node.initializer);
+        self.expression(node.initializer)?;
         if wasm_type.is_some() {
             self.function_body.push(instructions::LOCAL_SET);
             self.function_body.extend_from_slice(&local_idx);
@@ -608,7 +629,7 @@ impl<'src> Compiler<'src> {
         self.function_body.push(types::VOID); // with result `()`
         self.block_count += 3;
 
-        self.expression(node.cond); // compile condition
+        self.expression(node.cond)?; // compile condition
         self.function_body.push(instructions::I32_EQZ); // negate result
         self.function_body.push(instructions::BR_IF); // jump if cond is not true
         self.function_body.push(2); // to end of outer block
@@ -618,7 +639,7 @@ impl<'src> Compiler<'src> {
         self.block_count = 0;
         self.break_labels.push(2);
 
-        self.block_expr(node.block); // the loop body
+        self.block_expr(node.block)?; // the loop body
 
         self.function_body.push(instructions::END); // end of block
 
@@ -626,7 +647,7 @@ impl<'src> Compiler<'src> {
         self.block_count = prev_block_count - 1;
         self.break_labels.pop();
 
-        self.expression(node.update); // loop update expression
+        self.expression(node.update)?; // loop update expression
 
         self.function_body.push(instructions::BR); // jump
         self.function_body.push(0); // to start of loop
@@ -637,13 +658,14 @@ impl<'src> Compiler<'src> {
 
         // pop scope
         self.pop_scope();
+        Ok(())
     }
 
-    fn expression(&mut self, node: AnalyzedExpression<'src>) {
+    fn expression(&mut self, node: AnalyzedExpression<'src>) -> Result<(), String> {
         let diverges = node.result_type() == Type::Never;
         match node {
-            AnalyzedExpression::Block(node) => self.block_expr(*node),
-            AnalyzedExpression::If(node) => self.if_expr(*node),
+            AnalyzedExpression::Block(node) => self.block_expr(*node)?,
+            AnalyzedExpression::If(node) => self.if_expr(*node)?,
             AnalyzedExpression::Int(value) => {
                 // `int`s are stored as signed `i64`
                 self.function_body.push(instructions::I64_CONST);
@@ -678,58 +700,61 @@ impl<'src> Compiler<'src> {
                 // unit type requires no instructions
                 Variable::Local(None) => {}
             },
-            AnalyzedExpression::Prefix(node) => self.prefix_expr(*node),
-            AnalyzedExpression::Infix(node) => self.infix_expr(*node),
-            AnalyzedExpression::Assign(node) => self.assign_expr(*node),
-            AnalyzedExpression::Call(node) => self.call_expr(*node),
-            AnalyzedExpression::Cast(node) => self.cast_expr(*node),
-            AnalyzedExpression::Grouped(expr) => self.expression(*expr),
+            AnalyzedExpression::Prefix(node) => self.prefix_expr(*node)?,
+            AnalyzedExpression::Infix(node) => self.infix_expr(*node)?,
+            AnalyzedExpression::Assign(node) => self.assign_expr(*node)?,
+            AnalyzedExpression::Call(node) => self.call_expr(*node)?,
+            AnalyzedExpression::Cast(node) => self.cast_expr(*node)?,
+            AnalyzedExpression::Grouped(expr) => self.expression(*expr)?,
         }
         if diverges {
             self.function_body.push(instructions::UNREACHABLE);
         }
+        Ok(())
     }
 
-    fn block_expr(&mut self, node: AnalyzedBlock<'src>) {
+    fn block_expr(&mut self, node: AnalyzedBlock<'src>) -> Result<(), String> {
         self.push_scope();
         for stmt in node.stmts {
-            self.statement(stmt);
+            self.statement(stmt)?;
         }
         if let Some(expr) = node.expr {
-            self.expression(expr);
+            self.expression(expr)?;
         }
         self.pop_scope();
+        Ok(())
     }
 
-    fn if_expr(&mut self, node: AnalyzedIfExpr<'src>) {
+    fn if_expr(&mut self, node: AnalyzedIfExpr<'src>) -> Result<(), String> {
         // compile condition
-        self.expression(node.cond);
+        self.expression(node.cond)?;
 
         self.function_body.push(instructions::IF);
-        match utils::type_to_byte(node.result_type) {
+        match utils::type_to_byte(node.result_type)? {
             Some(byte) => self.function_body.push(byte),
             None => self.function_body.push(types::VOID),
         }
 
         self.block_count += 1;
-        self.block_expr(node.then_block);
+        self.block_expr(node.then_block)?;
 
         if let Some(else_block) = node.else_block {
             self.function_body.push(instructions::ELSE);
-            self.block_expr(else_block);
+            self.block_expr(else_block)?;
         }
 
         self.block_count -= 1;
         self.function_body.push(instructions::END);
+        Ok(())
     }
 
-    fn prefix_expr(&mut self, node: AnalyzedPrefixExpr<'src>) {
+    fn prefix_expr(&mut self, node: AnalyzedPrefixExpr<'src>) -> Result<(), String> {
         // match op and expr type
         match (node.op, node.expr.result_type()) {
-            (_, Type::Never) => self.expression(node.expr),
+            (_, Type::Never) => self.expression(node.expr)?,
             (PrefixOp::Not, Type::Bool(0)) => {
                 // compile expression
-                self.expression(node.expr);
+                self.expression(node.expr)?;
 
                 // negate
                 self.function_body.push(instructions::I32_EQZ);
@@ -740,25 +765,27 @@ impl<'src> Compiler<'src> {
                 self.function_body.push(0);
 
                 // compile expression
-                self.expression(node.expr);
+                self.expression(node.expr)?;
 
                 // push subtract
                 self.function_body.push(instructions::I64_SUB);
             }
             (PrefixOp::Neg, Type::Float(0)) => {
                 // compile expression
-                self.expression(node.expr);
+                self.expression(node.expr)?;
 
                 self.function_body.push(instructions::F64_NEG);
             }
             _ => unreachable!("the analyzer guarantees one of the above to match"),
         }
+
+        Ok(())
     }
 
-    fn infix_expr(&mut self, node: AnalyzedInfixExpr<'src>) {
+    fn infix_expr(&mut self, node: AnalyzedInfixExpr<'src>) -> Result<(), String> {
         match node.op {
             InfixOp::And => {
-                self.expression(node.lhs);
+                self.expression(node.lhs)?;
                 self.function_body.extend([
                     // if lhs is not true
                     instructions::I32_EQZ,
@@ -770,14 +797,14 @@ impl<'src> Compiler<'src> {
                     // else return rhs
                     instructions::ELSE,
                 ]);
-                self.expression(node.rhs);
+                self.expression(node.rhs)?;
                 // end if
                 self.function_body.push(instructions::END);
 
-                return;
+                return Ok(());
             }
             InfixOp::Or => {
-                self.expression(node.lhs);
+                self.expression(node.lhs)?;
                 self.function_body.extend([
                     // if lhs is true
                     instructions::IF,
@@ -788,11 +815,11 @@ impl<'src> Compiler<'src> {
                     // else return rhs
                     instructions::ELSE,
                 ]);
-                self.expression(node.rhs);
+                self.expression(node.rhs)?;
                 // end if
                 self.function_body.push(instructions::END);
 
-                return;
+                return Ok(());
             }
             _ => {}
         }
@@ -802,12 +829,12 @@ impl<'src> Compiler<'src> {
         let rhs_type = node.rhs.result_type();
 
         // compile left and right expression
-        self.expression(node.lhs);
-        self.expression(node.rhs);
+        self.expression(node.lhs)?;
+        self.expression(node.rhs)?;
 
         // match on op and type (analyzer guarantees same type for lhs and rhs)
         let instruction = match (node.op, lhs_type) {
-            _ if lhs_type == Type::Never || rhs_type == Type::Never => return,
+            _ if lhs_type == Type::Never || rhs_type == Type::Never => return Ok(()),
             (InfixOp::Plus, Type::Int(0)) => instructions::I64_ADD,
             (InfixOp::Plus, Type::Float(0)) => instructions::F64_ADD,
             (InfixOp::Plus, Type::Char(0)) => {
@@ -815,7 +842,7 @@ impl<'src> Compiler<'src> {
                 self.function_body.push(instructions::I32_CONST);
                 0x7f.write_sleb128(&mut self.function_body);
                 self.function_body.push(instructions::I32_AND);
-                return;
+                return Ok(());
             }
             (InfixOp::Minus, Type::Int(0)) => instructions::I64_SUB,
             (InfixOp::Minus, Type::Float(0)) => instructions::F64_SUB,
@@ -824,14 +851,19 @@ impl<'src> Compiler<'src> {
                 self.function_body.push(instructions::I32_CONST);
                 0x7f.write_sleb128(&mut self.function_body);
                 self.function_body.push(instructions::I32_AND);
-                return;
+                return Ok(());
             }
             (InfixOp::Mul, Type::Int(0)) => instructions::I64_MUL,
             (InfixOp::Mul, Type::Float(0)) => instructions::F64_MUL,
             (InfixOp::Div, Type::Int(0)) => instructions::I64_DIV_S,
             (InfixOp::Div, Type::Float(0)) => instructions::F64_DIV,
             (InfixOp::Rem, Type::Int(0)) => instructions::I64_REM_S,
-            (InfixOp::Pow, Type::Int(0)) => return self.__rush_internal_pow_int(),
+            (InfixOp::Pow, Type::Int(0)) => {
+                return {
+                    self.__rush_internal_pow_int();
+                    Ok(())
+                }
+            }
             (InfixOp::Eq, Type::Int(0)) => instructions::I64_EQ,
             (InfixOp::Eq, Type::Float(0)) => instructions::F64_EQ,
             (InfixOp::Eq, Type::Bool(0) | Type::Char(0)) => instructions::I32_EQ,
@@ -861,9 +893,10 @@ impl<'src> Compiler<'src> {
             _ => unreachable!("the analyzer guarantees one of the above to match"),
         };
         self.function_body.push(instruction);
+        Ok(())
     }
 
-    fn assign_expr(&mut self, node: AnalyzedAssignExpr<'src>) {
+    fn assign_expr(&mut self, node: AnalyzedAssignExpr<'src>) -> Result<(), String> {
         let (get_instr, set_instr, idx) = match self.find_var(node.assignee) {
             Variable::Global(idx) => (
                 instructions::GLOBAL_GET,
@@ -876,8 +909,8 @@ impl<'src> Compiler<'src> {
                 idx.clone(),
             ),
             Variable::Local(None) => {
-                self.expression(node.expr);
-                return;
+                self.expression(node.expr)?;
+                return Ok(());
             }
         };
 
@@ -891,7 +924,7 @@ impl<'src> Compiler<'src> {
         let expr_type = node.expr.result_type();
 
         // compile rhs
-        self.expression(node.expr);
+        self.expression(node.expr)?;
 
         // calculate new value for non-basic assignments
         'op: {
@@ -943,11 +976,12 @@ impl<'src> Compiler<'src> {
         // set local to new value
         self.function_body.push(set_instr);
         self.function_body.extend_from_slice(&idx);
+        Ok(())
     }
 
-    fn call_expr(&mut self, node: AnalyzedCallExpr<'src>) {
+    fn call_expr(&mut self, node: AnalyzedCallExpr<'src>) -> Result<(), String> {
         for arg in node.args {
-            self.expression(arg);
+            self.expression(arg)?;
         }
 
         match self.functions.get(node.func) {
@@ -960,14 +994,15 @@ impl<'src> Compiler<'src> {
                 name => unreachable!("invalid builtin function: {name}"),
             },
         }
+        Ok(())
     }
 
-    fn cast_expr(&mut self, node: AnalyzedCastExpr<'src>) {
+    fn cast_expr(&mut self, node: AnalyzedCastExpr<'src>) -> Result<(), String> {
         // save expr type
         let expr_type = node.expr.result_type();
 
         // compile expression
-        self.expression(node.expr);
+        self.expression(node.expr)?;
 
         // match source and dest types
         match (expr_type, node.type_) {
@@ -1023,5 +1058,6 @@ impl<'src> Compiler<'src> {
             }
             _ => unreachable!("the analyzer guarantees one of the above to match"),
         }
+        Ok(())
     }
 }
