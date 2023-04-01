@@ -770,11 +770,25 @@ impl<'src> Compiler<'src> {
                 // push subtract
                 self.function_body.push(instructions::I64_SUB);
             }
+            (PrefixOp::Not, Type::Int(0)) => {
+                // push constant u64::MAX
+                self.function_body.push(instructions::I64_CONST);
+                u64::MAX.write_sleb128(&mut self.function_body);
+
+                // compile expression
+                self.expression(node.expr)?;
+
+                // xor
+                self.function_body.push(instructions::I64_XOR);
+            }
             (PrefixOp::Neg, Type::Float(0)) => {
                 // compile expression
                 self.expression(node.expr)?;
 
                 self.function_body.push(instructions::F64_NEG);
+            }
+            (PrefixOp::Ref | PrefixOp::Deref, _) => {
+                return Err("Pointers are not supported in the Wasm backend".to_owned());
             }
             _ => unreachable!("the analyzer guarantees one of the above to match"),
         }

@@ -188,6 +188,18 @@ impl Compiler<'_> {
                 // then return 0
                 instructions::I64_CONST,
                 0,
+                // else if exponent == 0
+                instructions::ELSE,
+                instructions::LOCAL_GET, // get
+                1,                       // exponent
+                instructions::I64_CONST,
+                0,
+                instructions::I64_EQ,
+                instructions::IF, // if
+                types::I64,       // with result `int`
+                // then return 1
+                instructions::I64_CONST,
+                1,
                 // else calculate with loop
                 instructions::ELSE,
                 // -- set accumulator to 1
@@ -258,6 +270,8 @@ impl Compiler<'_> {
                 instructions::LOCAL_GET, // get
                 0,                       // base
                 instructions::I64_MUL,   // multiply
+                // end if
+                instructions::END,
                 // end if
                 instructions::END,
                 // end function body
