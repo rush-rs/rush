@@ -1,0 +1,87 @@
+// Welcome to the playground of the rush programming language.
+// For more information, please visit `https://rush-lang.de`
+
+let mut A_GLOBAL_VARIABLE = 41;
+let FOUR = 4;
+let TWO = 2;
+
+// Every rush program needs to contain one main function.
+fn main(/* It cannot take any parameters */) /* Nor can it return a value. */ {
+    A_GLOBAL_VARIABLE += 1;
+
+    let result =
+    types()
+    - infix_expressions()
+    + prefix_expressions(5)
+    - pointers() as  int
+    - control_flow()
+    - A_GLOBAL_VARIABLE
+    - FOUR ** 2
+    - TWO ** 3
+    - 100000000 / 100000000 ;
+
+
+   exit(result);
+}
+
+fn infix_expressions() -> int /* This function returns an integer */ {
+    // Logical operators are evaluated lazily
+    let result_0 = false && exit(99);
+    let result_1 = true || exit(99);
+    // Due to this, the `exit` function was not called these two times
+
+    let character = 'z';
+    let number = (character - 'a') as int; // This results in 25.
+    number + 1;  // This is a statement and therefore does not return.
+    // return 0; // Functions can also return values explicitly.
+    number + 17 + result_0 as int + result_1 as int // The value of `number` + 1 is returned implicitly (no semicolon)
+}
+
+fn prefix_expressions(input: int) -> int {
+    let output = input as float / 3f;
+    -output as int // Floats are rounded down when using `as`
+}
+
+fn pointers() -> float {
+    let mut a_float = 3.14159265;   // The source variable needs to be mutable
+    let pointer_to_a = &a_float;    // A pointer is created by using the `&` operator
+    *pointer_to_a += 2f;            // When assigning to the variable behind a pointer,
+                                    // the `*` (deref) operator is used.
+    *pointer_to_a                   // This returns the value stored in `a_float`
+}
+
+fn control_flow() -> int {
+    let mut counter_0 = 0;
+    loop {                          // Unconditional loop
+        if counter_0 == 10 {
+            break;
+        }
+        counter_0 += 1;
+    }
+
+    let mut counter_1 = 0;
+    while counter_1 < 10 {          // While loop
+        counter_1 +=1;
+    }
+
+    let mut counter_2 = 0;
+    for i = 0; i < 10; i += 1 {     // For loop
+        counter_2 += 1;
+    }
+
+    counter_0 + counter_1 - counter_2
+}
+
+fn types() -> int {
+    let integer = 42;
+    let float_0 = 3.1415;
+    let float_1 = 2f;
+    let float_2 = float_0 + float_1;
+    let bool = true | false;
+    let char = 'x';
+
+    integer
+        + float_2 as int
+        + bool as int
+        + char as int
+}

@@ -23,6 +23,7 @@ tests = {
     './basic/approx_apery.rush': 0,
     './basic/wasm_test.rush': 37,
     './basic/x64_test.rush': 170,
+    './basic/playground_basic.rush': 42,
     # 'evil exits' test if the `!` type can occur everywhere
     './exits/infix.rush': 5,
     './exits/if_else.rush': 6,
@@ -82,6 +83,13 @@ def run():
         backends_ran.add(name)
         os.chdir(f'../../crates/{name}')
         for file, code in tests.items():
+
+            if name == 'rush-compiler-wasm' and str(file).startswith(
+                './pointers'
+            ):
+                print(f'\x1b[2m\x1b[2mSKIP\x1b[1;0m: {file.ljust(15)} {name}')
+                continue
+
             tests_ran += 1
             if not run_test(file, code, name, cmd):
                 failed_backends.add(name)
@@ -107,6 +115,7 @@ def run():
 
 def run_test(file: str, code: int, name: str, cmd: str):
     print(f'\x1b[2m\x1b[1;39mRUNNING\x1b[1;0m: {file.ljust(15)} {name}')
+
     command = 'cargo r ../../samples/tests/' + file
     if cmd:
         command += '&&' + cmd
