@@ -114,9 +114,13 @@ pub enum Section {
 
 impl Display for Instruction {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let width = f.width().unwrap_or(65);
         match self {
+            Instruction::Commented(instr, _) if f.sign_minus() => {
+                write!(f, "{instr}")
+            }
             Instruction::Commented(instr, comment) => {
-                write!(f, "{instr:65}# {comment}", instr = format!("{instr:#}"))
+                write!(f, "{instr:width$}# {comment}", instr = format!("{instr:#}"))
             }
             Instruction::IntelSyntax => write!(f, ".intel_syntax"),
             Instruction::Global(name) => write!(f, ".global {name}"),

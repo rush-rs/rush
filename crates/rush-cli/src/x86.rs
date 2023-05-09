@@ -6,13 +6,13 @@ use std::{
 
 use anyhow::{anyhow, bail, Context};
 use rush_analyzer::ast::AnalyzedProgram;
-use rush_compiler_x86_64::Compiler;
+use rush_compiler_x86_64::{CommentConfig, Compiler};
 use tempfile::tempdir;
 
 use crate::cli::{BuildArgs, RunArgs};
 
 pub fn compile(ast: AnalyzedProgram, args: BuildArgs) -> anyhow::Result<PathBuf> {
-    let asm = Compiler::new().compile(ast);
+    let asm = Compiler::new().compile(ast, CommentConfig::default());
 
     // get output path
     let output_path = match args.output_file {

@@ -15,8 +15,20 @@ use rush_analyzer::Diagnostic;
 pub fn compile<'src>(
     text: &'src str,
     path: &'src str,
+    comment_config: CommentConfig,
 ) -> Result<(String, Vec<Diagnostic<'src>>), Vec<Diagnostic<'src>>> {
     let (tree, diagnostics) = rush_analyzer::analyze(text, path)?;
-    let asm = Compiler::new().compile(tree);
+    let asm = Compiler::new().compile(tree, comment_config);
     Ok((asm, diagnostics))
+}
+
+pub enum CommentConfig {
+    NoComments,
+    Emit { line_width: usize },
+}
+
+impl Default for CommentConfig {
+    fn default() -> Self {
+        CommentConfig::Emit { line_width: 65 }
+    }
 }

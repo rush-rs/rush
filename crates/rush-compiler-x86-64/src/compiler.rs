@@ -7,6 +7,7 @@ use crate::{
     instruction::{Instruction, Section},
     register::{FloatRegister, IntRegister, Register, FLOAT_PARAM_REGISTERS, INT_PARAM_REGISTERS},
     value::{FloatValue, IntValue, Offset, Pointer, Size, Value},
+    CommentConfig,
 };
 
 const BUILTIN_FUNCS: &[&str] = &["exit"];
@@ -92,7 +93,7 @@ impl<'src> Compiler<'src> {
         }
     }
 
-    pub fn compile(mut self, tree: AnalyzedProgram<'src>) -> String {
+    pub fn compile(mut self, tree: AnalyzedProgram<'src>, comment_config: CommentConfig) -> String {
         self.program(tree);
 
         // use intel syntax
@@ -113,10 +114,7 @@ impl<'src> Compiler<'src> {
         {
             buf.push(Instruction::Section(Section::Data));
             buf.extend(self.quad_globals.into_iter().flat_map(|(name, value)| {
-                [
-                    Instruction::Label(name, false),
-                    Instruction::QuadInt(value),
-                ]
+                [Instruction::Label(name, false), Instruction::QuadInt(value)]
             }));
             buf.extend(
                 self.quad_float_globals
@@ -152,10 +150,7 @@ impl<'src> Compiler<'src> {
                 [Instruction::Label(name, false), Instruction::Octa(value)]
             }));
             buf.extend(self.quad_constants.into_iter().flat_map(|(value, name)| {
-                [
-                    Instruction::Label(name, false),
-                    Instruction::QuadInt(value),
-                ]
+                [Instruction::Label(name, false), Instruction::QuadInt(value)]
             }));
             buf.extend(
                 self.quad_float_constants
@@ -178,7 +173,12 @@ impl<'src> Compiler<'src> {
             }));
         }
 
-        buf.into_iter().map(|instr| instr.to_string()).collect()
+        buf.into_iter()
+            .map(|instr| match comment_config {
+                CommentConfig::NoComments => format!("{instr:-}"),
+                CommentConfig::Emit { line_width } => format!("{instr:line_width$}"),
+            })
+            .collect()
     }
 
     pub(crate) fn align(ptr: &mut i64, size: Size) {
