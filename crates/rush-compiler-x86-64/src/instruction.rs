@@ -117,7 +117,7 @@ impl Display for Instruction {
         let width = f.width().unwrap_or(65);
         match self {
             Instruction::Commented(instr, _) if f.sign_minus() => {
-                write!(f, "{instr}")
+                write!(f, "{instr:#}")
             }
             Instruction::Commented(instr, comment) => {
                 write!(f, "{instr:width$}# {comment}", instr = format!("{instr:#}"))
