@@ -1,0 +1,13 @@
+let mut cnt = 0;
+
+fn main() {
+    if cnt == 100 {
+        exit(cnt);
+    }
+    incr();
+}
+
+fn incr() {
+    cnt += 1;
+    main()
+}

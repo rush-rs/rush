@@ -1,0 +1,12 @@
+fn div(a: int, b: int, c: int) -> int {
+    a / b / c
+}
+
+fn rem(a: int, b: int) -> int {
+    a % b
+}
+
+fn main() {
+    exit(rem(10, 8));
+    // exit(div(32, 2, 2));
+}
