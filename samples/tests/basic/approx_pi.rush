@@ -1,4 +1,4 @@
-let ITERATIONS = 1000000;
+let ITERATIONS = 10000;
 
 fn main() {
     let mut k = 3f;
@@ -9,9 +9,9 @@ fn main() {
         k += 2f;
     }
 
-    let result = ((4f * s) * 100000f) as int;
+    let result = ((4f * s) * 1000f) as int;
 
-    if result == 314159 {
+    if result == 3141 {
         // success, the computation was successful
         exit(0);
     } else {

@@ -66,6 +66,11 @@ backends = {
         && riscv64-linux-gnu-ld output.o -L corelib -lcore-rush-riscv-lp64d -static -nostdlib -no-relax -o test \
         && qemu-riscv64 ./test
     """,
+    'rush-compiler-s390x': """
+	    s390x-unknown-linux-gnu-as -g output.s -o output.o \
+        && s390x-unknown-linux-gnu-ld output.o -L corelib -lcore-rush-s390x -static -nostdlib -no-relax -o test \
+        && qemu-s390x ./test
+    """,
     'rush-transpiler-c': 'gcc output.c -o out && ./out',
 }
 
@@ -78,7 +83,7 @@ def run():
     failed_backends = set()
 
     for name, cmd in backends.items():
-        if not name.endswith(sys.argv[2] if len(sys.argv) == 3 else ''):
+        if not name.endswith(sys.argv[2] if len(sys.argv) >= 3 else ''):
             continue
         backends_ran.add(name)
         os.chdir(f'../../crates/{name}')
@@ -87,6 +92,10 @@ def run():
             if name == 'rush-compiler-wasm' and str(file).startswith(
                 './pointers'
             ):
+                print(f'\x1b[2m\x1b[2mSKIP\x1b[1;0m: {file.ljust(15)} {name}')
+                continue
+
+            if len(sys.argv) == 4 and sys.argv[3] not in file:
                 print(f'\x1b[2m\x1b[2mSKIP\x1b[1;0m: {file.ljust(15)} {name}')
                 continue
 
@@ -140,9 +149,9 @@ def run_test(file: str, code: int, name: str, cmd: str):
 
 
 if __name__ == '__main__':
-    if len(sys.argv) < 2 or len(sys.argv) > 3:
+    if len(sys.argv) < 2 or len(sys.argv) > 4:
         print(
-            f'Expected at least one, at most two arguments, got {len(sys.argv) - 1}'
+            f'Expected at least one, at most three arguments, got {len(sys.argv) - 1}'
         )
         exit(1)
 
