@@ -156,7 +156,7 @@ impl<'tree> Compiler<'tree> {
                     }
 
                     self.insert_with_comment(
-                        Instruction::LoadLengthenedB(reg, IntRegisterPointer(IntRegister::R15, offset)),
+                        Instruction::LoadLengthened(reg, IntRegisterPointer(IntRegister::R15, offset)),
                         comment,
                     );
                 }
@@ -327,7 +327,12 @@ impl<'tree> Compiler<'tree> {
             }
             Type::Float(0) => {
                 let dest_reg = self.get_float_reg();
-                self.insert_with_comment(Instruction::LoadLengthenedB(dest_reg, ptr), ident.into());
+                self.insert_with_comment(Instruction::LoadLengthened(dest_reg, ptr), ident.into());
+                let offset = self.get_offset(Size::Quad);
+
+                self.insert(Instruction::StoreGeneric(dest_reg.into(), IntRegisterPointer(IntRegister::R15, offset)));
+                self.insert(Instruction::LoadLengthened(dest_reg, IntRegisterPointer(IntRegister::R15, offset)));
+
                 Register::Float(dest_reg)
                 // todo!("float not supported")
             }
@@ -387,7 +392,7 @@ impl<'tree> Compiler<'tree> {
     pub(crate) fn insert_movf(&mut self, to: FloatRegister, from: FloatRegister) {
         self.blocks[self.curr_block]
             .instructions
-            .push((Instruction::Lgr(to.into(), from.into()), None));
+            .push((Instruction::Lder(to, from), None));
     }
 
     #[inline]
@@ -495,7 +500,8 @@ pub(crate) enum DataObjType {
 impl DataObjType {
     pub (crate) fn size(&self) -> Size {
         match self {
-            Self::Float(_) | Self::Quad(_) => Size::Quad,
+            Self::Quad(_) => Size::Quad,
+            Self::Float(_) => Size::Long,
             Self::Byte(_) => Size::Byte,
         }
     }
@@ -504,13 +510,25 @@ impl DataObjType {
 impl Display for DataObjType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Float(inner) => write!(
+            Self::Float(inner) => {
+                let mut wtr = vec![];
+                wtr.write_f32::<BigEndian>((*inner) as f32).unwrap();
+
+                // while wtr.len() < 64 / 8 {
+                //     wtr.push(0);
+                // }
+
+                dbg!(wtr.len());
+
+                write!(
                 f,
-                "{} {:#018x}  # = {inner}{zero}\n    .align 2",
+                "{} 0x{:018x}  # = {inner}{zero}\n    .align 2",
                 self.size().asm_string(),
                 (*inner as f32).to_bits(),
+                // wtr.iter().map(|b| format!("{b:02x}")).collect::<Vec<String>>().join(""),
                 zero = if inner.fract() == 0.0 { ".0" } else { "" }
-            ),
+                )
+            },
             Self::Quad(inner) => {
                 // let mut wtr = vec![];
                 // wtr.write_i64::<BigEndian>(*inner).unwrap();

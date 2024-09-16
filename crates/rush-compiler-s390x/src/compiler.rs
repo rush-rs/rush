@@ -607,7 +607,7 @@ impl<'tree> Compiler<'tree> {
 
     fn restore_freg_from_stack(&mut self, reg: FloatRegister, offset: i64) {
         self.insert_with_comment(
-            Instruction::LoadLengthenedB(reg, IntRegisterPointer(IntRegister::R15, offset)),
+            Instruction::LoadLengthened(reg, IntRegisterPointer(IntRegister::R15, offset)),
             "restore after save".into(),
         )
     }
@@ -727,7 +727,7 @@ impl<'tree> Compiler<'tree> {
                 );
 
                 self.insert_with_comment(
-                    Instruction::LoadLengthened(dest_reg, IntRegisterPointer(float_addr_ireg, 0)),
+                    Instruction::LoadLengthenedB(dest_reg, IntRegisterPointer(float_addr_ireg, 0)),
                     format!("load {value}").into(),
                 );
 
@@ -1047,21 +1047,21 @@ impl<'tree> Compiler<'tree> {
                 }
 
                 // Move the lhs, rhs into the even register pair (input pair).
-                if lhs != ODD_PAIR_HIGH {
-                    self.insert_movf(ODD_PAIR_HIGH, lhs);
+                if lhs != EVEN_PAIR_LOW {
+                    self.insert_movf(EVEN_PAIR_LOW, lhs);
                 }
 
                 if rhs != EVEN_PAIR_HIGH {
                     self.insert_movf(EVEN_PAIR_HIGH, rhs);
                 }
 
-                self.insert(Instruction::Debr(EVEN_PAIR_LOW, EVEN_PAIR_HIGH));
+                self.insert(Instruction::Ddbr(EVEN_PAIR_LOW, EVEN_PAIR_HIGH));
 
                 // Extract the quotient / remainder from the odd-numbered register pair.
                 match (output, dest_reg) {
-                    (DivisionOutput::Quotient, ODD_PAIR_HIGH) => {},
+                    (DivisionOutput::Quotient, EVEN_PAIR_LOW) => {},
                     (DivisionOutput::Quotient, _) => {
-                        self.insert_movf(dest_reg, ODD_PAIR_HIGH);
+                        self.insert_movf(dest_reg, EVEN_PAIR_LOW);
                     },
                     (DivisionOutput::Remainder, EVEN_PAIR_LOW) => {},
                     (DivisionOutput::Remainder, _) => {
@@ -1071,6 +1071,10 @@ impl<'tree> Compiler<'tree> {
 
                 // Restore saved registers.
                 for (r, offset) in saved {
+                    if r == dest_reg {
+                        panic!("TODO")
+                    }
+
                     self.restore_freg_from_stack(r, offset)
                 }
     }

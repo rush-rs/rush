@@ -80,6 +80,7 @@ pub enum Instruction {
     Lgfi(IntRegister, i64),
     La(IntRegister, Rc<str>),
     Lgr(Register, Register),
+    Lder(FloatRegister, FloatRegister),
 
     Oilf(IntRegister, u32), // Or immediate (low)
     Llihf(IntRegister, u32), // Load logical high
@@ -93,7 +94,7 @@ pub enum Instruction {
     Adbr(FloatRegister, FloatRegister),
     Sdbr(FloatRegister, FloatRegister),
     Mdbr(FloatRegister, FloatRegister),
-    Debr(FloatRegister, FloatRegister),
+    Ddbr(FloatRegister, FloatRegister),
     Xgr(IntRegister, IntRegister),
     Ahi(IntRegister, i16),
     Aghi(IntRegister, i16),
@@ -161,6 +162,7 @@ impl Display for Instruction {
             Instruction::Lghi(dest, val) => write!(f, "lghi {dest}, {val}"),
             Instruction::Lgfi(dest, val) => write!(f, "lgfi {dest}, {val}"),
             Instruction::Lgr(dest, src) => write!(f, "lgr {dest}, {src}"),
+            Instruction::Lder(dest, src) => write!(f, "lder {dest}, {src}"),
             Instruction::Oilf(dest, v) => write!(f, "oilf {dest}, {v}"),
             Instruction::Llihf(dest, v) => write!(f, "llihf {dest}, {v}"),
             Instruction::Ahi(dest, v) => write!(f, "ahi {dest}, {v}"),
@@ -210,7 +212,7 @@ impl Display for Instruction {
             Instruction::Adbr(dest_lhs, rhs) => write!(f, "adbr {dest_lhs}, {rhs}"),
             Instruction::Sdbr(dest_lhs, rhs) => write!(f, "sdbr {dest_lhs}, {rhs}"),
             Instruction::Mdbr(dest_lhs, rhs) => write!(f, "mdbr {dest_lhs}, {rhs}"),
-            Instruction::Debr(dest_lhs, rhs) => write!(f, "debr {dest_lhs}, {rhs}"),
+            Instruction::Ddbr(dest_lhs, rhs) => write!(f, "ddbr {dest_lhs}, {rhs}"),
             Instruction::Xgr(dest_lhs, rhs) => write!(f, "xgr {dest_lhs}, {rhs}"),
             // Instruction::Addi(dest, src, imm) => write!(f, "addi {dest}, {src}, {imm}"),
             // Instruction::Sub(dest, lhs, rhs) => write!(f, "sub {dest}, {lhs}, {rhs}"),
