@@ -1,7 +1,7 @@
 use crate::{
     compiler::Compiler,
     instruction::Instruction,
-    register::{FloatRegister, IntRegister},
+    register::{FloatRegister, IntRegister, Register}, utils::Size,
 };
 
 impl<'tree> Compiler<'tree> {
@@ -14,20 +14,25 @@ impl<'tree> Compiler<'tree> {
         exponent: IntRegister,
     ) -> IntRegister {
         // before the function is called, all currently used registers are saved
-        let regs_on_stack = self
+        let regs_on_stack: Vec<(Register, i64, Size)> = self
             .used_registers
             .clone()
             .iter()
             .map(|(reg, size)| (*reg, self.spill_reg(*reg, *size), *size))
             .collect();
 
+        dbg!(&regs_on_stack);
+
         // prepare the arguments
-        if base != IntRegister::R2 {
-            self.insert(Instruction::Lgr(IntRegister::R2, base));
-        }
+        // TODO: remove the hacky-ness and save r2 in between.
         if exponent != IntRegister::R3 {
-            self.insert(Instruction::Lgr(IntRegister::R3, exponent));
+            self.insert_with_comment(Instruction::Lgr(IntRegister::R3.into(), exponent.into()), "pow_int exponent".into());
         }
+
+        if base != IntRegister::R2 {
+            self.insert_with_comment(Instruction::Lgr(IntRegister::R2.into(), base.into()), "pow_int base".into());
+        }
+
 
         // perform the function call
         self.insert_call("__rush_internal_pow_int".into());
@@ -51,7 +56,7 @@ impl<'tree> Compiler<'tree> {
 
         // prepare the argument
         if src != IntRegister::R2 {
-            self.insert(Instruction::Lgr(IntRegister::R2, src));
+            self.insert_movi(IntRegister::R2, src);
         }
 
         // perform the function call

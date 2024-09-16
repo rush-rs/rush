@@ -1,10 +1,11 @@
 use std::{borrow::Cow, collections::HashMap, fmt::Display, rc::Rc};
+use byteorder::{BigEndian, LittleEndian, WriteBytesExt};
 
 use rush_analyzer::Type;
 
 use crate::{
     compiler::Compiler,
-    instruction::{Block, Instruction, Pointer},
+    instruction::{Block, Instruction, IntRegisterPointer, Pointer},
     register::{FloatRegister, IntRegister, Register, FLOAT_REGISTERS, INT_REGISTERS},
 };
 
@@ -32,12 +33,21 @@ impl Variable {
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum Size {
     Byte = 1,
-    Dword = 8,
+    Long = 4,
+    Quad = 8,
 }
 
 impl Size {
     pub(crate) fn byte_count(&self) -> i64 {
         *self as i64
+    }
+
+    pub (crate) fn asm_string(&self) -> String {
+        match self {
+            Size::Byte => ".byte",
+            Size::Long => ".long",
+            Size::Quad => ".quad",
+        }.into()
     }
 }
 
@@ -45,7 +55,7 @@ impl From<Type> for Size {
     fn from(src: Type) -> Self {
         match src {
             Type::Bool(0) | Type::Char(0) => Size::Byte,
-            Type::Int(_) | Type::Float(_) | Type::Bool(_) | Type::Char(_) => Size::Dword,
+            Type::Int(_) | Type::Float(_) | Type::Bool(_) | Type::Char(_) => Size::Quad,
             Type::Unknown | Type::Never | Type::Unit => unreachable!("these types have no size"),
         }
     }
@@ -70,7 +80,7 @@ impl<'tree> Compiler<'tree> {
         self.curr_fn().stack_allocs
     }
 
-    /// Saves a [`Register`] to memory and returns its fp-offset.
+    /// Saves a [`Register`] to memory and returns its GR15-offset.
     /// Used before function calls in order to save currently used registers to memory.
     pub(crate) fn spill_reg(&mut self, reg: Register, size: Size) -> i64 {
         let offset = self.get_offset(size);
@@ -78,19 +88,19 @@ impl<'tree> Compiler<'tree> {
 
         match reg {
             Register::Int(reg) => {
-                let ptr = Pointer::Register(IntRegister::R15, offset);
+                let ptr = IntRegisterPointer(IntRegister::R15, offset);
 
                 match size {
                     Size::Byte => self.insert_with_comment(Instruction::Store8(reg, ptr), comment),
-                    Size::Dword => self.insert_with_comment(Instruction::Store64(reg, ptr), comment),
+                    Size::Long => todo!("implement this"),
+                    Size::Quad => self.insert_with_comment(Instruction::Store64(reg, ptr), comment),
                 }
             }
             Register::Float(reg) => {
-                // self.insert(Instruction::Fsd(
-                //     reg,
-                //     Pointer::Register(IntRegister::Fp, offset),
-                // ))
-                todo!("impl float")
+                self.insert(Instruction::StoreGeneric(
+                    reg.into(),
+                    IntRegisterPointer(IntRegister::R15, offset),
+                ));
             },
         };
 
@@ -109,7 +119,7 @@ impl<'tree> Compiler<'tree> {
             let comment = format!("{} byte reload: {reg}", size.byte_count()).into();
             match reg {
                 Register::Int(reg) => {
-                    // in this case, restoring `a0` would destroy the call return value.
+                    // in this case, restoring `r2` would destroy the call return value.
                     // therefore, the return value is copied into a new temporary register
                     if call_return_reg == Some(Register::Int(IntRegister::R2))
                         && reg == IntRegister::R2
@@ -117,17 +127,18 @@ impl<'tree> Compiler<'tree> {
                         let new_res_reg = self.get_int_reg();
                         call_return_reg = Some(new_res_reg.to_reg());
                         // copy the return value into the new result value
-                        self.insert(Instruction::Lgr(new_res_reg, IntRegister::R2));
+                        self.insert_movi(new_res_reg, IntRegister::R2);
                     }
 
                     // perform different load operations depending on the size
                     match size {
                         Size::Byte => self.insert_with_comment(
-                            Instruction::Load8(reg, Pointer::Register(IntRegister::R15, offset)),
+                            Instruction::Load8(reg, IntRegisterPointer(IntRegister::R15, offset)),
                             comment,
                         ),
-                        Size::Dword => self.insert_with_comment(
-                            Instruction::Load64(reg, Pointer::Register(IntRegister::R15, offset)),
+                        Size::Long => todo!("what to do?"),
+                        Size::Quad => self.insert_with_comment(
+                            Instruction::Load64(reg, IntRegisterPointer(IntRegister::R15, offset)),
                             comment,
                         ),
                     };
@@ -135,20 +146,19 @@ impl<'tree> Compiler<'tree> {
                 Register::Float(reg) => {
                     // in this case, restoring `fa0` would destroy the call return value.
                     // therefore, the return value is copied into a new temporary register
-                    // if call_return_reg == Some(Register::Float(FloatRegister::Fa0))
-                    //     && reg == FloatRegister::Fa0
-                    // {
-                    //     let new_res_reg = self.get_float_reg();
-                    //     call_return_reg = Some(new_res_reg.to_reg());
-                    //     // copy the return value into the new result value
-                    //     self.insert(Instruction::Fmv(new_res_reg, FloatRegister::Fa0));
-                    // }
-                    //
-                    // self.insert_with_comment(
-                    //     Instruction::Fld(reg, Pointer::Register(IntRegister::Fp, offset)),
-                    //     comment,
-                    // );
-                    todo!("floats not supported")
+                    if call_return_reg == Some(Register::Float(FloatRegister::F0))
+                        && reg == FloatRegister::F0
+                    {
+                        let new_res_reg = self.get_float_reg();
+                        call_return_reg = Some(new_res_reg.to_reg());
+                        // copy the return value into the new result value
+                        self.insert_movf(new_res_reg, FloatRegister::F0);
+                    }
+
+                    self.insert_with_comment(
+                        Instruction::LoadLengthenedB(reg, IntRegisterPointer(IntRegister::R15, offset)),
+                        comment,
+                    );
                 }
             };
         }
@@ -260,27 +270,52 @@ impl<'tree> Compiler<'tree> {
         .into()
     }
 
-    /// Helper function for resolving identifier names.
-    /// Searches the scopes first. If no match was found, the matching global variable is returned.
-    /// Panics if the variable does not exist.
-    pub(crate) fn resolve_name(&self, name: &str) -> &Variable {
+    pub (crate) fn resolve_variable(&self, name: &str) -> Variable {
         // look for normal variables first
         for scope in self.scopes.iter().rev() {
             if let Some(variable) = scope.get(name) {
-                return variable;
+                return variable.clone();
             }
         }
+
         // return reference to global variable
         self.globals
             .get(name)
-            .expect("the analyzer guarantees valid variable references")
+            .expect("the analyzer guarantees valid variable references").clone()
+    }
+
+    /// Helper function for resolving identifier names.
+    /// Searches the scopes first. If no match was found, the matching global variable is returned.
+    /// Panics if the variable does not exist.
+    pub(crate) fn load_variable_from_name(&mut self, name: &str) -> Option<IntRegisterPointer> {
+        let var = self.resolve_variable(name);
+
+        match var.value {
+            Some(Pointer::Label(label)) => {
+                let size = Size::Quad;
+
+                // Ensure that GR0 is not used as a base register.
+                self.use_reg(IntRegister::R0.into(), size);
+                let addr_reg = self.get_int_reg();
+                self.release_reg(IntRegister::R0.into());
+
+                self.insert_with_comment(
+                    Instruction::LoadAddrRelativeLong(addr_reg, label.clone()),
+                    format!("load addr of {label}").into()
+                );
+
+                Some(IntRegisterPointer(addr_reg, 0))
+            },
+            Some(Pointer::Register(int_pointer)) => Some(int_pointer),
+            None => None,
+        }
     }
 
     /// Loads the specified variable into a register.
     /// Decides which load operation is to be used as it depends on the data size.
     pub(crate) fn load_value_from_pointer(
         &mut self,
-        ptr: Pointer,
+        ptr: IntRegisterPointer,
         type_: Type,
         ident: &'tree str,
     ) -> Register {
@@ -291,10 +326,10 @@ impl<'tree> Compiler<'tree> {
                 Register::Int(dest_reg)
             }
             Type::Float(0) => {
-                // let dest_reg = self.get_float_reg();
-                // self.insert_with_comment(Instruction::Fld(dest_reg, ptr), ident.into());
-                // Register::Float(dest_reg)
-                todo!("float not supported")
+                let dest_reg = self.get_float_reg();
+                self.insert_with_comment(Instruction::LoadLengthenedB(dest_reg, ptr), ident.into());
+                Register::Float(dest_reg)
+                // todo!("float not supported")
             }
             Type::Int(_) | Type::Float(_) | Type::Bool(_) | Type::Char(_) => {
                 let dest_reg = self.get_int_reg();
@@ -344,7 +379,15 @@ impl<'tree> Compiler<'tree> {
     pub(crate) fn insert_movi(&mut self, to: IntRegister, from: IntRegister) {
         self.blocks[self.curr_block]
             .instructions
-            .push((Instruction::Lgr(to, from), None));
+            .push((Instruction::Lgr(to.into(), from.into()), None));
+    }
+
+    #[inline]
+    /// Inserts an [`Instruction::Lgr`] at the end of the current basic block.
+    pub(crate) fn insert_movf(&mut self, to: FloatRegister, from: FloatRegister) {
+        self.blocks[self.curr_block]
+            .instructions
+            .push((Instruction::Lgr(to.into(), from.into()), None));
     }
 
     #[inline]
@@ -441,12 +484,21 @@ impl Display for DataObj {
 
 #[derive(Debug, PartialEq)]
 pub(crate) enum DataObjType {
-    /// Holds a float value of the `.dword` size.
+    /// Holds a float value of the `.quad` size.
     Float(f64),
-    /// Holds an int value of the `.dword` size.
-    Dword(i64),
+    /// Holds an int value of the `.quad` size.
+    Quad(i64),
     /// Holds 1 byte values like `char` and `bool`
     Byte(u8),
+}
+
+impl DataObjType {
+    pub (crate) fn size(&self) -> Size {
+        match self {
+            Self::Float(_) | Self::Quad(_) => Size::Quad,
+            Self::Byte(_) => Size::Byte,
+        }
+    }
 }
 
 impl Display for DataObjType {
@@ -454,12 +506,29 @@ impl Display for DataObjType {
         match self {
             Self::Float(inner) => write!(
                 f,
-                ".dword {:#018x}  # = {inner}{zero}",
-                inner.to_bits(),
+                "{} {:#018x}  # = {inner}{zero}\n    .align 2",
+                self.size().asm_string(),
+                (*inner as f32).to_bits(),
                 zero = if inner.fract() == 0.0 { ".0" } else { "" }
             ),
-            Self::Dword(inner) => write!(f, ".dword {inner:#018x}  # = {inner}"),
-            Self::Byte(inner) => write!(f, ".byte {inner:#04x}  # = {inner}"),
+            Self::Quad(inner) => {
+                // let mut wtr = vec![];
+                // wtr.write_i64::<BigEndian>(*inner).unwrap();
+                //
+                // while wtr.len() < 64 / 8 {
+                //     wtr.push(0);
+                // }
+                //
+                // dbg!(wtr.len());
+
+                write!(
+                    f,
+                    "{} {inner}  # = {inner}\n    .align 2",
+                    self.size().asm_string(),
+                    // wtr.iter().map(|b| format!("{b:02x}")).collect::<Vec<String>>().join("")
+                )
+            },
+            Self::Byte(inner) => write!(f, "{} {inner:#04x}  # = {inner}", self.size().asm_string()),
         }
     }
 }

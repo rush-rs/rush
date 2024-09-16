@@ -2,7 +2,7 @@ use std::{borrow::Cow, fmt::Display, rc::Rc};
 
 use rush_analyzer::InfixOp;
 
-use crate::register::{FloatRegister, IntRegister};
+use crate::register::{FloatRegister, IntRegister, Register};
 
 pub enum CommentConfig {
     NoComments,
@@ -54,6 +54,7 @@ impl<'tree> Block<'tree> {
     }
 }
 
+#[derive(Clone)]
 pub enum Instruction {
     BranchRegister(IntRegister),
     Brasl(IntRegister, Cow<'static, str>),
@@ -63,24 +64,40 @@ pub enum Instruction {
     // BrCond(Condition, IntRegister, IntRegister, Rc<str>),
     CompareIReg(IntRegister, IntRegister),
     CompareIntImm(IntRegister, i8),
+    InsertProgramMask(IntRegister),
     BranchEq(Rc<str>),
+    BranchNotEq(Rc<str>),
+    BranchLessThan(Rc<str>),
+    BranchNotGreaterThan(Rc<str>),
+    BranchNotLessThan(Rc<str>),
 
     // base integer instructions
     // SetIntCondition(Condition, IntRegister, IntRegister, IntRegister),
     // Snez(IntRegister, IntRegister),
     // Seqz(IntRegister, IntRegister),
 
-    Lghi(IntRegister, i64),
+    Lghi(IntRegister, i16),
+    Lgfi(IntRegister, i64),
     La(IntRegister, Rc<str>),
-    Lgr(IntRegister, IntRegister),
+    Lgr(Register, Register),
+
+    Oilf(IntRegister, u32), // Or immediate (low)
+    Llihf(IntRegister, u32), // Load logical high
+
     // Neg(IntRegister, IntRegister),
     // Not(IntRegister, IntRegister),
     Add64(IntRegister, IntRegister),
     Sub64(IntRegister, IntRegister),
     Mul64(IntRegister, IntRegister),
     Div64(IntRegister, IntRegister),
-    Ahi(IntRegister, i8),
-    Aghi(IntRegister, i8),
+    Adbr(FloatRegister, FloatRegister),
+    Sdbr(FloatRegister, FloatRegister),
+    Mdbr(FloatRegister, FloatRegister),
+    Debr(FloatRegister, FloatRegister),
+    Xgr(IntRegister, IntRegister),
+    Ahi(IntRegister, i16),
+    Aghi(IntRegister, i16),
+    ShiftRightSingle(IntRegister, IntRegister, i8, IntRegister),
     // Sub(IntRegister, IntRegister, IntRegister),
     // Mul(IntRegister, IntRegister, IntRegister),
     // Div(IntRegister, IntRegister, IntRegister),
@@ -95,10 +112,18 @@ pub enum Instruction {
 
     // load / store operations
     // Lb(IntRegister, Pointer),
-    Load8(IntRegister, Pointer),
-    Load64(IntRegister, Pointer),
-    Store8(IntRegister, Pointer),
-    Store64(IntRegister, Pointer),
+    Load8(IntRegister, IntRegisterPointer),
+    Load64(IntRegister, IntRegisterPointer),
+    LoadLengthened(FloatRegister, IntRegisterPointer),
+    LoadLengthenedB(FloatRegister, IntRegisterPointer),
+    LoadAddrRelativeLong(IntRegister, Rc<str>),
+    LoadRelativeLong(IntRegister, IntRegisterPointer),
+    StoreGeneric(Register, IntRegisterPointer),
+    Store8(IntRegister, IntRegisterPointer),
+    Store64(IntRegister, IntRegisterPointer),
+    Store64Generic(Register, IntRegisterPointer),
+    ConvertToFixed(IntRegister, u8, FloatRegister),
+    ConvertFromFixed(FloatRegister, IntRegister),
 
     // floats (arithmetic instructions use `.d` suffix)
     // SetFloatCondition(Condition, IntRegister, FloatRegister, FloatRegister),
@@ -127,11 +152,20 @@ impl Display for Instruction {
             // Instruction::BrCond(cond, l, r, lbl) => write!(f, "b{cond} {l}, {r}, {lbl}"),
             Self::CompareIReg(a, b) => write!(f, "cgr {a}, {b}"),
             Self::CompareIntImm(x, v) => write!(f, "chi {x}, {v}"),
-            Instruction::BranchEq(lbl) => write!(f, "je, {lbl}"),
+            Self::InsertProgramMask(reg) => write!(f, "ipm {reg}"),
+            Instruction::BranchNotEq(lbl) => write!(f, "jne {lbl}"),
+            Instruction::BranchEq(lbl) => write!(f, "je {lbl}"),
+            Instruction::BranchLessThan(lbl) => write!(f, "jl {lbl}"),
+            Instruction::BranchNotGreaterThan(lbl) => write!(f, "jnh {lbl}"),
+            Instruction::BranchNotLessThan(lbl) => write!(f, "jnl {lbl}"),
             Instruction::Lghi(dest, val) => write!(f, "lghi {dest}, {val}"),
+            Instruction::Lgfi(dest, val) => write!(f, "lgfi {dest}, {val}"),
             Instruction::Lgr(dest, src) => write!(f, "lgr {dest}, {src}"),
+            Instruction::Oilf(dest, v) => write!(f, "oilf {dest}, {v}"),
+            Instruction::Llihf(dest, v) => write!(f, "llihf {dest}, {v}"),
             Instruction::Ahi(dest, v) => write!(f, "ahi {dest}, {v}"),
             Instruction::Aghi(dest, v) => write!(f, "aghi {dest}, {v}"),
+            Instruction::ShiftRightSingle(dest, source, disp, bas) => write!(f, "srag {dest}, {source}, {disp}({bas})"),
             // Instruction::SetIntCondition(cond, dest, l, r) => match cond {
             //     Condition::Lt => write!(f, "slt {dest}, {l}, {r}"),
             //     // Because RISC-V does not support the sle instruction, it is emulated here
@@ -173,6 +207,11 @@ impl Display for Instruction {
             Instruction::Sub64(dest_lhs, rhs) => write!(f, "sgr {dest_lhs}, {rhs}"),
             Instruction::Mul64(dest_lhs, rhs) => write!(f, "msgr {dest_lhs}, {rhs}"),
             Instruction::Div64(dest_lhs, rhs) => write!(f, "dsgr {dest_lhs}, {rhs}"),
+            Instruction::Adbr(dest_lhs, rhs) => write!(f, "adbr {dest_lhs}, {rhs}"),
+            Instruction::Sdbr(dest_lhs, rhs) => write!(f, "sdbr {dest_lhs}, {rhs}"),
+            Instruction::Mdbr(dest_lhs, rhs) => write!(f, "mdbr {dest_lhs}, {rhs}"),
+            Instruction::Debr(dest_lhs, rhs) => write!(f, "debr {dest_lhs}, {rhs}"),
+            Instruction::Xgr(dest_lhs, rhs) => write!(f, "xgr {dest_lhs}, {rhs}"),
             // Instruction::Addi(dest, src, imm) => write!(f, "addi {dest}, {src}, {imm}"),
             // Instruction::Sub(dest, lhs, rhs) => write!(f, "sub {dest}, {lhs}, {rhs}"),
             // Instruction::Mul(dest, lhs, rhs) => write!(f, "mul {dest}, {lhs}, {rhs}"),
@@ -188,16 +227,18 @@ impl Display for Instruction {
             // Instruction::Lb(dest, ptr) => write!(f, "lb {dest}, {ptr}"),
             Instruction::Load8(dest, ptr) => write!(f, "lb {dest}, {ptr}"),
             Instruction::Load64(dest, ptr) => write!(f, "lg {dest}, {ptr}"),
+            Instruction::LoadLengthened(dest, ptr) => write!(f, "lde {dest}, {ptr}"),
+            Instruction::LoadLengthenedB(dest, ptr) => write!(f, "ldeb {dest}, {ptr}"),
+            Instruction::LoadAddrRelativeLong(dest, label) => write!(f, "larl {dest}, {label}"),
+            Instruction::LoadRelativeLong(dest, label) => write!(f, "larl {dest}, {label}"),
+            Instruction::StoreGeneric(src, ptr) => write!(f, "ste {src}, {ptr}"),
             // TODO: check that this is not broken.
             // meaning: register vs. label.
-            Instruction::Store8(src, ptr) => match ptr {
-                Pointer::Register(_, _) => write!(f, "stc {src}, {ptr}"),
-                Pointer::Label(_) => write!(f, "stc {src}, {ptr}, t6"),
-            },
-            Instruction::Store64(src, ptr) => match ptr {
-                Pointer::Register(_, _) => write!(f, "stg {src}, {ptr}"),
-                Pointer::Label(_) => write!(f, "stg {src}, {ptr}, t6"),
-            },
+            Instruction::Store8(src, ptr) => write!(f, "stc {src}, {ptr}"),
+            Instruction::Store64(src, ptr) => write!(f, "stg {src}, {ptr}"),
+            Instruction::Store64Generic(src, ptr) => write!(f, "stg {src}, {ptr}"),
+            Instruction::ConvertToFixed(dest, rounding, src) =>  write!(f, "cgdbr {dest}, {rounding}, {src}"),
+            Instruction::ConvertFromFixed(dest, src) =>  write!(f, "cefbr {dest}, {src}"),
             // Instruction::Fld(dest, ptr) => match ptr {
             //     Pointer::Register(_, _) => write!(f, "fld {dest}, {ptr}"),
             //     Pointer::Label(_) => write!(f, "fld {dest}, {ptr}, t6"),
@@ -290,14 +331,33 @@ impl Display for Instruction {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Pointer {
-    Register(IntRegister, i64),
+    Register(IntRegisterPointer),
     Label(Rc<str>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct IntRegisterPointer(pub IntRegister, pub i64);
+
+impl Display for IntRegisterPointer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}({})", self.1, self.0)
+    }
+}
+
+impl IntRegisterPointer {
+    pub (crate) fn offset(&self) -> i64 {
+        self.1
+    }
+
+    pub (crate) fn reg(&self) -> IntRegister {
+        self.0
+    }
 }
 
 impl Display for Pointer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Register(reg, offset) => write!(f, "{}({})", offset, reg),
+            Self::Register(reg) => write!(f, "{}", reg),
             Self::Label(label) => write!(f, "{label}"),
         }
     }

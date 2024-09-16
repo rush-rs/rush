@@ -4,7 +4,7 @@ use rush_analyzer::{ast::AnalyzedCallExpr, Type};
 
 use crate::{
     compiler::Compiler,
-    instruction::{Instruction, Pointer},
+    instruction::{Instruction, IntRegisterPointer, Pointer},
     register::{FloatRegister, IntRegister, Register},
     utils::Size,
 };
@@ -35,7 +35,7 @@ impl<'tree> Compiler<'tree> {
             (
                 Instruction::Store64(
                     IntRegister::R14,
-                    Pointer::Register(IntRegister::R15, 0),
+                    IntRegisterPointer(IntRegister::R15, 0),
                 ),
                 Some("save GR14".into()),
             ),
@@ -52,7 +52,7 @@ impl<'tree> Compiler<'tree> {
         // // restore `GR14` from the stack
         self.insert_with_comment(Instruction::Load64(
             IntRegister::R14,
-            Pointer::Register(IntRegister::R15, 0),
+            IntRegisterPointer(IntRegister::R15, 0),
         ), "restore GR14".into());
 
         // deallocate stack space
@@ -119,7 +119,10 @@ impl<'tree> Compiler<'tree> {
                 }
                 Type::Int(_) | Type::Bool(_) | Type::Char(_) | Type::Float(_) => {
                     let type_ = arg.result_type();
-                    let res_reg: IntRegister = self.expression(arg).expect("type is int").into();
+                    dbg!(&arg);
+                    let res_reg_raw = self.expression(arg);
+                    dbg!(res_reg_raw);
+                    let res_reg: IntRegister = res_reg_raw.expect("type is int").into();
                     if let Some(reg) = IntRegister::nth_param(int_cnt) {
                         param_regs.push(reg.to_reg());
                         self.use_reg(reg.to_reg(), Size::from(type_));
@@ -131,7 +134,7 @@ impl<'tree> Compiler<'tree> {
                         self.insert_with_comment(
                             Instruction::Store64(
                                 res_reg,
-                                Pointer::Register(IntRegister::R15, spill_cnt * 8),
+                                IntRegisterPointer(IntRegister::R15, spill_cnt * 8),
                             ),
                             format!("{} byte param spill", Size::from(type_).byte_count()).into(),
                         );
