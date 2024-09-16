@@ -97,7 +97,7 @@ impl<'tree> Compiler<'tree> {
         // `.global` label exports
         output += &self
             .exports
-            .iter() 
+            .iter()
             .map(|e| format!(".globl {e}\n"))
             .collect::<String>();
 
@@ -1079,7 +1079,7 @@ impl<'tree> Compiler<'tree> {
     fn infix_helper(&mut self, lhs: Register, rhs: Register, op: InfixOp, type_: Type) -> Register {
         // creates the two result registers
         // eventually, just one of the two is used
-        let dest_regi = self.get_int_reg();
+        let mut dest_regi = self.get_int_reg();
         let dest_regf = self.get_float_reg();
 
         match (type_, op) {
@@ -1274,10 +1274,6 @@ impl<'tree> Compiler<'tree> {
                 let mut saved = vec![];
 
                 for r in REGS_USED_FOR_CMP {
-                    if r == dest_regi {
-                        panic!("logic here is broken");
-                    }
-
                     if self.reg_in_use(&(r.to_reg())) {
                         let offset = self.save_ireg_on_stack(r, Some("save before compare".into()));
                         saved.push((r, offset));
@@ -1305,6 +1301,12 @@ impl<'tree> Compiler<'tree> {
 
                 // Restore saved registers.
                 for (r, offset) in saved {
+                    if r == dest_regi {
+                        let temp = self.get_int_reg();
+                        self.insert_movi(temp, dest_regi);
+                        dest_regi = temp;
+                    }
+
                     self.restore_ireg_from_stack(r, offset)
                 }
 
