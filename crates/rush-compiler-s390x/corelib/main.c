@@ -8,5 +8,5 @@ void _start() {
   int pow_res = __rush_internal_pow_int(2, 7);
   char char_1 = __rush_internal_cast_int_to_char(197);
   char char_2 = __rush_internal_cast_float_to_char(197.0);
-  exit(char_2);
+  exit(pow_res);
 }

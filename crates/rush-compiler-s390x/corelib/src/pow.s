@@ -9,6 +9,10 @@
 .globl __rush_internal_pow_int
 
 __rush_internal_pow_int:
+	# base in %r2, exp in %r3
+	# NOTE: r4 is used as the acc register.
+	# NOTE: r5 is used as a temp register.
+
 	# Prologue.
 	aghi %r15, -40
 	stg	%r4, 0(%r15)
