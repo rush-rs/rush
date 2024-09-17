@@ -1235,7 +1235,7 @@ impl<'tree> Compiler<'tree> {
                 self.insert(Instruction::Comment(format!("begin comparison {op}").into()));
 
                 // Insert compare instruction.
-                self.insert_with_comment(Instruction::CompareIReg(
+                self.insert_with_comment(Instruction::Compare(
                     lhs.into(),
                     rhs.into(),
                 ), format!("compare ({lhs} {op} {rhs})").into());
@@ -1286,7 +1286,7 @@ impl<'tree> Compiler<'tree> {
                 self.insert(Instruction::Comment(format!("begin comparison {op}").into()));
 
                 // Insert compare instruction.
-                self.insert_with_comment(Instruction::CompareIReg(
+                self.insert_with_comment(Instruction::Compare(
                     lhs.into(),
                     rhs.into(),
                 ), format!("compare ({lhs} {op} {rhs})").into());
@@ -1337,23 +1337,83 @@ impl<'tree> Compiler<'tree> {
 
                 dest_regi.to_reg()
             }
-            // (
-            //     Type::Float(0),
-            //     InfixOp::Eq
-            //     | InfixOp::Neq
-            //     | InfixOp::Lt
-            //     | InfixOp::Lte
-            //     | InfixOp::Gt
-            //     | InfixOp::Gte,
-            // ) => {
-            //     self.insert(Instruction::SetFloatCondition(
-            //         Condition::from(op),
-            //         dest_regi,
-            //         lhs.into(),
-            //         rhs.into(),
-            //     ));
-            //     dest_regi.into()
-            // }
+            (
+                Type::Float(0),
+                op @ (InfixOp::Eq
+                | InfixOp::Neq
+                | InfixOp::Lt
+                | InfixOp::Lte
+                | InfixOp::Gt
+                | InfixOp::Gte),
+            ) => {
+                // self.insert(Instruction::SetFloatCondition(
+                //     Condition::from(op),
+                //     dest_regi,
+                //     lhs.into(),
+                //     rhs.into(),
+                // ));
+                // dest_regi.into()
+
+                self.insert(Instruction::Comment(format!("begin comparison {op}").into()));
+
+                // Insert compare instruction.
+                self.insert_with_comment(Instruction::Cdbr(
+                    lhs,
+                    rhs,
+                ), format!("compare ({lhs} {op} {rhs})").into());
+
+                let true_label = self.gen_label("comparison_true");
+                let false_label = self.gen_label("comparison_false");
+                let merge_label = self.gen_label("comparison_merge");
+
+                // If not using !=, insert a branch on condition instruction which checks against CC=3, meaning that
+                // one of the operands is NaN.
+                if op != InfixOp::Neq {
+                    const CC_WHEN_NAN: u8 = 3;
+                    self.insert_with_comment(
+                        Instruction::BranchOnCondition(CC_WHEN_NAN, Rc::clone(&false_label)),
+                        "check for NaN".into(),
+                    );
+                }
+
+                //
+                // Now we have two possible paths: one which places `true` in `dest_regi`,
+                // and the other which leaves `false` in the register.
+                //
+
+                let jump_instruction = match op {
+                    InfixOp::Eq => Instruction::BranchEq(true_label.clone()),
+                    InfixOp::Neq => Instruction::BranchNotEq(true_label.clone()),
+                    InfixOp::Lt =>  Instruction::BranchLessThan(true_label.clone()),
+                    InfixOp::Lte => Instruction::BranchNotGreaterThan(true_label.clone()),
+                    InfixOp::Gt => Instruction::BranchGreaterThan(true_label.clone()),
+                    InfixOp::Gte => Instruction::BranchNotLessThan(true_label.clone()),
+                    _ => unreachable!("checked above"),
+                };
+
+                // Place jump instruction, which would skip the default `false`.
+                self.insert(jump_instruction);
+
+                self.blocks.push(Block::new(Rc::clone(&false_label)));
+                self.insert_at(&Rc::clone(&false_label));
+
+                // Place `false` as the default.
+                self.insert_with_comment(Instruction::Lghi(dest_regi, false as i16), "`false` case of comp".into());
+                self.insert(Instruction::Jmp(Rc::clone(&merge_label)));
+
+                self.blocks.push(Block::new(Rc::clone(&true_label)));
+                self.insert_at(&Rc::clone(&true_label));
+
+                // Place `true` as the non-default.
+                self.insert_with_comment(Instruction::Lghi(dest_regi, true as i16), "`true` case of comp".into());
+
+
+                self.blocks.push(Block::new(Rc::clone(&merge_label)));
+                self.insert_at(&Rc::clone(&merge_label));
+                self.insert(Instruction::Comment(format!("end comparison {op}").into()));
+
+                dest_regi.to_reg()
+            }
             (Type::Float(0), InfixOp::Plus) => {
                 let lhs_float: FloatRegister = lhs.into();
 
