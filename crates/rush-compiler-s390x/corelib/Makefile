@@ -22,5 +22,5 @@ clean:
 
 # runs `main.c` alongside the corelib in order to test it
 test: libcore.a
-	$(gcc) -Wl,-z -Wl,execstack -nostdlib -static main.c -L . -l$(dest_name) -o main
+	$(gcc) -g -Wl,-z -Wl,execstack -nostdlib -static main.c -L . -l$(dest_name) -o main
 	qemu-s390x ./main; echo "exit: $$?"
