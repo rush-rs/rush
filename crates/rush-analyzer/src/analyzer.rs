@@ -1559,6 +1559,7 @@ impl<'src> Analyzer<'src> {
         {
             Some(var) => {
                 var.mutated = true;
+                var.used = true;
                 let mut type_ = var.type_;
                 if !var.mutable && node.assignee_ptr_count == 0 {
                     let span = var.span;
