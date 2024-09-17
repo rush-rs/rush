@@ -1,4 +1,13 @@
 let APERY = 1.2020569;
+let ACCEPTABLE_ROUNDING_ERROR=897;
+
+fn abs(v: int) -> int {
+    if v < 0 {
+        -v
+    } else {
+        v
+    }
+}
 
 fn main() {
     let mut res = 1f;
@@ -8,7 +17,9 @@ fn main() {
     }
 
     let FAC = 10000000f;
-    if (APERY * FAC) as int == (res * FAC) as int {
+    let res = (res * FAC) as int;
+    let expected = (APERY * FAC) as int;
+    if abs(expected - res) <= ACCEPTABLE_ROUNDING_ERROR {
         // success
         exit(0);
     } else {

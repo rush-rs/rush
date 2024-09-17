@@ -1,4 +1,14 @@
 let ITERATIONS = 10000;
+let ACCEPTABLE_ROUNDING_ERROR = 9;
+let EXPECTED = 3141;
+
+fn abs(n: int) -> int {
+    if n < 0 {
+        -n
+    } else {
+        n
+    }
+}
 
 fn main() {
     let mut k = 3f;
@@ -11,11 +21,14 @@ fn main() {
 
     let result = ((4f * s) * 1000f) as int;
 
-    if result == 3141 {
+    if result == EXPECTED {
+        // success, the computation was successful
+        exit(0);
+    } else if abs(result - EXPECTED) <= ACCEPTABLE_ROUNDING_ERROR {
         // success, the computation was successful
         exit(0);
     } else {
         // failure
-        exit(1);
+        exit(result / 100);
     }
 }

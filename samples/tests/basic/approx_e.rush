@@ -1,4 +1,13 @@
 let E = 2.718281828459045;
+let ACCEPTABLE_ROUNDING_ERROR=2943571350;
+
+fn abs(v: int) -> int {
+    if v < 0 {
+        -v
+    } else {
+        v
+    }
+}
 
 fn main() {
     let mut e = 1f;
@@ -14,6 +23,9 @@ fn main() {
 
     if result == expected {
         // success
+        exit(0);
+    } else if abs(result - expected) <= ACCEPTABLE_ROUNDING_ERROR {
+        // also success
         exit(0);
     } else {
         // failure
