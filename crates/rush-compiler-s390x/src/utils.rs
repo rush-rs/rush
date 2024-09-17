@@ -4,9 +4,7 @@ use byteorder::{BigEndian, LittleEndian, WriteBytesExt};
 use rush_analyzer::Type;
 
 use crate::{
-    compiler::Compiler,
-    instruction::{Block, Instruction, IntRegisterPointer, Pointer},
-    register::{FloatRegister, IntRegister, Register, FLOAT_REGISTERS, INT_REGISTERS},
+    call::BASE_STACK_ALLOCATIONS, compiler::Compiler, instruction::{Block, Instruction, IntRegisterPointer, Pointer}, register::{FloatRegister, IntRegister, Register, FLOAT_REGISTERS, INT_REGISTERS}
 };
 
 pub(crate) enum DivisionOutput {
@@ -33,6 +31,7 @@ impl Variable {
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum Size {
     Byte = 1,
+    HalfWord = 2,
     Long = 4,
     Quad = 8,
 }
@@ -45,6 +44,7 @@ impl Size {
     pub (crate) fn asm_string(&self) -> String {
         match self {
             Size::Byte => ".byte",
+            Size::HalfWord => todo!("what is this?"),
             Size::Long => ".long",
             Size::Quad => ".quad",
         }.into()
@@ -75,9 +75,12 @@ impl<'tree> Compiler<'tree> {
     /// Increments the current stack allocations and returns a new (aligned) index to be used.
     pub(crate) fn get_offset(&mut self, size: Size) -> i64 {
         let size = size.byte_count();
-        Self::align(&mut self.curr_fn_mut().stack_allocs, size);
+        dbg!(size, self.curr_fn_mut().stack_allocs);
+        // TODO: does this work?
+        Self::align(&mut self.curr_fn_mut().stack_allocs, Size::HalfWord.byte_count());
+        let old = self.curr_fn().stack_allocs;
         self.curr_fn_mut().stack_allocs += size;
-        self.curr_fn().stack_allocs
+        old + BASE_STACK_ALLOCATIONS
     }
 
     /// Saves a [`Register`] to memory and returns its GR15-offset.
@@ -92,12 +95,13 @@ impl<'tree> Compiler<'tree> {
 
                 match size {
                     Size::Byte => self.insert_with_comment(Instruction::Store8(reg, ptr), comment),
+                    Size::HalfWord => todo!("implement this"),
                     Size::Long => todo!("implement this"),
                     Size::Quad => self.insert_with_comment(Instruction::Store64(reg, ptr), comment),
                 }
             }
             Register::Float(reg) => {
-                self.insert(Instruction::StoreGeneric(
+                self.insert(Instruction::Std(
                     reg.into(),
                     IntRegisterPointer(IntRegister::R15, offset),
                 ));
@@ -136,6 +140,7 @@ impl<'tree> Compiler<'tree> {
                             Instruction::Load8(reg, IntRegisterPointer(IntRegister::R15, offset)),
                             comment,
                         ),
+                        Size::HalfWord => todo!("what to do?"),
                         Size::Long => todo!("what to do?"),
                         Size::Quad => self.insert_with_comment(
                             Instruction::Load64(reg, IntRegisterPointer(IntRegister::R15, offset)),
@@ -156,7 +161,7 @@ impl<'tree> Compiler<'tree> {
                     }
 
                     self.insert_with_comment(
-                        Instruction::LoadLengthened(reg, IntRegisterPointer(IntRegister::R15, offset)),
+                        Instruction::Load(reg.into(), IntRegisterPointer(IntRegister::R15, offset)),
                         comment,
                     );
                 }
@@ -281,7 +286,7 @@ impl<'tree> Compiler<'tree> {
         // return reference to global variable
         self.globals
             .get(name)
-            .expect("the analyzer guarantees valid variable references").clone()
+            .unwrap_or_else(|| panic!("the analyzer guarantees valid variable references: {name}")).clone()
     }
 
     /// Helper function for resolving identifier names.
@@ -327,11 +332,11 @@ impl<'tree> Compiler<'tree> {
             }
             Type::Float(0) => {
                 let dest_reg = self.get_float_reg();
-                self.insert_with_comment(Instruction::LoadLengthened(dest_reg, ptr), ident.into());
+                self.insert_with_comment(Instruction::Load(dest_reg.into(), ptr), ident.into());
                 let offset = self.get_offset(Size::Quad);
 
-                self.insert(Instruction::StoreGeneric(dest_reg.into(), IntRegisterPointer(IntRegister::R15, offset)));
-                self.insert(Instruction::LoadLengthened(dest_reg, IntRegisterPointer(IntRegister::R15, offset)));
+                self.insert(Instruction::Std(dest_reg.into(), IntRegisterPointer(IntRegister::R15, offset)));
+                self.insert(Instruction::Load(dest_reg.into(), IntRegisterPointer(IntRegister::R15, offset)));
 
                 Register::Float(dest_reg)
                 // todo!("float not supported")
@@ -501,7 +506,7 @@ impl DataObjType {
     pub (crate) fn size(&self) -> Size {
         match self {
             Self::Quad(_) => Size::Quad,
-            Self::Float(_) => Size::Long,
+            Self::Float(_) => Size::Quad,
             Self::Byte(_) => Size::Byte,
         }
     }
@@ -512,20 +517,20 @@ impl Display for DataObjType {
         match self {
             Self::Float(inner) => {
                 let mut wtr = vec![];
-                wtr.write_f32::<BigEndian>((*inner) as f32).unwrap();
+                wtr.write_f64::<BigEndian>(*inner).unwrap();
 
-                // while wtr.len() < 64 / 8 {
-                //     wtr.push(0);
-                // }
+                while wtr.len() < 64 / 8 {
+                    wtr.push(0);
+                }
 
                 dbg!(wtr.len());
 
                 write!(
                 f,
-                "{} 0x{:018x}  # = {inner}{zero}\n    .align 2",
+                "{} 0x{}  # = {inner}{zero}\n    .align 2",
                 self.size().asm_string(),
-                (*inner as f32).to_bits(),
-                // wtr.iter().map(|b| format!("{b:02x}")).collect::<Vec<String>>().join(""),
+                // (*inner as f32).to_bits(),
+                wtr.iter().map(|b| format!("{b:02x}")).collect::<Vec<String>>().join(""),
                 zero = if inner.fract() == 0.0 { ".0" } else { "" }
                 )
             },

@@ -99,6 +99,7 @@ pub enum Instruction {
     Ahi(IntRegister, i16),
     Aghi(IntRegister, i16),
     ShiftRightSingle(IntRegister, IntRegister, i8, IntRegister),
+    ShiftRightSingleLogical(IntRegister, i8),
     // Sub(IntRegister, IntRegister, IntRegister),
     // Mul(IntRegister, IntRegister, IntRegister),
     // Div(IntRegister, IntRegister, IntRegister),
@@ -115,10 +116,12 @@ pub enum Instruction {
     // Lb(IntRegister, Pointer),
     Load8(IntRegister, IntRegisterPointer),
     Load64(IntRegister, IntRegisterPointer),
+    Load(Register, IntRegisterPointer),
     LoadLengthened(FloatRegister, IntRegisterPointer),
     LoadLengthenedB(FloatRegister, IntRegisterPointer),
     LoadAddrRelativeLong(IntRegister, Rc<str>),
     LoadRelativeLong(IntRegister, IntRegisterPointer),
+    Std(Register, IntRegisterPointer),
     StoreGeneric(Register, IntRegisterPointer),
     Store8(IntRegister, IntRegisterPointer),
     Store64(IntRegister, IntRegisterPointer),
@@ -141,6 +144,10 @@ pub enum Instruction {
     // CastIntToFloat(FloatRegister, IntRegister),
     // CastFloatToInt(IntRegister, FloatRegister),
     // CastByteToFloat(FloatRegister, IntRegister),
+
+    Lcr(IntRegister, IntRegister),
+    Xilf(IntRegister, i8),
+    Nilf(IntRegister, i8),
 }
 
 impl Display for Instruction {
@@ -168,6 +175,7 @@ impl Display for Instruction {
             Instruction::Ahi(dest, v) => write!(f, "ahi {dest}, {v}"),
             Instruction::Aghi(dest, v) => write!(f, "aghi {dest}, {v}"),
             Instruction::ShiftRightSingle(dest, source, disp, bas) => write!(f, "srag {dest}, {source}, {disp}({bas})"),
+            Instruction::ShiftRightSingleLogical(reg, disp) => write!(f, "srl {reg}, {disp}"),
             // Instruction::SetIntCondition(cond, dest, l, r) => match cond {
             //     Condition::Lt => write!(f, "slt {dest}, {l}, {r}"),
             //     // Because RISC-V does not support the sle instruction, it is emulated here
@@ -229,18 +237,20 @@ impl Display for Instruction {
             // Instruction::Lb(dest, ptr) => write!(f, "lb {dest}, {ptr}"),
             Instruction::Load8(dest, ptr) => write!(f, "lb {dest}, {ptr}"),
             Instruction::Load64(dest, ptr) => write!(f, "lg {dest}, {ptr}"),
+            Instruction::Load(dest, ptr) => write!(f, "ld {dest}, {ptr}"),
             Instruction::LoadLengthened(dest, ptr) => write!(f, "lde {dest}, {ptr}"),
             Instruction::LoadLengthenedB(dest, ptr) => write!(f, "ldeb {dest}, {ptr}"),
             Instruction::LoadAddrRelativeLong(dest, label) => write!(f, "larl {dest}, {label}"),
             Instruction::LoadRelativeLong(dest, label) => write!(f, "larl {dest}, {label}"),
             Instruction::StoreGeneric(src, ptr) => write!(f, "ste {src}, {ptr}"),
+            Instruction::Std(src, ptr) => write!(f, "std {src}, {ptr}"),
             // TODO: check that this is not broken.
             // meaning: register vs. label.
             Instruction::Store8(src, ptr) => write!(f, "stc {src}, {ptr}"),
             Instruction::Store64(src, ptr) => write!(f, "stg {src}, {ptr}"),
             Instruction::Store64Generic(src, ptr) => write!(f, "stg {src}, {ptr}"),
             Instruction::ConvertToFixed(dest, rounding, src) =>  write!(f, "cgdbr {dest}, {rounding}, {src}"),
-            Instruction::ConvertFromFixed(dest, src) =>  write!(f, "cefbr {dest}, {src}"),
+            Instruction::ConvertFromFixed(dest, src) =>  write!(f, "cdgbr  {dest}, {src}"),
             // Instruction::Fld(dest, ptr) => match ptr {
             //     Pointer::Register(_, _) => write!(f, "fld {dest}, {ptr}"),
             //     Pointer::Label(_) => write!(f, "fld {dest}, {ptr}, t6"),
@@ -287,6 +297,9 @@ impl Display for Instruction {
             // Instruction::Neg(dest, src) => write!(f, "neg {dest}, {src}"),
             // Instruction::Not(dest, src) => write!(f, "not {dest}, {src}"),
             // Instruction::FNeg(dest, src) => write!(f, "fneg.d {dest}, {src}"),
+            Instruction::Lcr(dest, src) => write!(f, "lcr {dest}, {src}"),
+            Instruction::Xilf(dest, v) => write!(f, "xilf {dest}, {v}"),
+            Instruction::Nilf(dest, v) =>write!(f, "nilf {dest}, {v}"),
         }
     }
 }

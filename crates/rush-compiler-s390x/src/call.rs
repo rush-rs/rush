@@ -10,8 +10,8 @@ use crate::{
 };
 
 /// Specifies the default stack offset to be allocated.
-/// An offset of 16 accounts for `GR15`.
-const BASE_STACK_ALLOCATIONS: i64 = 8;
+/// An offset of 8 accounts for `GR15`.
+pub(crate) const BASE_STACK_ALLOCATIONS: i64 = 8;
 
 impl<'tree> Compiler<'tree> {
     /// Returns the instructions of a function prologue.
