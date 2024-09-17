@@ -809,8 +809,16 @@ impl<'tree> Compiler<'tree> {
                 self.use_reg(lhs_reg, Size::Quad);
                 let zero_reg = self.get_int_reg();
                 self.use_reg(zero_reg.into(), Size::Quad);
-                self.insert_with_comment(Instruction::Lghi(zero_reg, 0), format!("negate {lhs_reg}").into());
-                let dest_reg = self.infix_helper(zero_reg.into(), lhs_reg, InfixOp::Minus, Type::Int(0));
+                self.insert_with_comment(
+                    Instruction::Lghi(zero_reg, 0),
+                    format!("negate {lhs_reg}").into(),
+                );
+                let dest_reg = self.infix_helper(
+                    zero_reg.into(),
+                    lhs_reg,
+                    InfixOp::Minus,
+                    Type::Int(0),
+                );
                 self.release_reg(lhs_reg);
                 self.release_reg(zero_reg.into());
                 Some(dest_reg)
@@ -828,63 +836,91 @@ impl<'tree> Compiler<'tree> {
                 // Some(dest_reg.to_reg())
             }
             (Type::Bool(0), PrefixOp::Not) => {
-                // ahi	%r2,-1
-                // srl	%r2,31
-
-
-	// lcr	%r2,%r2
-	// srl	%r2, 31
-	// xilf	%r2, 1
-	// nilf	%r2,1
-
                 let dest_reg = self.get_int_reg();
 
                 self.insert_with_comment(Instruction::Lcr(dest_reg, lhs_reg.into()), "bool neg".into());
                 self.insert_with_comment(Instruction::ShiftRightSingleLogical(dest_reg, 31), "bool neg".into());
                 self.insert_with_comment(Instruction::Xilf(dest_reg, 1), "bool neg".into());
                 self.insert_with_comment(Instruction::Nilf(dest_reg, 1), "bool neg".into());
-                // self.insert_with_comment(Instruction::Ahi(dest_reg, -1), "bool negate".into());
-                // self.insert_with_comment(Instruction::ShiftRightSingleLogical(dest_reg, ), "bool negate".into());
-                //
-                // self.insert(Instruction::Seqz(dest_reg, lhs_reg.into()));
+
                 Some(dest_reg.to_reg())
             }
             (Type::Bool(1) | Type::Char(1), PrefixOp::Deref) => {
-                todo!("implement this");
-                // let dest_reg = self.get_int_reg();
-                //
-                // self.insert(Instruction::Lgr(dest_reg, lhs_reg.into()));
-                //
+                let dest_reg = self.get_int_reg();
+
+                // Ensure that GR0 will not be used as a base register.
+                let base_reg = match lhs_reg == IntRegister::R0.to_reg() {
+                    true => {
+                        self.use_reg(lhs_reg, Size::Quad);
+                        let new_reg = self.get_int_reg();
+                        self.release_reg(lhs_reg);
+
+                        self.insert_movi(new_reg, lhs_reg.into());
+
+                        new_reg
+                    }
+                    false => lhs_reg.into(),
+                };
+
                 // self.insert_with_comment(
-                //     Instruction::Lb(dest_reg, Pointer::Register(dest_reg, 0)),
+                //     Instruction::Lghi(dest_reg, 0),
                 //     "deref".into(),
                 // );
-                //
-                // Some(dest_reg.into())
+
+                self.insert_with_comment(
+                    Instruction::Load8(dest_reg, IntRegisterPointer(base_reg, 0)),
+                    "deref".into(),
+                );
+
+                Some(dest_reg.into())
             }
             (Type::Float(1), PrefixOp::Deref) => {
-                todo!("implement this");
-                // let dest_reg = self.get_float_reg();
-                //
-                // self.insert_with_comment(
-                //     Instruction::Fld(dest_reg, Pointer::Register(lhs_reg.into(), 0)),
-                //     "deref".into(),
-                // );
-                //
-                // Some(dest_reg.into())
+                let dest_reg = self.get_float_reg();
+
+                // Ensure that GR0 will not be used as a base register.
+                let base_reg = match lhs_reg == IntRegister::R0.to_reg() {
+                    true => {
+                        self.use_reg(lhs_reg, Size::Quad);
+                        let new_reg = self.get_int_reg();
+                        self.release_reg(lhs_reg);
+
+                        self.insert_movi(new_reg, lhs_reg.into());
+
+                        new_reg
+                    }
+                    false => lhs_reg.into(),
+                };
+
+                self.insert_with_comment(
+                    Instruction::Load(dest_reg.into(), IntRegisterPointer(base_reg, 0)),
+                    "deref".into(),
+                );
+
+                Some(dest_reg.into())
             }
             (Type::Int(_) | Type::Bool(_) | Type::Char(_) | Type::Float(_), PrefixOp::Deref) => {
-                todo!("implement this");
-                // let dest_reg = self.get_int_reg();
-                //
-                // self.insert(Instruction::Lgr(dest_reg, lhs_reg.into()));
-                //
-                // self.insert_with_comment(
-                //     Instruction::Ld(dest_reg, Pointer::Register(dest_reg, 0)),
-                //     "deref".into(),
-                // );
-                //
-                // Some(dest_reg.into())
+                let dest_reg = self.get_int_reg();
+
+                // Ensure that GR0 will not be used as a base register.
+                let base_reg = match lhs_reg == IntRegister::R0.to_reg() {
+                    true => {
+                        self.use_reg(lhs_reg, Size::Quad);
+                        let new_reg = self.get_int_reg();
+                        self.release_reg(lhs_reg);
+
+                        self.insert_movi(new_reg, lhs_reg.into());
+
+                        new_reg
+                    }
+                    false => lhs_reg.into(),
+                };
+
+                self.insert_with_comment(
+                    Instruction::Load64(dest_reg, IntRegisterPointer(base_reg, 0)),
+                    "deref".into(),
+                );
+
+                Some(dest_reg.into())
             }
             (t, o) => {
                 unreachable!("other combinations cannot occur in prefix expressions: {t}: {o}")
@@ -1109,44 +1145,41 @@ impl<'tree> Compiler<'tree> {
 
         match (type_, op) {
             (Type::Int(0), InfixOp::Plus) => {
-                self.insert(Instruction::Add64(lhs.into(), rhs.into()));
                 self.insert_movi(dest_regi, lhs.into());
+                self.insert(Instruction::Add64(dest_regi, rhs.into()));
                 dest_regi.into()
             }
             (Type::Int(0), InfixOp::Minus) => {
-                self.insert(Instruction::Sub64(lhs.into(), rhs.into()));
                 self.insert_movi(dest_regi, lhs.into());
+                self.insert(Instruction::Sub64(dest_regi, rhs.into()));
                 dest_regi.into()
             }
             (Type::Char(0), InfixOp::Plus) => {
-                todo!("implement this");
-                // self.insert(Instruction::Add(dest_regi, lhs.into(), rhs.into()));
+                self.insert_movi(dest_regi, lhs.into());
+                self.insert(Instruction::Add64(dest_regi, rhs.into()));
 
-                // TODO: is this really required?
-                // self.use_reg(dest_regi.into(), Size::Byte);
-                // let mask = self.get_int_reg();
-                // self.insert(Instruction::Lghi(mask, 0x7f));
-                // self.release_reg(dest_regi.into());
-                //
-                // self.insert(Instruction::And(dest_regi, dest_regi, mask));
+                self.use_reg(dest_regi.into(), Size::Byte);
+                let mask = self.get_int_reg();
+                self.insert(Instruction::Lghi(mask, 0x7f));
+                self.release_reg(dest_regi.into());
 
-                // dest_regi.into()
+                self.insert(Instruction::Ngr(dest_regi, mask));
+
+                dest_regi.into()
             }
             (Type::Char(0), InfixOp::Minus) => {
-                todo!("implement this");
-                // self.insert(Instruction::Sub(dest_regi, lhs.into(), rhs.into()));
-                //
-                // // TODO: is this really required?
-                // self.use_reg(dest_regi.into(), Size::Byte);
-                // let mask = self.get_int_reg();
-                // self.insert(Instruction::Lghi(mask, 0x7f));
-                // self.release_reg(dest_regi.into());
-                //
-                // self.insert(Instruction::And(dest_regi, dest_regi, mask));
-                //
-                // dest_regi.into()
+                self.insert_movi(dest_regi, lhs.into());
+                self.insert(Instruction::Sub64(dest_regi, rhs.into()));
+
+                self.use_reg(dest_regi.into(), Size::Byte);
+                let mask = self.get_int_reg();
+                self.insert(Instruction::Lghi(mask, 0x7f));
+                self.release_reg(dest_regi.into());
+
+                self.insert(Instruction::Ngr(dest_regi, mask));
+
+                dest_regi.into()
             }
-            // TODO
             (Type::Int(0), InfixOp::Mul) => {
                 let lhs_int: IntRegister = lhs.into();
 
@@ -1471,32 +1504,39 @@ impl<'tree> Compiler<'tree> {
 
         // let (mut src_ptr, mut assignee_type) = self.load_variable_from_name(node.assignee).clone();
         let assignee_var = self.resolve_variable(node.assignee);
+        let mut assignee_type = assignee_var.type_;
 
+        // Ensure that GR0 will not be used as a base register.
+        self.use_reg(IntRegister::R0.into(), Size::Quad);
         let ptr_reg = self.get_int_reg();
+        self.release_reg(IntRegister::R0.into());
+        let mut src_ptr = self.load_variable_from_name(node.assignee);
 
         // if the lhs is an indirected pointer, perform required indirections
         if node.assignee_ptr_count > 0 {
-            todo!("pointers");
-            // TODO: pointers
-            // let mut ptr_count = node.assignee_ptr_count;
-            // // TODO: is this really required?
-            // self.use_reg(ptr_reg.into(), Size::Quad);
-            //
-            // while ptr_count > 0 {
-            //     self.insert_with_comment(
-            //         Instruction::Load64(
-            //             ptr_reg,
-            //             src_ptr.clone().expect("analyzer guarantees valid pointers")
-            //         ),
-            //         "deref".into(),
-            //     );
-            //     src_ptr = Some(IntRegisterPointer(ptr_reg, 0));
-            //     assignee_type = assignee_type
-            //         .sub_deref()
-            //         .expect("the analyzer guarantees valid usage of pointers");
-            //     ptr_count -= 1;
-            // }
+            let mut ptr_count = node.assignee_ptr_count;
+            // TODO: is this really required?
+            self.use_reg(ptr_reg.into(), Size::Quad);
+
+            while ptr_count > 0 {
+                self.insert_with_comment(
+                    Instruction::Load64(
+                        ptr_reg,
+                        src_ptr.clone().expect("analyzer guarantees valid pointers")
+                    ),
+                    "deref-assign".into(),
+                );
+                src_ptr = Some(IntRegisterPointer(ptr_reg, 0));
+                assignee_type = assignee_type
+                    .sub_deref()
+                    .expect("the analyzer guarantees valid usage of pointers");
+                ptr_count -= 1;
+            }
         }
+
+        // if let Some(p) = src_ptr {
+        //     self.save_ireg_on_stack(p.0, None);
+        // }
 
         // holds the value of the rhs (either simple or the result of an operation)
         'outer: {
@@ -1505,26 +1545,27 @@ impl<'tree> Compiler<'tree> {
                     Some(reg) => reg,
                     None => return,
                 },
+                // TODO: this WILL break if use a deref assignment together with a pow.
                 AssignOp::Pow => {
                     // Load actual assignee address.
-                    let assignee_ptr = self.load_variable_from_name(node.assignee).unwrap();
+                    // let assignee_ptr = self.load_variable_from_name(node.assignee).unwrap();
 
                     // load value from the lhs
                     let lhs = self
                         // `clone` only clones a [`Rc`]
                         .load_value_from_pointer(
-                            assignee_ptr,
-                            assignee_var.type_,
+                            src_ptr.clone().unwrap(),
+                            assignee_type,
                             node.assignee,
                         );
-                    self.use_reg(lhs, Size::from(assignee_var.type_));
+                    self.use_reg(lhs, Size::from(assignee_type));
 
                     // compile the rhs
                     let Some(rhs) = self.expression(node.expr) else { break 'outer };
                     self.use_reg(rhs, Size::from(rhs_type));
 
                     // call the `pow` corelib function using the `infix_helper`
-                    let res = self.infix_helper(lhs, rhs, InfixOp::from(node.op), assignee_var.type_);
+                    let res = self.infix_helper(lhs, rhs, InfixOp::from(node.op), assignee_type);
 
                     self.release_reg(lhs);
                     self.release_reg(rhs);
@@ -1536,20 +1577,20 @@ impl<'tree> Compiler<'tree> {
                     self.use_reg(rhs, Size::from(rhs_type));
 
                     // Load actual assignee address.
-                    let assignee_ptr = self.load_variable_from_name(node.assignee).unwrap();
+                    // let assignee_ptr = self.load_variable_from_name(node.assignee).unwrap();
 
                     // load value from the lhs
                     let lhs = self
                         // `clone` only clones a [`Rc`]
                         .load_value_from_pointer(
-                            assignee_ptr.clone(),
-                            assignee_var.type_,
+                            src_ptr.clone().unwrap(),
+                            assignee_type,
                             node.assignee,
                         );
-                    self.use_reg(lhs, Size::from(assignee_var.type_));
+                    self.use_reg(lhs, Size::from(assignee_type));
 
                     // perform pre-assign operation using the infix helper
-                    let res = self.infix_helper(lhs, rhs, InfixOp::from(node.op), assignee_var.type_);
+                    let res = self.infix_helper(lhs, rhs, InfixOp::from(node.op), assignee_type);
 
                     self.release_reg(lhs);
                     self.release_reg(rhs);
@@ -1558,9 +1599,9 @@ impl<'tree> Compiler<'tree> {
             };
 
             // Load actual assignee address.
-            let assignee_ptr = self.load_variable_from_name(node.assignee);
+            // let assignee_ptr = self.load_variable_from_name(node.assignee);
 
-            if let Some(ptr) = assignee_ptr {
+            if let Some(ptr) = src_ptr.clone() {
                 match rhs_type {
                     Type::Float(0) => self.insert(Instruction::Std(rhs_reg, ptr)),
                     Type::Bool(0) | Type::Char(0) => {
