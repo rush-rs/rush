@@ -1,0 +1,12 @@
+fn a(input: bool) -> bool {
+    input
+}
+
+fn bool() {
+    let b = a(true);
+}
+
+fn main() {
+    bool();
+    exit(42);
+}

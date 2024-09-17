@@ -1,0 +1,126 @@
+let mut OPS_COUNTER = 0;
+let mut OPS_COUNTER_ACC = 0;
+
+fn a(input: bool) -> bool {
+    OPS_COUNTER += 1;
+    OPS_COUNTER_ACC += 5;
+    input
+}
+
+fn reset_ops() {
+    OPS_COUNTER = 0;
+}
+
+//
+// Test logical AND.
+//
+fn test_and() {
+    // Case 1: 1 && 0 == 0
+    let b = a(true) && a(false);
+    if b {
+        exit(1);
+    }
+
+    if OPS_COUNTER != 2 {
+        exit(2);
+    }
+
+    reset_ops();
+
+    // Case 2: 0 && 1 == 0
+    let b = a(false) && a(true);
+    if b {
+        exit(3);
+    }
+
+    if OPS_COUNTER != 1 {
+        exit(4);
+    }
+
+    reset_ops();
+
+    // Case 3: 1 && 1 == 1
+    let b = a(true) && a(true);
+    if !b {
+        exit(5);
+    }
+
+    if OPS_COUNTER != 2 {
+        exit(6);
+    }
+
+    reset_ops();
+
+    // Case 4: 0 && 0 == 0
+    let b = a(false) && a(false);
+    if b {
+        exit(7);
+    }
+
+    if OPS_COUNTER != 1 {
+        exit(8);
+    }
+
+    reset_ops();
+}
+
+//
+// Test logical OR.
+//
+fn test_or() {
+    // Case 1: 1 || 0 == 1
+    let b = a(true) || a(false);
+    if !b {
+        exit(11);
+    }
+
+    if OPS_COUNTER != 1 {
+        exit(12);
+    }
+
+    reset_ops();
+
+    // Case 2: 0 || 1 == 1
+    let b = a(false) || a(true);
+    if !b {
+        exit(13);
+    }
+
+    if OPS_COUNTER != 2 {
+        exit(14);
+    }
+
+    reset_ops();
+
+    // Case 3: 1 || 1 == 1
+    let b = a(true) || a(true);
+    if !b {
+        exit(15);
+    }
+
+    if OPS_COUNTER != 1 {
+        exit(16);
+    }
+
+    reset_ops();
+
+    // Case 4: 0 || 0 == 0
+    let b = a(false) || a(false);
+    if b {
+        exit(17);
+    }
+
+    if OPS_COUNTER != 2 {
+        exit(18);
+    }
+
+    reset_ops();
+}
+
+fn main() {
+    test_and();
+    test_or();
+
+    // 60 is expected.
+    exit(OPS_COUNTER_ACC);
+}
