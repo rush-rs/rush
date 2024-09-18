@@ -1,27 +1,27 @@
-# RISC-V Compiler Backend
+# S390x Compiler Backend
 
 A single-target rush compiler backend which generates
-[RISC-V](https://riscv.org/) assembly files without the need for external
+[IBM S390x](https://en.wikipedia.org/wiki/IBM_System/390) assembly files without the need for heavy external
 dependencies.
 
 ## Prerequisites
 
-Since the compiler itself requires no external dependencies, only the RISC-V
+Since the compiler itself requires no external dependencies, only the S390X
 toolchain and additional software is to be installed. Hence, program execution
 requires an assembler, a linker, and an emulator.
 
 ### Toolchain
 
-On Arch-Linux based systems, the following packages can be installed to set up a
-working toolchain.
+On NixOS, the following command is to be executed to obtain a shell with a cross compiler targeting S390X.
 
-- `riscv64-linux-gnu-gcc` for assembling and linking
-- `riscv64-linux-gnu-binutils` (optional)
+```bash
+nix-shell ./crossShell.nix
+```
 
 ### Emulator
 
-On Arch-Linux based systems, the `qemu-system-riscv` package provides an
-emulator for RISC-V processors.
+On NixOS, the `qemu_full` package provides an
+emulator for S390X processors.
 
 ## Compiling and Running rush Code
 
@@ -35,7 +35,7 @@ emulator for RISC-V processors.
 cargo run your-program.rush
 ```
 
-Since RISC-V targeted rush programs depend on a special [corelib](./corelib),
+Since S390X targeted rush programs depend on a special [corelib](./corelib),
 linking demands more steps than usual.
 
 ### Assembling the Corelib
@@ -59,13 +59,13 @@ make all
 make build
 ```
 
-### Running RISC-V Binaries
+### Running S390X Binaries
 
-- Since you have installed a RISC-V emulator prior to reading this section,
+- Since you have installed a S390X emulator prior to reading this section,
   following command can be used to run the binary using the emulator.
 - The suffix containing `echo ...` is optional and merely prints out the
   program's exit-code.
 
 ```bash
-qemu-riscv64 ./your-output ; echo $?
+qemu-390x ./your-output ; echo $?
 ```

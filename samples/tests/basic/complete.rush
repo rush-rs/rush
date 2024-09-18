@@ -20,7 +20,7 @@ fn main() {
         let unit = produces_unit();
 
         call_exit(
-            assignments(
+            assignments( // 4
                 sum_different_types( // 101
                     int_,
                     float_,
