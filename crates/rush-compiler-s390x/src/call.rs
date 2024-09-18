@@ -4,7 +4,7 @@ use rush_analyzer::{ast::AnalyzedCallExpr, Type};
 
 use crate::{
     compiler::Compiler,
-    instruction::{Instruction, IntRegisterPointer, Pointer},
+    instruction::{Instruction, IntRegisterPointer},
     register::{FloatRegister, IntRegister, Register},
     utils::Size,
 };
@@ -70,7 +70,7 @@ impl<'tree> Compiler<'tree> {
     /// After the call has been performed, all previously saved registers are restored from memory.
     pub(crate) fn call_expr(&mut self, node: AnalyzedCallExpr<'tree>) -> Option<Register> {
         // before the function is called, all currently used registers are saved
-        let regs_on_stack = self
+        let mut regs_on_stack: Vec<(Register, i64, Size)> = self
             .used_registers
             .clone()
             .iter()
@@ -91,31 +91,37 @@ impl<'tree> Compiler<'tree> {
         // specifies the count of the current register spill
         let mut spill_cnt = 0;
 
+        let gr13_offset = self.save_ireg_on_stack(IntRegister::R13, Some("save GR13 for params".into()));
+        regs_on_stack.push((IntRegister::R13.into(), gr13_offset, Size::Quad));
+
+        self.insert_movi(IntRegister::R13, IntRegister::R15, file!(), line!());
+        self.insert(Instruction::Aghi(IntRegister::R13, (self.curr_fn().stack_allocs + BASE_STACK_ALLOCATIONS).try_into().unwrap()));
+
         for arg in node.args {
             match arg.result_type() {
                 Type::Unit | Type::Never | Type::Unknown => {
                     self.expression(arg);
                 }
                 Type::Float(0) => {
-                    // let res_reg = self.expression(arg).expect("type is float");
-                    //
-                    // if let Some(reg) = FloatRegister::nth_param(float_cnt) {
-                    //     param_regs.push(reg.to_reg());
-                    //     self.use_reg(reg.to_reg(), Size::Dword);
-                    // } else {
-                    //     // no more param registers: spilling required
-                    //     self.insert_with_comment(
-                    //         Instruction::Fsd(
-                    //             res_reg.into(),
-                    //             Pointer::Register(IntRegister::Sp, spill_cnt * 8),
-                    //         ),
-                    //         format!("{} byte param spill", Size::Dword.byte_count(),).into(),
-                    //     );
-                    //     spill_cnt += 1;
-                    //     spill_param_size += 8;
-                    // }
-                    // float_cnt += 1;
-                    todo!("floats not supported")
+                    let res_reg = self.expression(arg).expect("type is float");
+
+                    if let Some(reg) = FloatRegister::nth_param(float_cnt) {
+                        param_regs.push(reg.to_reg());
+                        self.use_reg(reg.to_reg(), Size::Quad);
+                    } else {
+                        // no more param registers: spilling required
+                        self.insert_with_comment(
+                            Instruction::Std(
+                                res_reg,
+                                // TODO: this fucks up addressing.
+                                IntRegisterPointer(IntRegister::R13, spill_cnt * 8),
+                            ),
+                            format!("{} byte param spill", Size::Quad.byte_count(),).into(),
+                        );
+                        spill_cnt += 1;
+                        spill_param_size += 8;
+                    }
+                    float_cnt += 1;
                 }
                 Type::Int(_) | Type::Bool(_) | Type::Char(_) | Type::Float(_) => {
                     let type_ = arg.result_type();
@@ -127,14 +133,14 @@ impl<'tree> Compiler<'tree> {
                         param_regs.push(reg.to_reg());
                         self.use_reg(reg.to_reg(), Size::from(type_));
                         if res_reg != reg {
-                            self.insert_movi(reg, res_reg);
+                            self.insert_movi(reg, res_reg, file!(), line!());
                         }
                     } else {
                         // no more params: spilling required
                         self.insert_with_comment(
                             Instruction::Store64(
                                 res_reg,
-                                IntRegisterPointer(IntRegister::R15, spill_cnt * 8),
+                                IntRegisterPointer(IntRegister::R13, spill_cnt * 8),
                             ),
                             format!("{} byte param spill", Size::from(type_).byte_count()).into(),
                         );

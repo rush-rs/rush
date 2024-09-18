@@ -56,7 +56,7 @@ impl<'tree> Compiler<'tree> {
 
         // prepare the argument
         if src != IntRegister::R2 {
-            self.insert_movi(IntRegister::R2, src);
+            self.insert_movi(IntRegister::R2, src, file!(), line!());
         }
 
         // perform the function call
@@ -70,29 +70,25 @@ impl<'tree> Compiler<'tree> {
 
     /// Calls the `__rush_internal_cast_float_to_char` function in the rush corelib.
     pub(crate) fn __rush_internal_cast_float_to_char(&mut self, src: FloatRegister) -> IntRegister {
-        todo!("float not supported")
-
         // before the function is called, all currently used registers are saved
-    //     let regs_on_stack = self
-    //         .used_registers
-    //         .clone()
-    //         .iter()
-    //         .map(|(reg, size)| (*reg, self.spill_reg(*reg, *size), *size))
-    //         .collect();
-    //
-    //     // prepare the argument
-    //     if src != FloatRegister::Fa0 {
-    //         self.insert(Instruction::Fmv(FloatRegister::Fa0, src));
-    //     }
-    //
-    //     // perform the function call
-    //     self.insert(Instruction::Brasl(
-    //         "__rush_internal_cast_float_to_char".into(),
-    //     ));
-    //
-    //     // restore all saved registers
-    //     self.restore_regs_after_call(Some(IntRegister::A0.to_reg()), regs_on_stack)
-    //         .expect("is char")
-    //         .into()
+        let regs_on_stack = self
+            .used_registers
+            .clone()
+            .iter()
+            .map(|(reg, size)| (*reg, self.spill_reg(*reg, *size), *size))
+            .collect();
+
+        // prepare the argument
+        if src != FloatRegister::F0 {
+            self.insert_movf(FloatRegister::F0, src);
+        }
+
+        // perform the function call
+        self.insert_call("__rush_internal_cast_float_to_char".into());
+
+        // restore all saved registers
+        self.restore_regs_after_call(Some(IntRegister::R2.to_reg()), regs_on_stack)
+            .expect("is char")
+            .into()
     }
 }

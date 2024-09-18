@@ -77,7 +77,7 @@ impl<'tree> Compiler<'tree> {
         let size = size.byte_count();
         dbg!(size, self.curr_fn_mut().stack_allocs);
         // TODO: does this work?
-        Self::align(&mut self.curr_fn_mut().stack_allocs, Size::HalfWord.byte_count());
+        Self::align(&mut self.curr_fn_mut().stack_allocs, Size::Long.byte_count());
         let old = self.curr_fn().stack_allocs;
         self.curr_fn_mut().stack_allocs += size;
         old + BASE_STACK_ALLOCATIONS
@@ -131,7 +131,7 @@ impl<'tree> Compiler<'tree> {
                         let new_res_reg = self.get_int_reg();
                         call_return_reg = Some(new_res_reg.to_reg());
                         // copy the return value into the new result value
-                        self.insert_movi(new_res_reg, IntRegister::R2);
+                        self.insert_movi(new_res_reg, IntRegister::R2, file!(), line!());
                     }
 
                     // perform different load operations depending on the size
@@ -386,10 +386,10 @@ impl<'tree> Compiler<'tree> {
 
     #[inline]
     /// Inserts an [`Instruction::Lgr`] at the end of the current basic block.
-    pub(crate) fn insert_movi(&mut self, to: IntRegister, from: IntRegister) {
+    pub(crate) fn insert_movi(&mut self, to: IntRegister, from: IntRegister, file: &'static str, line: u32) {
         self.blocks[self.curr_block]
             .instructions
-            .push((Instruction::Lgr(to.into(), from.into()), None));
+            .push((Instruction::Lgr(to.into(), from.into()), Some(format!("movi@{}:{}", file, line).into())));
     }
 
     #[inline]
@@ -551,7 +551,7 @@ impl Display for DataObjType {
                     // wtr.iter().map(|b| format!("{b:02x}")).collect::<Vec<String>>().join("")
                 )
             },
-            Self::Byte(inner) => write!(f, "{} {inner:#04x}  # = {inner}", self.size().asm_string()),
+            Self::Byte(inner) => write!(f, "{} {inner:#04x}  # = {inner}\n    .align 2", self.size().asm_string()),
         }
     }
 }
