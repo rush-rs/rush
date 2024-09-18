@@ -1088,6 +1088,9 @@ impl<'tree> Compiler<'tree> {
                     ODD_PAIR_HIGH,
                 ];
 
+                // TODO: will the lhs get overwritten here?
+                // NOTE: check this with GDB
+
                 let mut saved = vec![];
 
                 for r in REGS_USED_FOR_DIVISION {
@@ -1271,7 +1274,7 @@ impl<'tree> Compiler<'tree> {
                 self.insert(Instruction::Lghi(mask, 0x7f));
                 self.release_reg(dest_regi.into());
 
-                self.insert(Instruction::Ngr(dest_regi, mask));
+                self.insert(Instruction::Ngr(lhs_int, mask));
 
                 if lhs_int != dest_regi {
                     self.insert_movi(dest_regi, lhs_int, file!(), line!());
@@ -1280,6 +1283,8 @@ impl<'tree> Compiler<'tree> {
                 dest_regi.into()
             }
             (Type::Int(0), InfixOp::Mul) => {
+                self.save_if_used(lhs, &mut saved);
+
                 let lhs_int: IntRegister = lhs.into();
 
                 self.save_if_used(lhs, &mut saved);
@@ -1313,28 +1318,9 @@ impl<'tree> Compiler<'tree> {
                 dest_regi.into()
             }
             (Type::Int(0), InfixOp::Pow) => {
-                self.use_reg(lhs, Size::Quad);
-                self.use_reg(rhs, Size::Quad);
-                self.use_reg(dest_regi.into(), Size::Quad);
-
-                dbg!(lhs, rhs, dest_regi);
-
-                let dest = self
+                self
                 .__rush_internal_pow_int(lhs.into(), rhs.into())
-                .to_reg();
-
-                self.use_reg(lhs, Size::Quad);
-                self.use_reg(rhs, Size::Quad);
-                self.use_reg(dest_regi.into(), Size::Quad);
-
-                if dest != dest_regi.into() {
-                    self.insert_with_comment(
-                        Instruction::Lgr(dest_regi.into(), dest),
-                        "result of pow_int".into(),
-                    );
-                }
-
-                dest_regi.into()
+                .to_reg()
             },
             (Type::Int(0), InfixOp::Shl) => {
                 self.save_if_used(lhs, &mut saved);
