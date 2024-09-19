@@ -80,14 +80,13 @@ pub enum Instruction {
     // SetIntCondition(Condition, IntRegister, IntRegister, IntRegister),
     // Snez(IntRegister, IntRegister),
     // Seqz(IntRegister, IntRegister),
-
     Lghi(IntRegister, i16),
     Lgfi(IntRegister, i64),
     La(IntRegister, Rc<str>),
     Lgr(Register, Register),
     Lder(FloatRegister, FloatRegister),
 
-    Oilf(IntRegister, u32), // Or immediate (low)
+    Oilf(IntRegister, u32),  // Or immediate (low)
     Llihf(IntRegister, u32), // Load logical high
 
     // Neg(IntRegister, IntRegister),
@@ -154,7 +153,6 @@ pub enum Instruction {
     // CastIntToFloat(FloatRegister, IntRegister),
     // CastFloatToInt(IntRegister, FloatRegister),
     // CastByteToFloat(FloatRegister, IntRegister),
-
     Lcr(IntRegister, IntRegister),
     Xilf(IntRegister, i8),
     Nilf(IntRegister, i8),
@@ -189,11 +187,17 @@ impl Display for Instruction {
             Instruction::Llihf(dest, v) => write!(f, "llihf {dest}, {v}"),
             Instruction::Ahi(dest, v) => write!(f, "ahi {dest}, {v}"),
             Instruction::Aghi(dest, v) => write!(f, "aghi {dest}, {v}"),
-            Instruction::ShiftRightSingle(dest, source, disp, bas) => write!(f, "srag {dest}, {source}, {disp}({bas})"),
+            Instruction::ShiftRightSingle(dest, source, disp, bas) => {
+                write!(f, "srag {dest}, {source}, {disp}({bas})")
+            }
             Instruction::ShiftRightSingleLogicalImm(reg, disp) => write!(f, "srl {reg}, {disp}"),
-            Instruction::ShiftRightSingleLogical(dest, source, disp, bas) => write!(f, "srlg {dest}, {source}, {disp}({bas})"),
+            Instruction::ShiftRightSingleLogical(dest, source, disp, bas) => {
+                write!(f, "srlg {dest}, {source}, {disp}({bas})")
+            }
             Instruction::ShiftLeftSingleLogicalImm(reg, disp) => write!(f, "sll {reg}, {disp}"),
-            Instruction::ShiftLeftSingleLogical(dest, source, disp, bas) => write!(f, "sllg {dest}, {source}, {disp}({bas})"),
+            Instruction::ShiftLeftSingleLogical(dest, source, disp, bas) => {
+                write!(f, "sllg {dest}, {source}, {disp}({bas})")
+            }
             // Instruction::SetIntCondition(cond, dest, l, r) => match cond {
             //     Condition::Lt => write!(f, "slt {dest}, {l}, {r}"),
             //     // Because RISC-V does not support the sle instruction, it is emulated here
@@ -268,8 +272,10 @@ impl Display for Instruction {
             Instruction::Store8(src, ptr) => write!(f, "stc {src}, {ptr}"),
             Instruction::Store64(src, ptr) => write!(f, "stg {src}, {ptr}"),
             Instruction::Store64Generic(src, ptr) => write!(f, "stg {src}, {ptr}"),
-            Instruction::ConvertToFixed(dest, rounding, src) =>  write!(f, "cgdbr {dest}, {rounding}, {src}"),
-            Instruction::ConvertFromFixed(dest, src) =>  write!(f, "cdgbr  {dest}, {src}"),
+            Instruction::ConvertToFixed(dest, rounding, src) => {
+                write!(f, "cgdbr {dest}, {rounding}, {src}")
+            }
+            Instruction::ConvertFromFixed(dest, src) => write!(f, "cdgbr  {dest}, {src}"),
             // Instruction::Fld(dest, ptr) => match ptr {
             //     Pointer::Register(_, _) => write!(f, "fld {dest}, {ptr}"),
             //     Pointer::Label(_) => write!(f, "fld {dest}, {ptr}, t6"),
@@ -318,7 +324,7 @@ impl Display for Instruction {
             // Instruction::FNeg(dest, src) => write!(f, "fneg.d {dest}, {src}"),
             Instruction::Lcr(dest, src) => write!(f, "lcr {dest}, {src}"),
             Instruction::Xilf(dest, v) => write!(f, "xilf {dest}, {v}"),
-            Instruction::Nilf(dest, v) =>write!(f, "nilf {dest}, {v}"),
+            Instruction::Nilf(dest, v) => write!(f, "nilf {dest}, {v}"),
         }
     }
 }
@@ -379,11 +385,11 @@ impl Display for IntRegisterPointer {
 }
 
 impl IntRegisterPointer {
-    pub (crate) fn offset(&self) -> i64 {
+    pub(crate) fn offset(&self) -> i64 {
         self.1
     }
 
-    pub (crate) fn reg(&self) -> IntRegister {
+    pub(crate) fn reg(&self) -> IntRegister {
         self.0
     }
 }

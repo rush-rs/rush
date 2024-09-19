@@ -27,16 +27,15 @@ impl<'tree> Compiler<'tree> {
             (
                 Instruction::Aghi(
                     IntRegister::R15,
-                    (-self.curr_fn().stack_allocs - BASE_STACK_ALLOCATIONS).try_into().expect("offset too large"),
+                    (-self.curr_fn().stack_allocs - BASE_STACK_ALLOCATIONS)
+                        .try_into()
+                        .expect("offset too large"),
                 ),
                 Some("alloc frame".into()),
             ),
             // save `GR14` on the stack
             (
-                Instruction::Store64(
-                    IntRegister::R14,
-                    IntRegisterPointer(IntRegister::R15, 0),
-                ),
+                Instruction::Store64(IntRegister::R14, IntRegisterPointer(IntRegister::R15, 0)),
                 Some("save GR14".into()),
             ),
             (Instruction::Comment("end prologue".into()), None),
@@ -50,16 +49,21 @@ impl<'tree> Compiler<'tree> {
         self.insert_at(&epilogue_label);
 
         // // restore `GR14` from the stack
-        self.insert_with_comment(Instruction::Load64(
-            IntRegister::R14,
-            IntRegisterPointer(IntRegister::R15, 0),
-        ), "restore GR14".into());
+        self.insert_with_comment(
+            Instruction::Load64(IntRegister::R14, IntRegisterPointer(IntRegister::R15, 0)),
+            "restore GR14".into(),
+        );
 
         // deallocate stack space
-        self.insert_with_comment(Instruction::Aghi(
-            IntRegister::R15,
-            (self.curr_fn().stack_allocs + BASE_STACK_ALLOCATIONS).try_into().expect("offset too large"),
-        ), "dealloc frame".into());
+        self.insert_with_comment(
+            Instruction::Aghi(
+                IntRegister::R15,
+                (self.curr_fn().stack_allocs + BASE_STACK_ALLOCATIONS)
+                    .try_into()
+                    .expect("offset too large"),
+            ),
+            "dealloc frame".into(),
+        );
 
         // return control back to caller
         self.insert(Instruction::BranchRegister(IntRegister::R14));
@@ -91,11 +95,17 @@ impl<'tree> Compiler<'tree> {
         // specifies the count of the current register spill
         let mut spill_cnt = 0;
 
-        let gr13_offset = self.save_ireg_on_stack(IntRegister::R13, Some("save GR13 for params".into()));
+        let gr13_offset =
+            self.save_ireg_on_stack(IntRegister::R13, Some("save GR13 for params".into()));
         regs_on_stack.push((IntRegister::R13.into(), gr13_offset, Size::Quad));
 
         self.insert_movi(IntRegister::R13, IntRegister::R15, file!(), line!());
-        self.insert(Instruction::Aghi(IntRegister::R13, (self.curr_fn().stack_allocs + BASE_STACK_ALLOCATIONS).try_into().unwrap()));
+        self.insert(Instruction::Aghi(
+            IntRegister::R13,
+            (self.curr_fn().stack_allocs + BASE_STACK_ALLOCATIONS)
+                .try_into()
+                .unwrap(),
+        ));
 
         for arg in node.args {
             match arg.result_type() {

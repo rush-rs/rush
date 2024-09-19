@@ -3,7 +3,10 @@ use std::{borrow::Cow, collections::HashMap, rc::Rc};
 use rush_analyzer::{ast::*, AssignOp, InfixOp, PrefixOp, Type};
 
 use crate::{
-    call::BASE_STACK_ALLOCATIONS, instruction::{Block, CommentConfig, Instruction, IntRegisterPointer, Pointer}, register::{FloatRegister, IntRegister, Register}, utils::{DataObj, DataObjType, DivisionOutput, Function, Loop, Size, Variable}
+    call::BASE_STACK_ALLOCATIONS,
+    instruction::{Block, CommentConfig, Instruction, IntRegisterPointer, Pointer},
+    register::{FloatRegister, IntRegister, Register},
+    utils::{DataObj, DataObjType, DivisionOutput, Function, Loop, Size, Variable},
 };
 
 pub struct Compiler<'tree> {
@@ -251,7 +254,10 @@ impl<'tree> Compiler<'tree> {
                             let offset = self.get_offset(Size::Quad);
 
                             param_store_instructions.push((
-                                Instruction::Std(reg.into(), IntRegisterPointer(IntRegister::R15, offset)),
+                                Instruction::Std(
+                                    reg.into(),
+                                    IntRegisterPointer(IntRegister::R15, offset),
+                                ),
                                 Some(format!("param {} = {reg}", param.name).into()),
                             ));
 
@@ -260,7 +266,10 @@ impl<'tree> Compiler<'tree> {
                                 param.name,
                                 Variable {
                                     type_: param.type_,
-                                    value: Some(Pointer::Register(IntRegisterPointer(IntRegister::R15, offset))),
+                                    value: Some(Pointer::Register(IntRegisterPointer(
+                                        IntRegister::R15,
+                                        offset,
+                                    ))),
                                 },
                             );
                         }
@@ -272,7 +281,10 @@ impl<'tree> Compiler<'tree> {
                                 param.name,
                                 Variable {
                                     type_: param.type_,
-                                    value: Some(Pointer::Register(IntRegisterPointer(IntRegister::R13, mem_offset))),
+                                    value: Some(Pointer::Register(IntRegisterPointer(
+                                        IntRegister::R13,
+                                        mem_offset,
+                                    ))),
                                 },
                             );
                             mem_offset += 8;
@@ -311,7 +323,10 @@ impl<'tree> Compiler<'tree> {
                                 param.name,
                                 Variable {
                                     type_: param.type_,
-                                    value: Some(Pointer::Register(IntRegisterPointer(IntRegister::R15, offset))),
+                                    value: Some(Pointer::Register(IntRegisterPointer(
+                                        IntRegister::R15,
+                                        offset,
+                                    ))),
                                 },
                             );
                         }
@@ -323,7 +338,10 @@ impl<'tree> Compiler<'tree> {
                                 param.name,
                                 Variable {
                                     type_: param.type_,
-                                    value: Some(Pointer::Register(IntRegisterPointer(IntRegister::R13, mem_offset))),
+                                    value: Some(Pointer::Register(IntRegisterPointer(
+                                        IntRegister::R13,
+                                        mem_offset,
+                                    ))),
                                 },
                             );
                             mem_offset += 8;
@@ -391,9 +409,7 @@ impl<'tree> Compiler<'tree> {
                 Some(Register::Int(reg)) => {
                     self.insert_movi(IntRegister::R2, reg, file!(), line!());
                 }
-                Some(Register::Float(reg)) => {
-                    self.insert_movf(FloatRegister::F0, reg)
-                }
+                Some(Register::Float(reg)) => self.insert_movf(FloatRegister::F0, reg),
                 None => {} // ignore unit values
             }
         }
@@ -448,10 +464,12 @@ impl<'tree> Compiler<'tree> {
         // if there is an optional expression, use its value as the result
         if let Some(expr) = node {
             match self.expression(expr) {
-                None => {}                                      // returns unit, do nothing
-                Some(Register::Int(IntRegister::R2)) => {}      // already in correct register
+                None => {}                                 // returns unit, do nothing
+                Some(Register::Int(IntRegister::R2)) => {} // already in correct register
                 //Some(Register::Float(FloatRegister::Fa0)) => {} // already in correct register
-                Some(Register::Int(reg)) => self.insert_movi(IntRegister::R2, reg, file!(), line!()),
+                Some(Register::Int(reg)) => {
+                    self.insert_movi(IntRegister::R2, reg, file!(), line!())
+                }
                 Some(Register::Float(reg)) => {
                     //self.insert(Instruction::Fmv(FloatRegister::Fa0, reg))
                     todo!("add float support")
@@ -500,7 +518,7 @@ impl<'tree> Compiler<'tree> {
 
         // if the cond is `!`, return here
         let Some(cond) = self.expression(node.cond) else {
-            return
+            return;
         };
 
         // if the condition evaluates to `false`, break out of the loop
@@ -542,8 +560,13 @@ impl<'tree> Compiler<'tree> {
         // add a new scope and insert the induction variable into it
         self.push_scope();
 
-        self.scope_mut()
-            .insert(node.ident, Variable { type_, value: ptr.map(|p| Pointer::Register(p)) });
+        self.scope_mut().insert(
+            node.ident,
+            Variable {
+                type_,
+                value: ptr.map(|p| Pointer::Register(p)),
+            },
+        );
 
         //// CONDITION ////
         self.insert_at(&for_head);
@@ -552,7 +575,7 @@ impl<'tree> Compiler<'tree> {
 
         // if the cond is `!`, return here
         let Some(cond) = self.expression(node.cond) else {
-            return
+            return;
         };
 
         self.insert(Instruction::CompareIntImm(cond.into(), false as i8));
@@ -591,37 +614,46 @@ impl<'tree> Compiler<'tree> {
 
         // save the expression result on the stack & insert the variable into the current scope
         let ptr = self.save_expr_on_stack(node.expr, format!("let {}", node.name));
-        self.scope_mut()
-            .insert(node.name, Variable { type_, value: ptr.map(|p| Pointer::Register(p)) });
+        self.scope_mut().insert(
+            node.name,
+            Variable {
+                type_,
+                value: ptr.map(|p| Pointer::Register(p)),
+            },
+        );
     }
 
-    pub (crate) fn save_ireg_on_stack(&mut self, reg: IntRegister, comment: Option<String>) -> i64 {
-            let offset = self.get_offset(Size::Quad);
+    pub(crate) fn save_ireg_on_stack(&mut self, reg: IntRegister, comment: Option<String>) -> i64 {
+        let offset = self.get_offset(Size::Quad);
 
-            self.insert_with_comment(
-                    Instruction::Store64(reg, IntRegisterPointer(IntRegister::R15, offset)),
-                    comment.unwrap_or("".into()).into(),
-            );
+        self.insert_with_comment(
+            Instruction::Store64(reg, IntRegisterPointer(IntRegister::R15, offset)),
+            comment.unwrap_or("".into()).into(),
+        );
 
-            offset
+        offset
     }
 
-    pub (crate) fn restore_ireg_from_stack(&mut self, reg: IntRegister, offset: i64) {
+    pub(crate) fn restore_ireg_from_stack(&mut self, reg: IntRegister, offset: i64) {
         self.insert_with_comment(
             Instruction::Load64(reg, IntRegisterPointer(IntRegister::R15, offset)),
             "restore after save".into(),
         )
     }
 
-    pub(crate) fn save_freg_on_stack(&mut self, reg: FloatRegister, comment: Option<String>) -> i64 {
-            let offset = self.get_offset(Size::Quad);
+    pub(crate) fn save_freg_on_stack(
+        &mut self,
+        reg: FloatRegister,
+        comment: Option<String>,
+    ) -> i64 {
+        let offset = self.get_offset(Size::Quad);
 
-            self.insert_with_comment(
-                    Instruction::Std(reg.into(), IntRegisterPointer(IntRegister::R15, offset)),
-                    comment.unwrap_or("".into()).into(),
-            );
+        self.insert_with_comment(
+            Instruction::Std(reg.into(), IntRegisterPointer(IntRegister::R15, offset)),
+            comment.unwrap_or("".into()).into(),
+        );
 
-            offset
+        offset
     }
 
     pub(crate) fn restore_freg_from_stack(&mut self, reg: FloatRegister, offset: i64) {
@@ -671,10 +703,10 @@ impl<'tree> Compiler<'tree> {
             },
             Register::Float(reg) => {
                 self.insert_with_comment(
-                Instruction::Std(reg.into(), IntRegisterPointer(IntRegister::R15, offset)),
-                comment.into(),
+                    Instruction::Std(reg.into(), IntRegisterPointer(IntRegister::R15, offset)),
+                    comment.into(),
                 );
-            },
+            }
         };
 
         Some(IntRegisterPointer(IntRegister::R15, offset))
@@ -688,7 +720,10 @@ impl<'tree> Compiler<'tree> {
                 // Check whether the immediate is too large to fit into an LGFI instruction.
                 if !(-2147483648..=2147483647).contains(&value) {
                     // Set the entire register to 0.
-                    self.insert_with_comment(Instruction::Xgr(dest_reg, dest_reg), format!("{dest_reg} = 0").into());
+                    self.insert_with_comment(
+                        Instruction::Xgr(dest_reg, dest_reg),
+                        format!("{dest_reg} = 0").into(),
+                    );
 
                     // Load high 31 bits of the number.
                     const HI_31_BITS_MASK: i64 = 0x7FFFFFFF00000000;
@@ -698,7 +733,11 @@ impl<'tree> Compiler<'tree> {
                     const LO_32_BITS_MASK: i64 = 0xFFFFFFFF;
                     let lo_bits = value & LO_32_BITS_MASK;
 
-                    debug_assert!(lo_bits | (hi_bits << 32) == value, "{} != {value}", lo_bits | hi_bits);
+                    debug_assert!(
+                        lo_bits | (hi_bits << 32) == value,
+                        "{} != {value}",
+                        lo_bits | hi_bits
+                    );
 
                     self.insert_with_comment(
                         Instruction::Llihf(dest_reg, hi_bits as u32),
@@ -765,7 +804,6 @@ impl<'tree> Compiler<'tree> {
                     format!("load {value}").into(),
                 );
 
-
                 // load the value from the data label into `dest_reg`
                 // self.insert(Instruction::Fld(
                 //     dest_reg,
@@ -778,9 +816,7 @@ impl<'tree> Compiler<'tree> {
                 // if this is a placeholder or dummy variable, return `None`
                 let (ptr, type_) = match self.resolve_variable(ident.ident).type_ {
                     Type::Unit | Type::Unknown | Type::Never => return None,
-                    type_ => {
-                        (self.load_variable_from_name(ident.ident), type_)
-                    },
+                    type_ => (self.load_variable_from_name(ident.ident), type_),
                 };
                 // `clone` is okay here, since it only clones a `Rc`
                 Some(self.load_value_from_pointer(ptr.clone()?, type_, ident.ident))
@@ -802,7 +838,10 @@ impl<'tree> Compiler<'tree> {
     fn bool_neg(&mut self, source_reg: IntRegister) -> IntRegister {
         let dest_reg = self.get_int_reg();
         self.insert_with_comment(Instruction::Lcr(dest_reg, source_reg), "bool neg".into());
-        self.insert_with_comment(Instruction::ShiftRightSingleLogicalImm(dest_reg, 31), "bool neg".into());
+        self.insert_with_comment(
+            Instruction::ShiftRightSingleLogicalImm(dest_reg, 31),
+            "bool neg".into(),
+        );
         self.insert_with_comment(Instruction::Xilf(dest_reg, 1), "bool neg".into());
         self.insert_with_comment(Instruction::Nilf(dest_reg, 1), "bool neg".into());
         dest_reg
@@ -826,12 +865,15 @@ impl<'tree> Compiler<'tree> {
                         );
 
                         self.insert_with_comment(
-                            Instruction::Aghi(dest_reg, pointer.offset().try_into().expect("offset too large")),
+                            Instruction::Aghi(
+                                dest_reg,
+                                pointer.offset().try_into().expect("offset too large"),
+                            ),
                             format!("&{}: offset", ident.ident).into(),
                         );
 
                         dest_reg
-                    },
+                    }
                     Some(Pointer::Label(_)) => {
                         let loaded = self.load_variable_from_name(ident.ident).unwrap();
 
@@ -843,7 +885,10 @@ impl<'tree> Compiler<'tree> {
                         );
 
                         self.insert_with_comment(
-                            Instruction::Aghi(dest_reg, loaded.offset().try_into().expect("offset too large")),
+                            Instruction::Aghi(
+                                dest_reg,
+                                loaded.offset().try_into().expect("offset too large"),
+                            ),
                             format!("&{}: offset", ident.ident).into(),
                         );
 
@@ -868,12 +913,8 @@ impl<'tree> Compiler<'tree> {
                     Instruction::Lghi(zero_reg, 0),
                     format!("negate {lhs_reg}").into(),
                 );
-                let dest_reg = self.infix_helper(
-                    zero_reg.into(),
-                    lhs_reg,
-                    InfixOp::Minus,
-                    Type::Int(0),
-                );
+                let dest_reg =
+                    self.infix_helper(zero_reg.into(), lhs_reg, InfixOp::Minus, Type::Int(0));
                 self.release_reg(lhs_reg);
                 self.release_reg(zero_reg.into());
                 Some(dest_reg)
@@ -882,7 +923,8 @@ impl<'tree> Compiler<'tree> {
                 self.insert(Instruction::Comment("float neg".into()));
                 self.use_reg(lhs_reg, Size::Quad);
                 let float_reg = self.expression(AnalyzedExpression::Float(0.0)).unwrap();
-                let dest_reg = self.infix_helper(float_reg, lhs_reg, InfixOp::Minus, Type::Float(0));
+                let dest_reg =
+                    self.infix_helper(float_reg, lhs_reg, InfixOp::Minus, Type::Float(0));
                 self.release_reg(lhs_reg);
                 Some(dest_reg)
             }
@@ -1023,13 +1065,16 @@ impl<'tree> Compiler<'tree> {
             self.blocks.push(Block::new(Rc::clone(&merge_block)));
             self.insert_at(&merge_block);
 
-            return Some(lhs)
+            return Some(lhs);
         }
         match (node.lhs, node.rhs, node.op) {
             (AnalyzedExpression::Int(value), expr, InfixOp::Plus)
             | (expr, AnalyzedExpression::Int(value), InfixOp::Plus) => {
                 let rhs_reg = self.expression(expr)?;
-                self.insert(Instruction::Aghi(rhs_reg.into(), value.try_into().expect("offsett too large")));
+                self.insert(Instruction::Aghi(
+                    rhs_reg.into(),
+                    value.try_into().expect("offsett too large"),
+                ));
                 Some(rhs_reg)
             }
             (AnalyzedExpression::Ident(_), AnalyzedExpression::Int(0), InfixOp::Mul)
@@ -1072,61 +1117,57 @@ impl<'tree> Compiler<'tree> {
         dest_reg: IntRegister,
         output: DivisionOutput,
     ) {
-                // We are using the even register pair specified below.
-                const EVEN_PAIR_LOW: IntRegister = IntRegister::R2;
-                const EVEN_PAIR_HIGH: IntRegister = IntRegister::R4;
+        // We are using the even register pair specified below.
+        const EVEN_PAIR_LOW: IntRegister = IntRegister::R2;
+        const EVEN_PAIR_HIGH: IntRegister = IntRegister::R4;
 
-                // The results of the division will be placed in the odd register pair specified
-                // below.
-                const ODD_PAIR_LOW: IntRegister = IntRegister::R1;
-                const ODD_PAIR_HIGH: IntRegister = IntRegister::R3;
+        // The results of the division will be placed in the odd register pair specified
+        // below.
+        const ODD_PAIR_LOW: IntRegister = IntRegister::R1;
+        const ODD_PAIR_HIGH: IntRegister = IntRegister::R3;
 
-                const REGS_USED_FOR_DIVISION: [IntRegister; 4] = [
-                    EVEN_PAIR_LOW,
-                    EVEN_PAIR_HIGH,
-                    ODD_PAIR_LOW,
-                    ODD_PAIR_HIGH,
-                ];
+        const REGS_USED_FOR_DIVISION: [IntRegister; 4] =
+            [EVEN_PAIR_LOW, EVEN_PAIR_HIGH, ODD_PAIR_LOW, ODD_PAIR_HIGH];
 
-                // TODO: will the lhs get overwritten here?
-                // NOTE: check this with GDB
+        // TODO: will the lhs get overwritten here?
+        // NOTE: check this with GDB
 
-                let mut saved = vec![];
+        let mut saved = vec![];
 
-                for r in REGS_USED_FOR_DIVISION {
-                    if self.reg_in_use(&(r.to_reg())) {
-                        let offset = self.save_ireg_on_stack(r, Some("save before division".into()));
-                        saved.push((r, offset));
-                    }
-                }
+        for r in REGS_USED_FOR_DIVISION {
+            if self.reg_in_use(&(r.to_reg())) {
+                let offset = self.save_ireg_on_stack(r, Some("save before division".into()));
+                saved.push((r, offset));
+            }
+        }
 
-                // Move the lhs, rhs into the even register pair (input pair).
-                if lhs != ODD_PAIR_HIGH {
-                    self.insert_movi(ODD_PAIR_HIGH, lhs, file!(), line!());
-                }
+        // Move the lhs, rhs into the even register pair (input pair).
+        if lhs != ODD_PAIR_HIGH {
+            self.insert_movi(ODD_PAIR_HIGH, lhs, file!(), line!());
+        }
 
-                if rhs != EVEN_PAIR_HIGH {
-                    self.insert_movi(EVEN_PAIR_HIGH, rhs, file!(), line!());
-                }
+        if rhs != EVEN_PAIR_HIGH {
+            self.insert_movi(EVEN_PAIR_HIGH, rhs, file!(), line!());
+        }
 
-                self.insert(Instruction::Div64(EVEN_PAIR_LOW, EVEN_PAIR_HIGH));
+        self.insert(Instruction::Div64(EVEN_PAIR_LOW, EVEN_PAIR_HIGH));
 
-                // Extract the quotient / remainder from the odd-numbered register pair.
-                match (output, dest_reg) {
-                    (DivisionOutput::Quotient, ODD_PAIR_HIGH) => {},
-                    (DivisionOutput::Quotient, _) => {
-                        self.insert_movi(dest_reg, ODD_PAIR_HIGH, file!(), line!());
-                    },
-                    (DivisionOutput::Remainder, EVEN_PAIR_LOW) => {},
-                    (DivisionOutput::Remainder, _) => {
-                        self.insert_movi(dest_reg, EVEN_PAIR_LOW, file!(), line!());
-                    },
-                }
+        // Extract the quotient / remainder from the odd-numbered register pair.
+        match (output, dest_reg) {
+            (DivisionOutput::Quotient, ODD_PAIR_HIGH) => {}
+            (DivisionOutput::Quotient, _) => {
+                self.insert_movi(dest_reg, ODD_PAIR_HIGH, file!(), line!());
+            }
+            (DivisionOutput::Remainder, EVEN_PAIR_LOW) => {}
+            (DivisionOutput::Remainder, _) => {
+                self.insert_movi(dest_reg, EVEN_PAIR_LOW, file!(), line!());
+            }
+        }
 
-                // Restore saved registers.
-                for (r, offset) in saved {
-                    self.restore_ireg_from_stack(r, offset)
-                }
+        // Restore saved registers.
+        for (r, offset) in saved {
+            self.restore_ireg_from_stack(r, offset)
+        }
     }
 
     fn float_division_helper(
@@ -1136,66 +1177,63 @@ impl<'tree> Compiler<'tree> {
         dest_reg: FloatRegister,
         output: DivisionOutput,
     ) {
-                // We are using the even register pair specified below.
-                const EVEN_PAIR_LOW: FloatRegister = FloatRegister::F2;
-                const EVEN_PAIR_HIGH: FloatRegister = FloatRegister::F4;
+        // We are using the even register pair specified below.
+        const EVEN_PAIR_LOW: FloatRegister = FloatRegister::F2;
+        const EVEN_PAIR_HIGH: FloatRegister = FloatRegister::F4;
 
-                // The results of the division will be placed in the odd register pair specified
-                // below.
-                // const ODD_PAIR_LOW: FloatRegister = FloatRegister::F1;
-                // const ODD_PAIR_HIGH: FloatRegister = FloatRegister::F3;
+        // The results of the division will be placed in the odd register pair specified
+        // below.
+        // const ODD_PAIR_LOW: FloatRegister = FloatRegister::F1;
+        // const ODD_PAIR_HIGH: FloatRegister = FloatRegister::F3;
 
-                const REGS_USED_FOR_DIVISION: [FloatRegister; 2] = [
-                    EVEN_PAIR_LOW,
-                    EVEN_PAIR_HIGH,
-                ];
+        const REGS_USED_FOR_DIVISION: [FloatRegister; 2] = [EVEN_PAIR_LOW, EVEN_PAIR_HIGH];
 
-                let mut saved = vec![];
+        let mut saved = vec![];
 
-                for r in REGS_USED_FOR_DIVISION {
-                    if self.reg_in_use(&(r.to_reg())) {
-                        let offset = self.save_freg_on_stack(r, Some("save before division (f)".into()));
-                        saved.push((r, offset));
-                    }
-                }
+        for r in REGS_USED_FOR_DIVISION {
+            if self.reg_in_use(&(r.to_reg())) {
+                let offset = self.save_freg_on_stack(r, Some("save before division (f)".into()));
+                saved.push((r, offset));
+            }
+        }
 
-                // Move the lhs, rhs into the even register pair (input pair).
-                // TODO: ordering here was swapped: is this buggy or intended?
-                if rhs != EVEN_PAIR_HIGH {
-                    self.insert_movf(EVEN_PAIR_HIGH, rhs);
-                }
+        // Move the lhs, rhs into the even register pair (input pair).
+        // TODO: ordering here was swapped: is this buggy or intended?
+        if rhs != EVEN_PAIR_HIGH {
+            self.insert_movf(EVEN_PAIR_HIGH, rhs);
+        }
 
-                if lhs != EVEN_PAIR_LOW {
-                    self.insert_movf(EVEN_PAIR_LOW, lhs);
-                }
+        if lhs != EVEN_PAIR_LOW {
+            self.insert_movf(EVEN_PAIR_LOW, lhs);
+        }
 
-                self.insert(Instruction::Ddbr(EVEN_PAIR_LOW, EVEN_PAIR_HIGH));
+        self.insert(Instruction::Ddbr(EVEN_PAIR_LOW, EVEN_PAIR_HIGH));
 
-                // Extract the quotient / remainder from the odd-numbered register pair.
-                match (output, dest_reg) {
-                    (DivisionOutput::Quotient, EVEN_PAIR_LOW) => {},
-                    (DivisionOutput::Quotient, _) => {
-                        self.insert_movf(dest_reg, EVEN_PAIR_LOW);
-                    },
-                    (DivisionOutput::Remainder, EVEN_PAIR_LOW) => {},
-                    (DivisionOutput::Remainder, _) => {
-                        self.insert_movf(dest_reg, EVEN_PAIR_LOW);
-                    },
-                }
+        // Extract the quotient / remainder from the odd-numbered register pair.
+        match (output, dest_reg) {
+            (DivisionOutput::Quotient, EVEN_PAIR_LOW) => {}
+            (DivisionOutput::Quotient, _) => {
+                self.insert_movf(dest_reg, EVEN_PAIR_LOW);
+            }
+            (DivisionOutput::Remainder, EVEN_PAIR_LOW) => {}
+            (DivisionOutput::Remainder, _) => {
+                self.insert_movf(dest_reg, EVEN_PAIR_LOW);
+            }
+        }
 
-                // Restore saved registers.
-                for (r, offset) in saved {
-                    if r == dest_reg {
-                        panic!("TODO")
-                    }
+        // Restore saved registers.
+        for (r, offset) in saved {
+            if r == dest_reg {
+                panic!("TODO")
+            }
 
-                    self.restore_freg_from_stack(r, offset)
-                }
+            self.restore_freg_from_stack(r, offset)
+        }
     }
 
     fn save_if_used(&mut self, reg: Register, saved: &mut Vec<(Register, i64)>) {
         if !self.reg_in_use(&reg) {
-            return
+            return;
         }
 
         let offset = self.save_reg_on_stack(reg, Some("save: used".into()));
@@ -1317,11 +1355,9 @@ impl<'tree> Compiler<'tree> {
 
                 dest_regi.into()
             }
-            (Type::Int(0), InfixOp::Pow) => {
-                self
+            (Type::Int(0), InfixOp::Pow) => self
                 .__rush_internal_pow_int(lhs.into(), rhs.into())
-                .to_reg()
-            },
+                .to_reg(),
             (Type::Int(0), InfixOp::Shl) => {
                 self.save_if_used(lhs, &mut saved);
 
@@ -1409,19 +1445,17 @@ impl<'tree> Compiler<'tree> {
             // illegal programs, therefore this is ok.
             (
                 Type::Int(0) | Type::Char(0) | Type::Bool(0),
-                op @ (    InfixOp::Eq
-                | InfixOp::Neq
-                | InfixOp::Lt
-                | InfixOp::Lte
-                | InfixOp::Gte ),
+                op @ (InfixOp::Eq | InfixOp::Neq | InfixOp::Lt | InfixOp::Lte | InfixOp::Gte),
             ) => {
-                self.insert(Instruction::Comment(format!("begin comparison {op}").into()));
+                self.insert(Instruction::Comment(
+                    format!("begin comparison {op}").into(),
+                ));
 
                 // Insert compare instruction.
-                self.insert_with_comment(Instruction::Compare(
-                    lhs,
-                    rhs,
-                ), format!("compare ({lhs} {op} {rhs})").into());
+                self.insert_with_comment(
+                    Instruction::Compare(lhs, rhs),
+                    format!("compare ({lhs} {op} {rhs})").into(),
+                );
 
                 //
                 // Now we have two possible paths: one which places `true` in `dest_regi`,
@@ -1434,7 +1468,7 @@ impl<'tree> Compiler<'tree> {
                 let jump_instruction = match op {
                     InfixOp::Eq => Instruction::BranchEq(true_label.clone()),
                     InfixOp::Neq => Instruction::BranchNotEq(true_label.clone()),
-                    InfixOp::Lt =>  Instruction::BranchLessThan(true_label.clone()),
+                    InfixOp::Lt => Instruction::BranchLessThan(true_label.clone()),
                     InfixOp::Lte => Instruction::BranchNotGreaterThan(true_label.clone()),
                     InfixOp::Gte => Instruction::BranchNotLessThan(true_label.clone()),
                     _ => unreachable!("checked above"),
@@ -1444,15 +1478,20 @@ impl<'tree> Compiler<'tree> {
                 self.insert(jump_instruction);
 
                 // Place `false` as the default.
-                self.insert_with_comment(Instruction::Lghi(dest_regi, false as i16), "`false` case of comp".into());
+                self.insert_with_comment(
+                    Instruction::Lghi(dest_regi, false as i16),
+                    "`false` case of comp".into(),
+                );
                 self.insert(Instruction::Jmp(Rc::clone(&merge_label)));
 
                 self.blocks.push(Block::new(Rc::clone(&true_label)));
                 self.insert_at(&Rc::clone(&true_label));
 
                 // Place `true` as the non-default.
-                self.insert_with_comment(Instruction::Lghi(dest_regi, true as i16), "`true` case of comp".into());
-
+                self.insert_with_comment(
+                    Instruction::Lghi(dest_regi, true as i16),
+                    "`true` case of comp".into(),
+                );
 
                 self.blocks.push(Block::new(Rc::clone(&merge_label)));
                 self.insert_at(&Rc::clone(&merge_label));
@@ -1466,16 +1505,18 @@ impl<'tree> Compiler<'tree> {
                 Type::Int(0) | Type::Char(0) | Type::Bool(0),
                 op @ InfixOp::Gt,
             ) => {
-                self.insert(Instruction::Comment(format!("begin comparison {op}").into()));
+                self.insert(Instruction::Comment(
+                    format!("begin comparison {op}").into(),
+                ));
 
                 // Insert compare instruction.
-                self.insert_with_comment(Instruction::Compare(
-                    lhs,
-                    rhs,
-                ), format!("compare ({lhs} {op} {rhs})").into());
+                self.insert_with_comment(
+                    Instruction::Compare(lhs, rhs),
+                    format!("compare ({lhs} {op} {rhs})").into(),
+                );
 
                 // Store CC and program mask in register CMP_CC_SOURCE.
-                const REGS_USED_FOR_CMP: [IntRegister; 2] =[ IntRegister::R0, IntRegister::R1];
+                const REGS_USED_FOR_CMP: [IntRegister; 2] = [IntRegister::R0, IntRegister::R1];
                 const CMP_CC_SOURCE: IntRegister = REGS_USED_FOR_CMP[0];
                 const CMP_CC_BASE_ADDR: IntRegister = REGS_USED_FOR_CMP[1];
 
@@ -1493,13 +1534,15 @@ impl<'tree> Compiler<'tree> {
                     format!("store CC in {CMP_CC_SOURCE}").into(),
                 );
 
-
                 //
                 // Shift so that the low 2 bits are the CC.
                 //
                 // Place shift amount in dest_regi
                 let shift_amount = 29;
-                self.insert_with_comment(Instruction::Lghi(CMP_CC_BASE_ADDR     , shift_amount), "CC shift amount".into());
+                self.insert_with_comment(
+                    Instruction::Lghi(CMP_CC_BASE_ADDR, shift_amount),
+                    "CC shift amount".into(),
+                );
                 self.insert_with_comment(
                     Instruction::ShiftRightSingle(dest_regi, CMP_CC_SOURCE, 0, CMP_CC_BASE_ADDR),
                     "CC in low 2 bits".into(),
@@ -1537,13 +1580,15 @@ impl<'tree> Compiler<'tree> {
                 // ));
                 // dest_regi.into()
 
-                self.insert(Instruction::Comment(format!("begin comparison {op}").into()));
+                self.insert(Instruction::Comment(
+                    format!("begin comparison {op}").into(),
+                ));
 
                 // Insert compare instruction.
-                self.insert_with_comment(Instruction::Cdbr(
-                    lhs,
-                    rhs,
-                ), format!("compare ({lhs} {op} {rhs})").into());
+                self.insert_with_comment(
+                    Instruction::Cdbr(lhs, rhs),
+                    format!("compare ({lhs} {op} {rhs})").into(),
+                );
 
                 let true_label = self.gen_label("comparison_true");
                 let false_label = self.gen_label("comparison_false");
@@ -1574,7 +1619,7 @@ impl<'tree> Compiler<'tree> {
                 let jump_instruction = match op {
                     InfixOp::Eq => Instruction::BranchEq(true_label.clone()),
                     InfixOp::Neq => Instruction::BranchNotEq(true_label.clone()),
-                    InfixOp::Lt =>  Instruction::BranchLessThan(true_label.clone()),
+                    InfixOp::Lt => Instruction::BranchLessThan(true_label.clone()),
                     InfixOp::Lte => Instruction::BranchNotLessEq(false_label.clone()),
                     InfixOp::Gt => Instruction::BranchGreaterThan(true_label.clone()),
                     InfixOp::Gte => Instruction::BranchNotGreaterEq(false_label.clone()),
@@ -1588,15 +1633,20 @@ impl<'tree> Compiler<'tree> {
                 self.insert_at(&Rc::clone(&false_label));
 
                 // Place `false` as the default.
-                self.insert_with_comment(Instruction::Lghi(dest_regi, false as i16), "`false` case of comp".into());
+                self.insert_with_comment(
+                    Instruction::Lghi(dest_regi, false as i16),
+                    "`false` case of comp".into(),
+                );
                 self.insert(Instruction::Jmp(Rc::clone(&merge_label)));
 
                 self.blocks.push(Block::new(Rc::clone(&true_label)));
                 self.insert_at(&Rc::clone(&true_label));
 
                 // Place `true` as the non-default.
-                self.insert_with_comment(Instruction::Lghi(dest_regi, true as i16), "`true` case of comp".into());
-
+                self.insert_with_comment(
+                    Instruction::Lghi(dest_regi, true as i16),
+                    "`true` case of comp".into(),
+                );
 
                 self.blocks.push(Block::new(Rc::clone(&merge_label)));
                 self.insert_at(&Rc::clone(&merge_label));
@@ -1686,7 +1736,7 @@ impl<'tree> Compiler<'tree> {
                 self.insert_with_comment(
                     Instruction::Load64(
                         ptr_reg,
-                        src_ptr.clone().expect("analyzer guarantees valid pointers")
+                        src_ptr.clone().expect("analyzer guarantees valid pointers"),
                     ),
                     "deref-assign".into(),
                 );
@@ -1727,8 +1777,6 @@ impl<'tree> Compiler<'tree> {
         //     self.save_ireg_on_stack(p.0, None);
         // }
 
-
-
         // holds the value of the rhs (either simple or the result of an operation)
         'outer: {
             let rhs_reg = match node.op {
@@ -1752,7 +1800,9 @@ impl<'tree> Compiler<'tree> {
                     self.use_reg(lhs, Size::from(assignee_type));
 
                     // compile the rhs
-                    let Some(rhs) = self.expression(node.expr) else { break 'outer };
+                    let Some(rhs) = self.expression(node.expr) else {
+                        break 'outer;
+                    };
                     self.use_reg(rhs, Size::from(rhs_type));
 
                     // call the `pow` corelib function using the `infix_helper`
@@ -1764,7 +1814,9 @@ impl<'tree> Compiler<'tree> {
                 }
                 _ => {
                     // compile the rhs
-                    let Some(rhs) = self.expression(node.expr) else { break 'outer};
+                    let Some(rhs) = self.expression(node.expr) else {
+                        break 'outer;
+                    };
                     self.use_reg(rhs, Size::from(rhs_type));
 
                     // Load actual assignee address.
@@ -1806,7 +1858,7 @@ impl<'tree> Compiler<'tree> {
                     }
                     Type::Unit | Type::Never => {} // ignore these types
                     Type::Unknown => unreachable!("the analyzer would have failed"),
-                    _ => todo!("float, bool not implemented")
+                    _ => todo!("float, bool not implemented"),
                 }
             }
         }
@@ -1857,9 +1909,9 @@ impl<'tree> Compiler<'tree> {
 
                 let dest_reg = self.get_int_reg();
                 self.insert(Instruction::ConvertToFixed(
-                        dest_reg,
-                        FLOAT_ROUNDING_MODE_TOWARDS_ZERO,
-                        lhs_reg.into(),
+                    dest_reg,
+                    FLOAT_ROUNDING_MODE_TOWARDS_ZERO,
+                    lhs_reg.into(),
                 ));
 
                 dest_reg.into()
@@ -1905,15 +1957,13 @@ impl<'tree> Compiler<'tree> {
                 // ));
 
                 // return the result of the comparison
-                self.infix_helper(
-                    zero_reg,
-                    lhs_reg,
-                    InfixOp::Neq,
-                    Type::Float(0),
-                )
+                self.infix_helper(zero_reg, lhs_reg, InfixOp::Neq, Type::Float(0))
             }
             // TODO: implement the rest.
-            _ => unreachable!("cannot use other combinations in a typecast: {lhs_type} {}", node.type_),
+            _ => unreachable!(
+                "cannot use other combinations in a typecast: {lhs_type} {}",
+                node.type_
+            ),
         };
 
         // release the block of the lhs
@@ -1940,13 +1990,11 @@ impl<'tree> Compiler<'tree> {
 
         // if the condition evaluated to `false`, jump to the `else` or `merge` block
         self.insert(Instruction::CompareIntImm(cond_reg.into(), false as i8));
-        self.insert(Instruction::BranchEq(
-            if node.else_block.is_some() {
-                Rc::clone(&else_block_label)
-            } else {
-                Rc::clone(&merge_block)
-            }
-        ));
+        self.insert(Instruction::BranchEq(if node.else_block.is_some() {
+            Rc::clone(&else_block_label)
+        } else {
+            Rc::clone(&merge_block)
+        }));
 
         // self.insert(Instruction::BrCond(
         //     Condition::Eq,

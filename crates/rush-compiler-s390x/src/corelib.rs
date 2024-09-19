@@ -1,7 +1,8 @@
 use crate::{
     compiler::Compiler,
     instruction::Instruction,
-    register::{FloatRegister, IntRegister, Register}, utils::Size,
+    register::{FloatRegister, IntRegister, Register},
+    utils::Size,
 };
 
 impl<'tree> Compiler<'tree> {
@@ -26,13 +27,18 @@ impl<'tree> Compiler<'tree> {
         // prepare the arguments
         // TODO: remove the hacky-ness and save r2 in between.
         if exponent != IntRegister::R3 {
-            self.insert_with_comment(Instruction::Lgr(IntRegister::R3.into(), exponent.into()), "pow_int exponent".into());
+            self.insert_with_comment(
+                Instruction::Lgr(IntRegister::R3.into(), exponent.into()),
+                "pow_int exponent".into(),
+            );
         }
 
         if base != IntRegister::R2 {
-            self.insert_with_comment(Instruction::Lgr(IntRegister::R2.into(), base.into()), "pow_int base".into());
+            self.insert_with_comment(
+                Instruction::Lgr(IntRegister::R2.into(), base.into()),
+                "pow_int base".into(),
+            );
         }
-
 
         // perform the function call
         self.insert_call("__rush_internal_pow_int".into());

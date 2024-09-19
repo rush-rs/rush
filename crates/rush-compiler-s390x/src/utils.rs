@@ -1,10 +1,13 @@
-use std::{borrow::Cow, collections::HashMap, fmt::Display, rc::Rc};
 use byteorder::{BigEndian, LittleEndian, WriteBytesExt};
+use std::{borrow::Cow, collections::HashMap, fmt::Display, rc::Rc};
 
 use rush_analyzer::Type;
 
 use crate::{
-    call::BASE_STACK_ALLOCATIONS, compiler::Compiler, instruction::{Block, Instruction, IntRegisterPointer, Pointer}, register::{FloatRegister, IntRegister, Register, FLOAT_REGISTERS, INT_REGISTERS}
+    call::BASE_STACK_ALLOCATIONS,
+    compiler::Compiler,
+    instruction::{Block, Instruction, IntRegisterPointer, Pointer},
+    register::{FloatRegister, IntRegister, Register, FLOAT_REGISTERS, INT_REGISTERS},
 };
 
 pub(crate) enum DivisionOutput {
@@ -41,13 +44,14 @@ impl Size {
         *self as i64
     }
 
-    pub (crate) fn asm_string(&self) -> String {
+    pub(crate) fn asm_string(&self) -> String {
         match self {
             Size::Byte => ".byte",
             Size::HalfWord => todo!("what is this?"),
             Size::Long => ".long",
             Size::Quad => ".quad",
-        }.into()
+        }
+        .into()
     }
 }
 
@@ -77,7 +81,10 @@ impl<'tree> Compiler<'tree> {
         let size = size.byte_count();
         dbg!(size, self.curr_fn_mut().stack_allocs);
         // TODO: does this work?
-        Self::align(&mut self.curr_fn_mut().stack_allocs, Size::Long.byte_count());
+        Self::align(
+            &mut self.curr_fn_mut().stack_allocs,
+            Size::Long.byte_count(),
+        );
         let old = self.curr_fn().stack_allocs;
         self.curr_fn_mut().stack_allocs += size;
         old + BASE_STACK_ALLOCATIONS
@@ -105,7 +112,7 @@ impl<'tree> Compiler<'tree> {
                     reg.into(),
                     IntRegisterPointer(IntRegister::R15, offset),
                 ));
-            },
+            }
         };
 
         offset
@@ -230,7 +237,7 @@ impl<'tree> Compiler<'tree> {
     // }
 
     /// Helper function for checking whether a register is in use.
-    pub(crate)  fn reg_in_use (&mut self, reg: &Register) -> bool {
+    pub(crate) fn reg_in_use(&mut self, reg: &Register) -> bool {
         self.used_registers.iter().any(|(r, _)| r == reg)
     }
 
@@ -275,7 +282,7 @@ impl<'tree> Compiler<'tree> {
         .into()
     }
 
-    pub (crate) fn resolve_variable(&self, name: &str) -> Variable {
+    pub(crate) fn resolve_variable(&self, name: &str) -> Variable {
         // look for normal variables first
         for scope in self.scopes.iter().rev() {
             if let Some(variable) = scope.get(name) {
@@ -286,7 +293,8 @@ impl<'tree> Compiler<'tree> {
         // return reference to global variable
         self.globals
             .get(name)
-            .unwrap_or_else(|| panic!("the analyzer guarantees valid variable references: {name}")).clone()
+            .unwrap_or_else(|| panic!("the analyzer guarantees valid variable references: {name}"))
+            .clone()
     }
 
     /// Helper function for resolving identifier names.
@@ -306,11 +314,11 @@ impl<'tree> Compiler<'tree> {
 
                 self.insert_with_comment(
                     Instruction::LoadAddrRelativeLong(addr_reg, label.clone()),
-                    format!("load addr of {label}").into()
+                    format!("load addr of {label}").into(),
                 );
 
                 Some(IntRegisterPointer(addr_reg, 0))
-            },
+            }
             Some(Pointer::Register(int_pointer)) => Some(int_pointer),
             None => None,
         }
@@ -335,8 +343,14 @@ impl<'tree> Compiler<'tree> {
                 self.insert_with_comment(Instruction::Load(dest_reg.into(), ptr), ident.into());
                 let offset = self.get_offset(Size::Quad);
 
-                self.insert(Instruction::Std(dest_reg.into(), IntRegisterPointer(IntRegister::R15, offset)));
-                self.insert(Instruction::Load(dest_reg.into(), IntRegisterPointer(IntRegister::R15, offset)));
+                self.insert(Instruction::Std(
+                    dest_reg.into(),
+                    IntRegisterPointer(IntRegister::R15, offset),
+                ));
+                self.insert(Instruction::Load(
+                    dest_reg.into(),
+                    IntRegisterPointer(IntRegister::R15, offset),
+                ));
 
                 Register::Float(dest_reg)
                 // todo!("float not supported")
@@ -379,17 +393,25 @@ impl<'tree> Compiler<'tree> {
     /// Inserts an [`Instruction::Brasl`] at the end of the current basic block.
     /// This uses GR14 as the return address register for the instruction.
     pub(crate) fn insert_call(&mut self, label: String) {
-        self.blocks[self.curr_block]
-            .instructions
-            .push((Instruction::Brasl(IntRegister::R14, label.into()), Some("call".into())));
+        self.blocks[self.curr_block].instructions.push((
+            Instruction::Brasl(IntRegister::R14, label.into()),
+            Some("call".into()),
+        ));
     }
 
     #[inline]
     /// Inserts an [`Instruction::Lgr`] at the end of the current basic block.
-    pub(crate) fn insert_movi(&mut self, to: IntRegister, from: IntRegister, file: &'static str, line: u32) {
-        self.blocks[self.curr_block]
-            .instructions
-            .push((Instruction::Lgr(to.into(), from.into()), Some(format!("movi@{}:{}", file, line).into())));
+    pub(crate) fn insert_movi(
+        &mut self,
+        to: IntRegister,
+        from: IntRegister,
+        file: &'static str,
+        line: u32,
+    ) {
+        self.blocks[self.curr_block].instructions.push((
+            Instruction::Lgr(to.into(), from.into()),
+            Some(format!("movi@{}:{}", file, line).into()),
+        ));
     }
 
     #[inline]
@@ -410,7 +432,11 @@ impl<'tree> Compiler<'tree> {
 
     /// Inserts an [`Instruction`] at the end of the current basic block.
     /// Also inserts the specified comment at the end of the instruction.
-    pub(crate) fn insert_with_comment(&mut self, instruction: Instruction, comment: Cow<'tree, str>) {
+    pub(crate) fn insert_with_comment(
+        &mut self,
+        instruction: Instruction,
+        comment: Cow<'tree, str>,
+    ) {
         self.blocks[self.curr_block]
             .instructions
             .push((instruction, Some(comment)));
@@ -503,7 +529,7 @@ pub(crate) enum DataObjType {
 }
 
 impl DataObjType {
-    pub (crate) fn size(&self) -> Size {
+    pub(crate) fn size(&self) -> Size {
         match self {
             Self::Quad(_) => Size::Quad,
             Self::Float(_) => Size::Quad,
@@ -526,14 +552,17 @@ impl Display for DataObjType {
                 dbg!(wtr.len());
 
                 write!(
-                f,
-                "{} 0x{}  # = {inner}{zero}\n    .align 2",
-                self.size().asm_string(),
-                // (*inner as f32).to_bits(),
-                wtr.iter().map(|b| format!("{b:02x}")).collect::<Vec<String>>().join(""),
-                zero = if inner.fract() == 0.0 { ".0" } else { "" }
+                    f,
+                    "{} 0x{}  # = {inner}{zero}\n    .align 2",
+                    self.size().asm_string(),
+                    // (*inner as f32).to_bits(),
+                    wtr.iter()
+                        .map(|b| format!("{b:02x}"))
+                        .collect::<Vec<String>>()
+                        .join(""),
+                    zero = if inner.fract() == 0.0 { ".0" } else { "" }
                 )
-            },
+            }
             Self::Quad(inner) => {
                 // let mut wtr = vec![];
                 // wtr.write_i64::<BigEndian>(*inner).unwrap();
@@ -550,8 +579,12 @@ impl Display for DataObjType {
                     self.size().asm_string(),
                     // wtr.iter().map(|b| format!("{b:02x}")).collect::<Vec<String>>().join("")
                 )
-            },
-            Self::Byte(inner) => write!(f, "{} {inner:#04x}  # = {inner}\n    .align 2", self.size().asm_string()),
+            }
+            Self::Byte(inner) => write!(
+                f,
+                "{} {inner:#04x}  # = {inner}\n    .align 2",
+                self.size().asm_string()
+            ),
         }
     }
 }
