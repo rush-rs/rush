@@ -127,7 +127,9 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
             optimization,
             RelocMode::PIC,
             CodeModel::Default,
-        ) else { return Err(Error::NoTarget); };
+        ) else {
+            return Err(Error::NoTarget);
+        };
 
         Ok(Self {
             context,
@@ -161,7 +163,11 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
     /// Compiles the given [`AnalyzedProgram`] to object code and the LLVM IR.
     /// Errors can occur if the code generation fails.
     /// The `self.compile_main_fn` field specifies whether the entry is the main function or `_start`.
-    pub fn compile(&mut self, program: &'src AnalyzedProgram) -> Result<(MemoryBuffer, String)> {
+    /// Returns the compiled object code, the assembly output, and the LLVM IR.
+    pub fn compile(
+        &mut self,
+        program: &'src AnalyzedProgram,
+    ) -> Result<(MemoryBuffer, MemoryBuffer, String)> {
         // declare all global variables
         for global in program.globals.iter().filter(|g| g.used) {
             self.declare_global(global.name, &global.expr);
@@ -195,7 +201,12 @@ impl<'ctx, 'src> Compiler<'ctx, 'src> {
             .target_machine
             .write_to_memory_buffer(&self.module, FileType::Object)?;
 
-        Ok((objcode, llvm_ir))
+        // build target-dependent assembly
+        let asm = self
+            .target_machine
+            .write_to_memory_buffer(&self.module, FileType::Assembly)?;
+
+        Ok((objcode, asm, llvm_ir))
     }
 
     /// Runs an optimization pass over the generated LLVM IR.

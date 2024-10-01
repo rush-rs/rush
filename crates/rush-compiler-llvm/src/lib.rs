@@ -10,14 +10,14 @@ use inkwell::{
 };
 use rush_analyzer::ast::AnalyzedProgram;
 
-/// Compiles a rush AST into LLVM IR and an object file.
+/// Compiles a rush AST into assembly, object code, and LLVM IR.
 /// The `main_fn` param specifies whether the entry is the main function or `_start`.
 pub fn compile(
     ast: AnalyzedProgram,
     target: TargetTriple,
     optimization: OptimizationLevel,
     compile_main_fn: bool,
-) -> Result<(MemoryBuffer, String)> {
+) -> Result<(MemoryBuffer, MemoryBuffer, String)> {
     let context = Context::create();
     let mut compiler = Compiler::new(&context, target, optimization, compile_main_fn)?;
     compiler.compile(&ast)

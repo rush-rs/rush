@@ -1,10 +1,20 @@
 use std::{env, fs};
 
-use inkwell::{context::Context, targets::TargetMachine};
+use inkwell::{
+    context::Context,
+    targets::{TargetMachine, TargetTriple},
+};
 use rush_compiler_llvm::Compiler;
 
 fn main() {
     let filename = env::args().nth(1).unwrap();
+    let triple = env::args().nth(2).unwrap_or(
+        TargetMachine::get_default_triple()
+            .as_str()
+            .to_string_lossy()
+            .to_string(),
+    );
+
     let file = fs::read_to_string(&filename).unwrap();
     let ast = match rush_analyzer::analyze(&file, &filename) {
         Ok(res) => {
@@ -24,13 +34,14 @@ fn main() {
     let context = Context::create();
     let mut compiler = Compiler::new(
         &context,
-        TargetMachine::get_default_triple(),
+        TargetTriple::create(triple.as_str()),
         inkwell::OptimizationLevel::None,
         true,
     )
     .unwrap();
 
-    let (obj, ir) = compiler.compile(&ast).unwrap();
+    let (obj, asm, ir) = compiler.compile(&ast).unwrap();
     fs::write("./output.ll", ir).unwrap();
+    fs::write("./output.s", asm.as_slice()).unwrap();
     fs::write("./output.o", obj.as_slice()).unwrap();
 }
