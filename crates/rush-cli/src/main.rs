@@ -11,8 +11,8 @@ use rush_interpreter_tree::Interpreter;
 
 mod cli;
 
-mod vm;
 mod c;
+mod vm;
 
 #[cfg(feature = "llvm")]
 mod llvm;

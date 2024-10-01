@@ -12,9 +12,21 @@ fn command_executable(path: &str) -> bool {
     }
 }
 
-const ASSEMBLERS: &[&str] = &["riscv64-alpine-linux-musl-as", "riscv64-linux-gnu-as"];
-const ARCHIVERS: &[&str] = &["riscv64-alpine-linux-musl-ar", "riscv64-linux-gnu-ar"];
-const GCC_VARIANTS: &[&str] = &["riscv-none-elf-gcc", "riscv64-linux-gnu-gcc"];
+const ASSEMBLERS: &[&str] = &[
+    "riscv64-alpine-linux-musl-as",
+    "riscv64-linux-gnu-as",
+    "riscv64-unknown-linux-gnu-as",
+];
+const ARCHIVERS: &[&str] = &[
+    "riscv64-alpine-linux-musl-ar",
+    "riscv64-linux-gnu-ar",
+    "riscv64-unknown-linux-gnu-ar",
+];
+const GCC_VARIANTS: &[&str] = &[
+    "riscv-none-elf-gcc",
+    "riscv64-linux-gnu-gcc",
+    "riscv64-unknown-linux-gnu-gcc",
+];
 
 fn main() {
     //// X86_64 corelib ////

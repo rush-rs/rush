@@ -49,7 +49,7 @@ pub struct RunArgs {
     pub llvm_opt: LlvmOpt,
 
     /// The clock speed of the VM, enables debug mode
-    #[clap(short='s', long, value_parser)]
+    #[clap(short = 's', long, value_parser)]
     pub vm_speed: Option<u64>,
 
     /// Path to rush source file
