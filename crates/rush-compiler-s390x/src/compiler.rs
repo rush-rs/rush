@@ -1,5 +1,5 @@
-use std::{borrow::Cow, collections::HashMap, rc::Rc};
 use rush_analyzer::{ast::*, AssignOp, InfixOp, PrefixOp, Type};
+use std::{borrow::Cow, collections::HashMap, rc::Rc};
 
 use crate::{
     instruction::{Block, CommentConfig, Instruction, IntRegisterPointer, Pointer},
@@ -456,8 +456,8 @@ impl<'tree> Compiler<'tree> {
         // if there is an optional expression, use its value as the result
         if let Some(expr) = node {
             match self.expression(expr) {
-                None => {}                                 // returns unit, do nothing
-                Some(Register::Int(IntRegister::R2)) => {} // already in correct register
+                None => {}                                     // returns unit, do nothing
+                Some(Register::Int(IntRegister::R2)) => {}     // already in correct register
                 Some(Register::Float(FloatRegister::F0)) => {} // already in correct register
                 Some(Register::Int(reg)) => {
                     self.insert_movi(IntRegister::R2, reg, file!(), line!())
@@ -1400,7 +1400,12 @@ impl<'tree> Compiler<'tree> {
             // illegal programs, therefore this is ok.
             (
                 Type::Int(0) | Type::Char(0) | Type::Bool(0),
-                op @ (InfixOp::Eq | InfixOp::Neq | InfixOp::Lt | InfixOp::Lte | InfixOp::Gte | InfixOp::Gt),
+                op @ (InfixOp::Eq
+                | InfixOp::Neq
+                | InfixOp::Lt
+                | InfixOp::Lte
+                | InfixOp::Gte
+                | InfixOp::Gt),
             ) => {
                 self.insert(Instruction::Comment(
                     format!("begin comparison {op}").into(),
@@ -1427,7 +1432,7 @@ impl<'tree> Compiler<'tree> {
                     InfixOp::Lte => Instruction::BranchNotGreaterThan(true_label.clone()),
                     InfixOp::Gte => Instruction::BranchNotLessThan(true_label.clone()),
                     InfixOp::Gt => Instruction::BranchGreaterThan(true_label.clone()),
-                    _ => unreachable!()
+                    _ => unreachable!(),
                 };
 
                 // place jump instruction, which would skip the default `false`

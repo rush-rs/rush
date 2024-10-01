@@ -1,7 +1,8 @@
 use std::{
+    error::Error,
     fmt::{self, Display, Formatter},
     thread::sleep,
-    time::Duration, error::Error,
+    time::Duration,
 };
 
 use crate::{
@@ -250,7 +251,10 @@ impl<const MEM_SIZE: usize> Vm<MEM_SIZE> {
             Instruction::SetMp(offset) => {
                 self.mem_ptr += offset;
                 if self.mem_ptr < 0 || self.mem_ptr as usize >= MEM_SIZE {
-                    return Err(RuntimeError::new(RuntimeErrorKind::OutOfMem, format!("Out of memory: the memory limit of {MEM_SIZE} cells was exceeded")))
+                    return Err(RuntimeError::new(
+                        RuntimeErrorKind::OutOfMem,
+                        format!("Out of memory: the memory limit of {MEM_SIZE} cells was exceeded"),
+                    ));
                 }
             }
             Instruction::RelToAddr(offset) => {

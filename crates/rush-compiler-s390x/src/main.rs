@@ -14,26 +14,24 @@ fn main() {
     let code = fs::read_to_string(&path).unwrap();
     let start = Instant::now();
 
-
     let comment_config = match env::args().nth(3) {
         Some(input) if input == *"n" => CommentConfig::NoComments,
         Some(other) => panic!("illegal comment config: {other}"),
         None => CommentConfig::Emit { line_width },
     };
 
-    let (out, diagnostics) =
-        rush_compiler_s390x::compile(&code, &path, &comment_config)
-            .unwrap_or_else(|diagnostics| {
-                println!(
-                    "{}",
-                    diagnostics
-                        .iter()
-                        .map(|d| format!("{d:#}"))
-                        .collect::<Vec<String>>()
-                        .join("\n\n")
-                );
-                process::exit(1)
-            });
+    let (out, diagnostics) = rush_compiler_s390x::compile(&code, &path, &comment_config)
+        .unwrap_or_else(|diagnostics| {
+            println!(
+                "{}",
+                diagnostics
+                    .iter()
+                    .map(|d| format!("{d:#}"))
+                    .collect::<Vec<String>>()
+                    .join("\n\n")
+            );
+            process::exit(1)
+        });
 
     println!(
         "{}",

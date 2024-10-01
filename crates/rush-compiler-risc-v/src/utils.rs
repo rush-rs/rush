@@ -320,7 +320,11 @@ impl<'tree> Compiler<'tree> {
 
     /// Inserts an [`Instruction`] at the end of the current basic block.
     /// Also inserts the specified comment at the end of the instruction.
-    pub(crate) fn insert_with_comment(&mut self, instruction: Instruction, comment: Cow<'tree, str>) {
+    pub(crate) fn insert_with_comment(
+        &mut self,
+        instruction: Instruction,
+        comment: Cow<'tree, str>,
+    ) {
         self.blocks[self.curr_block]
             .instructions
             .push((instruction, Some(comment)));

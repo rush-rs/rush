@@ -461,7 +461,7 @@ impl<'tree> Compiler<'tree> {
 
         // if the cond is `!`, return here
         let Some(cond) = self.expression(node.cond) else {
-            return
+            return;
         };
 
         // if the condition evaluates to `false`, break out of the loop
@@ -512,7 +512,7 @@ impl<'tree> Compiler<'tree> {
 
         // if the cond is `!`, return here
         let Some(cond) = self.expression(node.cond) else {
-            return
+            return;
         };
 
         self.insert(Instruction::Beqz(cond.into(), Rc::clone(&after_loop_label)));
@@ -786,7 +786,7 @@ impl<'tree> Compiler<'tree> {
             self.blocks.push(Block::new(Rc::clone(&merge_block)));
             self.insert_at(&merge_block);
 
-            return Some(lhs)
+            return Some(lhs);
         }
         match (node.lhs, node.rhs, node.op) {
             (AnalyzedExpression::Int(value), expr, InfixOp::Plus)
@@ -1047,7 +1047,9 @@ impl<'tree> Compiler<'tree> {
                     self.use_reg(lhs, Size::from(assignee_type));
 
                     // compile the rhs
-                    let Some(rhs) = self.expression(node.expr) else { break 'outer };
+                    let Some(rhs) = self.expression(node.expr) else {
+                        break 'outer;
+                    };
                     self.use_reg(rhs, Size::from(rhs_type));
 
                     // call the `pow` corelib function using the `infix_helper`
@@ -1059,7 +1061,9 @@ impl<'tree> Compiler<'tree> {
                 }
                 _ => {
                     // compile the rhs
-                    let Some(rhs) = self.expression(node.expr) else { break 'outer};
+                    let Some(rhs) = self.expression(node.expr) else {
+                        break 'outer;
+                    };
                     self.use_reg(rhs, Size::from(rhs_type));
 
                     // load value from the lhs
