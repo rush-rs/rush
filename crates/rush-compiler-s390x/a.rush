@@ -1,0 +1,4 @@
+fn main() {
+    let a = 41;
+    exit(a % 4 as int)
+}

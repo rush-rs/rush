@@ -1,4 +1,4 @@
-use byteorder::{BigEndian, LittleEndian, WriteBytesExt};
+use byteorder::{BigEndian, WriteBytesExt};
 use std::{borrow::Cow, collections::HashMap, fmt::Display, rc::Rc};
 
 use rush_analyzer::Type;
@@ -34,9 +34,7 @@ impl Variable {
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum Size {
     Byte = 1,
-    HalfWord = 2,
-    Long = 4,
-    Quad = 8,
+    Double = 8,
 }
 
 impl Size {
@@ -47,9 +45,7 @@ impl Size {
     pub(crate) fn asm_string(&self) -> String {
         match self {
             Size::Byte => ".byte",
-            Size::HalfWord => todo!("what is this?"),
-            Size::Long => ".long",
-            Size::Quad => ".quad",
+            Size::Double => ".double",
         }
         .into()
     }
@@ -59,7 +55,7 @@ impl From<Type> for Size {
     fn from(src: Type) -> Self {
         match src {
             Type::Bool(0) | Type::Char(0) => Size::Byte,
-            Type::Int(_) | Type::Float(_) | Type::Bool(_) | Type::Char(_) => Size::Quad,
+            Type::Int(_) | Type::Float(_) | Type::Bool(_) | Type::Char(_) => Size::Double,
             Type::Unknown | Type::Never | Type::Unit => unreachable!("these types have no size"),
         }
     }
@@ -80,10 +76,9 @@ impl<'tree> Compiler<'tree> {
     pub(crate) fn get_offset(&mut self, size: Size) -> i64 {
         let size = size.byte_count();
         dbg!(size, self.curr_fn_mut().stack_allocs);
-        // TODO: does this work?
         Self::align(
             &mut self.curr_fn_mut().stack_allocs,
-            Size::Long.byte_count(),
+            Size::Double.byte_count(),
         );
         let old = self.curr_fn().stack_allocs;
         self.curr_fn_mut().stack_allocs += size;
@@ -102,9 +97,9 @@ impl<'tree> Compiler<'tree> {
 
                 match size {
                     Size::Byte => self.insert_with_comment(Instruction::Store8(reg, ptr), comment),
-                    Size::HalfWord => todo!("implement this"),
-                    Size::Long => todo!("implement this"),
-                    Size::Quad => self.insert_with_comment(Instruction::Store64(reg, ptr), comment),
+                    Size::Double => {
+                        self.insert_with_comment(Instruction::Store64(reg, ptr), comment)
+                    }
                 }
             }
             Register::Float(reg) => {
@@ -147,9 +142,7 @@ impl<'tree> Compiler<'tree> {
                             Instruction::Load8(reg, IntRegisterPointer(IntRegister::R15, offset)),
                             comment,
                         ),
-                        Size::HalfWord => todo!("what to do?"),
-                        Size::Long => todo!("what to do?"),
-                        Size::Quad => self.insert_with_comment(
+                        Size::Double => self.insert_with_comment(
                             Instruction::Load64(reg, IntRegisterPointer(IntRegister::R15, offset)),
                             comment,
                         ),
@@ -231,11 +224,6 @@ impl<'tree> Compiler<'tree> {
         panic!("out of float registers")
     }
 
-    // TODO: remove
-    // pub(crate)  fn regs_in_use <'a> (&mut self, regs: impl Iterator<Item = &'a Register>) -> bool {
-    //     regs.all(|r| self.reg_in_use(r))
-    // }
-
     /// Helper function for checking whether a register is in use.
     pub(crate) fn reg_in_use(&mut self, reg: &Register) -> bool {
         self.used_registers.iter().any(|(r, _)| r == reg)
@@ -305,7 +293,7 @@ impl<'tree> Compiler<'tree> {
 
         match var.value {
             Some(Pointer::Label(label)) => {
-                let size = Size::Quad;
+                let size = Size::Double;
 
                 // Ensure that GR0 is not used as a base register.
                 self.use_reg(IntRegister::R0.into(), size);
@@ -341,7 +329,7 @@ impl<'tree> Compiler<'tree> {
             Type::Float(0) => {
                 let dest_reg = self.get_float_reg();
                 self.insert_with_comment(Instruction::Load(dest_reg.into(), ptr), ident.into());
-                let offset = self.get_offset(Size::Quad);
+                let offset = self.get_offset(Size::Double);
 
                 self.insert(Instruction::Std(
                     dest_reg.into(),
@@ -531,8 +519,8 @@ pub(crate) enum DataObjType {
 impl DataObjType {
     pub(crate) fn size(&self) -> Size {
         match self {
-            Self::Quad(_) => Size::Quad,
-            Self::Float(_) => Size::Quad,
+            Self::Quad(_) => Size::Double,
+            Self::Float(_) => Size::Double,
             Self::Byte(_) => Size::Byte,
         }
     }
@@ -555,7 +543,6 @@ impl Display for DataObjType {
                     f,
                     "{} 0x{}  # = {inner}{zero}\n    .align 2",
                     self.size().asm_string(),
-                    // (*inner as f32).to_bits(),
                     wtr.iter()
                         .map(|b| format!("{b:02x}"))
                         .collect::<Vec<String>>()
@@ -564,20 +551,10 @@ impl Display for DataObjType {
                 )
             }
             Self::Quad(inner) => {
-                // let mut wtr = vec![];
-                // wtr.write_i64::<BigEndian>(*inner).unwrap();
-                //
-                // while wtr.len() < 64 / 8 {
-                //     wtr.push(0);
-                // }
-                //
-                // dbg!(wtr.len());
-
                 write!(
                     f,
                     "{} {inner}  # = {inner}\n    .align 2",
                     self.size().asm_string(),
-                    // wtr.iter().map(|b| format!("{b:02x}")).collect::<Vec<String>>().join("")
                 )
             }
             Self::Byte(inner) => write!(

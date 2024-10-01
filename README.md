@@ -24,6 +24,7 @@ execution and compilation.
 - [LLVM Compiler](./crates/rush-compiler-llvm/)
 - [RISC-V Compiler](./crates/rush-compiler-risc-v/)
 - [x86_64 Compiler](./crates/rush-compiler-x86-64/)
+- [S/390X Compiler](./crates/rush-compiler-s390x/)
 
 ### Transpilers
 

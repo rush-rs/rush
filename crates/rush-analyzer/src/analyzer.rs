@@ -1264,7 +1264,7 @@ impl<'src> Analyzer<'src> {
             PrefixOp::Ref => match &expr {
                 AnalyzedExpression::Ident(ident) => match ident.result_type.add_ref() {
                     Some(res) => {
-                        let mut var = self
+                        let var = self
                             .scopes
                             .iter_mut()
                             .rev()

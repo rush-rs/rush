@@ -1,18 +1,20 @@
-# S390x Compiler Backend
+# IBM S/390x Compiler Backend
+
+> **Note:** This compiler backend was written by [@MikMuellerDev](https://mik-mueller.de) for an IBM mainframe course at Hasso Plattner Institute.
 
 A single-target rush compiler backend which generates
-[IBM S390x](https://en.wikipedia.org/wiki/IBM_System/390) assembly files without the need for heavy external
+[IBM S/390X](https://en.wikipedia.org/wiki/IBM_System/390) assembly files without the need for heavy external
 dependencies.
 
 ## Prerequisites
 
-Since the compiler itself requires no external dependencies, only the S390X
+Since the compiler itself requires no external dependencies, only the S/390X
 toolchain and additional software is to be installed. Hence, program execution
 requires an assembler, a linker, and an emulator.
 
 ### Toolchain
 
-On NixOS, the following command is to be executed to obtain a shell with a cross compiler targeting S390X.
+On NixOS, the following command is to be executed to obtain a shell with a cross compiler targeting S/390X.
 
 ```bash
 nix-shell ./crossShell.nix
@@ -21,7 +23,7 @@ nix-shell ./crossShell.nix
 ### Emulator
 
 On NixOS, the `qemu_full` package provides an
-emulator for S390X processors.
+emulator for S/390X processors.
 
 ## Compiling and Running rush Code
 
@@ -35,7 +37,7 @@ emulator for S390X processors.
 cargo run your-program.rush
 ```
 
-Since S390X targeted rush programs depend on a special [corelib](./corelib),
+Since S/390X targeted rush programs depend on a special [corelib](./corelib),
 linking demands more steps than usual.
 
 ### Assembling the Corelib
@@ -59,9 +61,9 @@ make all
 make build
 ```
 
-### Running S390X Binaries
+### Running S/390X Binaries
 
-- Since you have installed a S390X emulator prior to reading this section,
+- Since you have installed a S/390X emulator prior to reading this section,
   following command can be used to run the binary using the emulator.
 - The suffix containing `echo ...` is optional and merely prints out the
   program's exit-code.

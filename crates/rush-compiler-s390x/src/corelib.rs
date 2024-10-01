@@ -25,7 +25,6 @@ impl<'tree> Compiler<'tree> {
         dbg!(&regs_on_stack);
 
         // prepare the arguments
-        // TODO: remove the hacky-ness and save r2 in between.
         if exponent != IntRegister::R3 {
             self.insert_with_comment(
                 Instruction::Lgr(IntRegister::R3.into(), exponent.into()),

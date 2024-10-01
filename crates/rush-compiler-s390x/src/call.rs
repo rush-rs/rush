@@ -97,7 +97,7 @@ impl<'tree> Compiler<'tree> {
 
         let gr13_offset =
             self.save_ireg_on_stack(IntRegister::R13, Some("save GR13 for params".into()));
-        regs_on_stack.push((IntRegister::R13.into(), gr13_offset, Size::Quad));
+        regs_on_stack.push((IntRegister::R13.into(), gr13_offset, Size::Double));
 
         self.insert_movi(IntRegister::R13, IntRegister::R15, file!(), line!());
         self.insert(Instruction::Aghi(
@@ -117,16 +117,15 @@ impl<'tree> Compiler<'tree> {
 
                     if let Some(reg) = FloatRegister::nth_param(float_cnt) {
                         param_regs.push(reg.to_reg());
-                        self.use_reg(reg.to_reg(), Size::Quad);
+                        self.use_reg(reg.to_reg(), Size::Double);
                     } else {
                         // no more param registers: spilling required
                         self.insert_with_comment(
                             Instruction::Std(
                                 res_reg,
-                                // TODO: this fucks up addressing.
                                 IntRegisterPointer(IntRegister::R13, spill_cnt * 8),
                             ),
-                            format!("{} byte param spill", Size::Quad.byte_count(),).into(),
+                            format!("{} byte param spill", Size::Double.byte_count(),).into(),
                         );
                         spill_cnt += 1;
                         spill_param_size += 8;
